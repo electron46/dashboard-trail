@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Équipements — ELEV Dashboard Trail</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/app.js"></script>
+</head>
+<body>
+
+<header class="app">
+  <div class="app-top">
+    <div>
+      <h1>ELEV — Dashboard Trail</h1>
+      <p>Suivi de l'usure des chaussures</p>
+    </div>
+    <button id="themeToggle" type="button">● Sombre</button>
+  </div>
+  <nav class="app-nav">
+    <a href="index.html">Accueil</a>
+    <a href="historique.html">Historique</a>
+    <a href="profil.html">Profil</a>
+    <a href="equipements.html" class="active">Équipements</a>
+    <a href="parametres.html">Paramètres</a>
+  </nav>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Chaussures <small>le kilométrage automatique vient des séances associées en page Historique</small></h2>
+    <div class="item-grid" id="gearGrid"></div>
+    <div class="row" style="margin-top:12px;">
+      <button class="btn" id="addGearBtn" type="button">+ Ajouter une paire</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+
+<div class="modal-backdrop" id="gearModalBackdrop">
+  <div class="modal">
+    <h3 id="gearModalTitle">Ajouter une paire</h3>
+    <div class="row" style="flex-direction:column;align-items:stretch;">
+      <label class="field">Nom du modèle
+        <input type="text" id="gearNom" placeholder="ex. Salomon Speedcross 6">
+      </label>
+      <label class="field">Date d'achat
+        <input type="date" id="gearDate">
+      </label>
+      <label class="field">Km déjà parcourus avant suivi (km de base)
+        <input type="number" id="gearKmInitial" min="0" step="1" value="0">
+      </label>
+      <label class="field">Seuil d'alerte usure (km)
+        <input type="number" id="gearSeuil" min="0" step="10" value="700">
+      </label>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;">
+        <input type="checkbox" id="gearActif" style="width:auto;" checked> En service
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px;justify-content:space-between;">
+      <button class="btn danger small" id="deleteGearBtn" type="button" style="display:none;">Supprimer</button>
+      <div class="row">
+        <button class="btn" id="cancelGearBtn" type="button">Annuler</button>
+        <button class="btn primary" id="saveGearBtn" type="button">Enregistrer</button>
+      </div>
+    </div>
+    <div id="gearModalMsg"></div>
+  </div>
+</div>
+
+<script>
+function renderGear() {
+  const list = getGear().slice().sort((a,b) => (b.actif?1:0) - (a.actif?1:0));
+  const grid = document.getElementById('gearGrid');
+  if (!list.length) { grid.innerHTML = '<div class="empty">Aucune paire enregistrée pour l\'instant.</div>'; return; }
+  grid.innerHTML = list.map(g => {
+    const km = (g.kmInitial || 0) + gearKmFromSessions(g.id);
+    const seuil = g.seuilKm || 700;
+    const pct = Math.min(100, Math.round((km / seuil) * 100));
+    const cls = pct >= 100 ? 'danger' : (pct >= 80 ? 'warn' : '');
+    const badge = !g.actif ? '<span class="badge na">Hors service</span>' : (pct >= 100 ? '<span class="badge danger-badge">À remplacer</span>' : (pct >= 80 ? '<span class="badge warn-badge">Bientôt</span>' : '<span class="badge ok-badge">OK</span>'));
+    return '<div class="item-card">' +
+      '<div class="row" style="justify-content:space-between;align-items:flex-start;">' +
+        '<h3>' + escapeHtml(g.nom) + '</h3>' + badge +
+      '</div>' +
+      '<div class="hint">' + (g.dateAchat ? ('Achetée le ' + fmtDate(g.dateAchat)) : 'Date d\'achat non renseignée') + '</div>' +
+      '<div style="font-family:var(--font-mono);margin-top:8px;">' + km.toFixed(0) + ' km <span style="color:var(--muted);">/ ' + seuil + ' km</span></div>' +
+      '<div class="progress-track"><div class="progress-fill ' + cls + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="actions"><button class="btn small" data-edit="' + g.id + '">Modifier</button></div>' +
+    '</div>';
+  }).join('');
+  grid.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openGearModal(btn.dataset.edit)));
+}
+
+let editingGearId = null;
+function openGearModal(id) {
+  editingGearId = id || null;
+  const g = id ? getGear().find(x => x.id === id) : null;
+  document.getElementById('gearModalTitle').textContent = g ? 'Modifier la paire' : 'Ajouter une paire';
+  document.getElementById('gearNom').value = g ? g.nom : '';
+  document.getElementById('gearDate').value = g ? (g.dateAchat || '') : '';
+  document.getElementById('gearKmInitial').value = g ? (g.kmInitial || 0) : 0;
+  document.getElementById('gearSeuil').value = g ? (g.seuilKm || 700) : 700;
+  document.getElementById('gearActif').checked = g ? !!g.actif : true;
+  document.getElementById('deleteGearBtn').style.display = g ? 'inline-block' : 'none';
+  document.getElementById('gearModalMsg').innerHTML = '';
+  document.getElementById('gearModalBackdrop').classList.add('open');
+}
+function closeGearModal() { document.getElementById('gearModalBackdrop').classList.remove('open'); editingGearId = null; }
+
+document.getElementById('addGearBtn').addEventListener('click', () => openGearModal(null));
+document.getElementById('cancelGearBtn').addEventListener('click', closeGearModal);
+document.getElementById('gearModalBackdrop').addEventListener('click', e => { if (e.target.id === 'gearModalBackdrop') closeGearModal(); });
+document.getElementById('saveGearBtn').addEventListener('click', () => {
+  const nom = document.getElementById('gearNom').value.trim();
+  const kmInitial = parseFloat(document.getElementById('gearKmInitial').value) || 0;
+  const seuilKm = parseFloat(document.getElementById('gearSeuil').value) || 700;
+  if (!nom) { showMsg('gearModalMsg', 'Merci de donner un nom au modèle.', 'err'); return; }
+  upsertGearItem({
+    id: editingGearId,
+    nom,
+    dateAchat: document.getElementById('gearDate').value || null,
+    kmInitial,
+    seuilKm,
+    actif: document.getElementById('gearActif').checked,
+  });
+  closeGearModal();
+  renderGear();
+});
+document.getElementById('deleteGearBtn').addEventListener('click', () => {
+  if (!editingGearId) return;
+  if (!confirm('Supprimer cette paire ? Les séances déjà associées ne seront pas supprimées.')) return;
+  deleteGearItem(editingGearId);
+  closeGearModal();
+  renderGear();
+});
+
+renderGear();
+</script>
+</body>
+</html>

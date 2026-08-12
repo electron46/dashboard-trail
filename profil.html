@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profil — ELEV Dashboard Trail</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/app.js"></script>
+</head>
+<body>
+
+<header class="app">
+  <div class="app-top">
+    <div>
+      <h1>ELEV — Dashboard Trail</h1>
+      <p>Profil traileur</p>
+    </div>
+    <button id="themeToggle" type="button">● Sombre</button>
+  </div>
+  <nav class="app-nav">
+    <a href="index.html">Accueil</a>
+    <a href="historique.html">Historique</a>
+    <a href="profil.html" class="active">Profil</a>
+    <a href="equipements.html">Équipements</a>
+    <a href="parametres.html">Paramètres</a>
+  </nav>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Informations générales</h2>
+    <div class="row">
+      <label class="field">Nom / pseudo
+        <input type="text" id="profNom" placeholder="ex. Nico">
+      </label>
+      <label class="field">Date de naissance
+        <input type="date" id="profNaissance">
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Points de vigilance santé <small>utilisés automatiquement par le retour IA en page Historique</small></h2>
+    <p class="hint">Ex. blessures passées, fragilités à surveiller (entorses, tendinites...), consignes de renforcement/proprioception. Laisse vide si rien à signaler.</p>
+    <label class="field">
+      <textarea id="profSante" placeholder="ex. Entorse de cheville fin 2025 : travail systematique de proprioception et renforcement excentrique des mollets a surveiller, en particulier sur les sorties techniques ou en descente."></textarea>
+    </label>
+  </section>
+
+  <section class="card">
+    <h2>Records personnels</h2>
+    <table class="records-table" id="recordsTable">
+      <thead><tr><th>Distance / type</th><th>Temps</th><th>Course</th><th>Date</th><th></th></tr></thead>
+      <tbody id="recordsBody"></tbody>
+    </table>
+    <div class="row" style="margin-top:10px;">
+      <button class="btn small" id="addRecordBtn" type="button">+ Ajouter un record</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <button class="btn primary" id="saveProfileBtn" type="button">Enregistrer le profil</button>
+    </div>
+    <div id="profileMsg"></div>
+  </section>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+
+<script>
+let records = [];
+
+function renderRecords() {
+  const body = document.getElementById('recordsBody');
+  if (!records.length) { body.innerHTML = '<tr><td colspan="5" class="sans" style="color:var(--muted);">Aucun record enregistré.</td></tr>'; return; }
+  body.innerHTML = records.map((r,i) => (
+    '<tr>' +
+    '<td><input type="text" data-i="'+i+'" data-f="label" value="'+escapeHtml(r.label||'')+'" placeholder="ex. 10 km"></td>' +
+    '<td><input type="text" data-i="'+i+'" data-f="temps" value="'+escapeHtml(r.temps||'')+'" placeholder="ex. 42:30"></td>' +
+    '<td><input type="text" data-i="'+i+'" data-f="course" value="'+escapeHtml(r.course||'')+'" placeholder="ex. Trail de..."></td>' +
+    '<td><input type="date" data-i="'+i+'" data-f="date" value="'+(r.date||'')+'"></td>' +
+    '<td><button class="btn small danger" data-del="'+i+'" type="button">✕</button></td>' +
+    '</tr>'
+  )).join('');
+  body.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
+    records[+inp.dataset.i][inp.dataset.f] = inp.value;
+  }));
+  body.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
+    records.splice(+btn.dataset.del, 1);
+    renderRecords();
+  }));
+}
+
+document.getElementById('addRecordBtn').addEventListener('click', () => {
+  records.push({ label:'', temps:'', course:'', date:'' });
+  renderRecords();
+});
+
+document.getElementById('saveProfileBtn').addEventListener('click', () => {
+  const profile = {
+    nom: document.getElementById('profNom').value.trim(),
+    naissance: document.getElementById('profNaissance').value,
+    sante: document.getElementById('profSante').value.trim(),
+    records: records.filter(r => r.label || r.temps || r.course || r.date),
+  };
+  saveProfile(profile);
+  showMsg('profileMsg', 'Profil enregistré.', 'ok');
+});
+
+(function init() {
+  const p = getProfile();
+  document.getElementById('profNom').value = p.nom || '';
+  document.getElementById('profNaissance').value = p.naissance || '';
+  document.getElementById('profSante').value = p.sante || '';
+  records = (p.records || []).slice();
+  renderRecords();
+})();
+</script>
+</body>
+</html>

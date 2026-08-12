@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paramètres — ELEV Dashboard Trail</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/app.js"></script>
+</head>
+<body>
+
+<header class="app">
+  <div class="app-top">
+    <div>
+      <h1>ELEV — Dashboard Trail</h1>
+      <p>Paramètres</p>
+    </div>
+    <button id="themeToggle" type="button">● Sombre</button>
+  </div>
+  <nav class="app-nav">
+    <a href="index.html">Accueil</a>
+    <a href="historique.html">Historique</a>
+    <a href="profil.html">Profil</a>
+    <a href="equipements.html">Équipements</a>
+    <a href="parametres.html" class="active">Paramètres</a>
+  </nav>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Affichage</h2>
+    <div class="row">
+      <span>Thème : </span>
+      <button class="btn" id="themeToggleBig" type="button">Basculer clair / sombre</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Plan d'entraînement (CSV)</h2>
+    <p class="hint">Colonnes attendues : Semaine, Bloc, Jour (ex. "Ven 07/08"), Type de séance, Distance (km), D+ (m), Intensité (RPE), Notes. L'année est supposée être 2026 — modifiable dans <code>assets/app.js</code> (constante <code>PLAN_YEAR</code>) si le plan change de saison.</p>
+    <div class="row">
+      <label class="field" style="flex:1 1 100%;">
+        Coller le CSV du plan, ou l'importer depuis un fichier
+        <textarea id="planText" placeholder="Semaine,Bloc,Jour,Type de seance,Distance (km),D+ (m),Intensite (RPE),Notes"></textarea>
+      </label>
+    </div>
+    <div class="row">
+      <button class="btn" id="pickPlanBtn" type="button">Importer un fichier .csv</button>
+      <input type="file" id="planFileInput" accept=".csv" style="display:none;">
+      <button class="btn primary" id="savePlanBtn" type="button">Enregistrer le plan</button>
+      <button class="btn danger" id="clearPlanBtn" type="button">Effacer le plan</button>
+    </div>
+    <div id="planMsg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Clé API Claude (pour le retour qualitatif IA — optionnel)</h2>
+    <p class="hint">Votre clé reste uniquement sur cet ordinateur (stockage local du navigateur) et n'est envoyée qu'à l'API Anthropic, jamais ailleurs. Sans clé, le dashboard fonctionne normalement — seul le retour IA par séance (page Historique) ne sera pas disponible.</p>
+    <div class="row">
+      <label class="field" style="flex:1 1 260px;">
+        Clé API (commence par sk-ant-...)
+        <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
+      </label>
+      <button class="btn primary" id="saveKeyBtn" type="button" style="align-self:flex-end;">Enregistrer la clé</button>
+      <button class="btn danger" id="forgetKeyBtn" type="button" style="align-self:flex-end;">Oublier la clé</button>
+    </div>
+    <div id="keyMsg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Gestion des données</h2>
+    <div class="row">
+      <button class="btn" id="exportBtn" type="button">Exporter toutes les données (JSON)</button>
+      <button class="btn" id="importBtn" type="button">Importer un export JSON</button>
+      <input type="file" id="importFileInput" accept=".json" style="display:none;">
+      <button class="btn danger" id="resetBtn" type="button">Réinitialiser toutes les données</button>
+    </div>
+    <div id="importJsonMsg"></div>
+    <p class="hint">Séances, plan, courses, profil, équipements et clé API sont stockés uniquement dans ce navigateur (localStorage). Rien n'est envoyé sur un serveur, hormis les appels volontaires à l'API Claude. Pour retrouver tes données sur un autre appareil (ex. téléphone), exporte le JSON depuis cet appareil-ci puis importe-le là-bas.</p>
+  </section>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée ci-dessus).</footer>
+
+<script>
+document.getElementById('themeToggleBig').addEventListener('click', toggleTheme);
+
+/* --------------------------- PLAN CSV --------------------------- */
+document.getElementById('pickPlanBtn').addEventListener('click', () => document.getElementById('planFileInput').click());
+document.getElementById('planFileInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('planText').value = await file.text();
+});
+document.getElementById('savePlanBtn').addEventListener('click', () => {
+  const text = document.getElementById('planText').value;
+  if (!text.trim()) { showMsg('planMsg', 'Collez ou importez un CSV avant d\'enregistrer.', 'err'); return; }
+  try {
+    const parsed = parsePlanCsv(text);
+    if (!parsed.length) { showMsg('planMsg', 'Aucune ligne exploitable trouvée dans ce CSV (colonnes attendues : Jour, Type de séance, Distance, D+...).', 'err'); return; }
+    localStorage.setItem(PLAN_KEY, JSON.stringify(parsed));
+    showMsg('planMsg', parsed.length + ' séances planifiées enregistrées (année supposée : ' + PLAN_YEAR + ').', 'ok');
+  } catch (err) { showMsg('planMsg', 'Erreur lors de la lecture du CSV : ' + err.message, 'err'); }
+});
+document.getElementById('clearPlanBtn').addEventListener('click', () => {
+  localStorage.removeItem(PLAN_KEY);
+  document.getElementById('planText').value = '';
+  showMsg('planMsg', 'Plan effacé.', 'ok');
+});
+(function initPlanField() {
+  const plan = getPlan();
+  if (plan) document.getElementById('planText').value =
+    'Semaine,Bloc,Jour,Type de seance,Distance (km),D+ (m),Intensite (RPE),Notes\n' +
+    '(plan déjà enregistré — ' + plan.length + ' séances. Recollez un CSV puis "Enregistrer" pour le remplacer.)';
+})();
+
+/* --------------------------- CLÉ API --------------------------- */
+document.getElementById('saveKeyBtn').addEventListener('click', () => {
+  const val = document.getElementById('apiKeyInput').value.trim();
+  if (!val) { showMsg('keyMsg', 'Entrez une clé avant d\'enregistrer.', 'err'); return; }
+  try { localStorage.setItem(KEY_KEY, val); showMsg('keyMsg', 'Clé enregistrée localement.', 'ok'); document.getElementById('apiKeyInput').value=''; }
+  catch (e) { showMsg('keyMsg', 'Erreur de stockage : ' + e.message, 'err'); }
+});
+document.getElementById('forgetKeyBtn').addEventListener('click', () => {
+  localStorage.removeItem(KEY_KEY);
+  showMsg('keyMsg', 'Clé oubliée.', 'ok');
+});
+
+/* --------------------------- EXPORT / IMPORT / RESET --------------------------- */
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const data = {
+    sessions: loadAllSessions(),
+    plan: getPlan(),
+    races: getRaces(),
+    profile: getProfile(),
+    gear: getGear(),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'export-dashboard-trail-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFileInput').click());
+document.getElementById('importFileInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+    let added = 0, updated = 0;
+    if (sessions.length) {
+      const idx = loadIndex();
+      sessions.forEach(s => {
+        if (!s || !s.id) return;
+        const isNew = !idx.includes(s.id);
+        if (isNew) idx.push(s.id);
+        saveSession(s.id, s);
+        if (isNew) added++; else updated++;
+      });
+      saveIndex(idx);
+    }
+    if (data.plan) localStorage.setItem(PLAN_KEY, JSON.stringify(data.plan));
+    if (Array.isArray(data.races) && data.races.length) saveRaces(data.races);
+    if (data.profile) saveProfile(data.profile);
+    if (Array.isArray(data.gear)) saveGear(data.gear);
+    if (!sessions.length && !data.plan && !data.races && !data.profile && !data.gear) {
+      showMsg('importJsonMsg', 'Fichier JSON vide ou format non reconnu (attendu : un export généré par ce dashboard).', 'err');
+      return;
+    }
+    showMsg('importJsonMsg', added + ' séance(s) ajoutée(s), ' + updated + ' mise(s) à jour, plus le reste des données importées si présentes dans le fichier.', 'ok');
+  } catch (err) { showMsg('importJsonMsg', 'Erreur lors de la lecture du fichier : ' + err.message, 'err'); }
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!confirm('Supprimer TOUTES les données (séances, plan, courses, profil, équipements, clé API) enregistrées dans ce navigateur ? Cette action est irréversible. Pensez à exporter vos données avant si besoin.')) return;
+  const idx = loadIndex();
+  idx.forEach(deleteSession);
+  localStorage.removeItem(IDX_KEY);
+  localStorage.removeItem(PLAN_KEY);
+  localStorage.removeItem(KEY_KEY);
+  localStorage.removeItem(RACES_KEY);
+  localStorage.removeItem(PROFILE_KEY);
+  localStorage.removeItem(GEAR_KEY);
+  document.getElementById('planText').value = '';
+  showMsg('importJsonMsg', 'Toutes les données ont été réinitialisées.', 'ok');
+});
+</script>
+</body>
+</html>

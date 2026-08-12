@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Historique — ELEV Dashboard Trail</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/app.js"></script>
+</head>
+<body>
+
+<header class="app">
+  <div class="app-top">
+    <div>
+      <h1>ELEV — Dashboard Trail</h1>
+      <p>Historique des séances et progression</p>
+    </div>
+    <button id="themeToggle" type="button">● Sombre</button>
+  </div>
+  <nav class="app-nav">
+    <a href="index.html">Accueil</a>
+    <a href="historique.html" class="active">Historique</a>
+    <a href="profil.html">Profil</a>
+    <a href="equipements.html">Équipements</a>
+    <a href="parametres.html">Paramètres</a>
+  </nav>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Importer une ou plusieurs séances (.fit)</h2>
+    <div id="dropzone">
+      <strong>Glissez vos fichiers .fit ici</strong><br>
+      ou <button class="btn" id="pickFileBtn" type="button">choisir des fichiers</button>
+      <input type="file" id="fileInput" accept=".fit" multiple>
+    </div>
+    <div id="importMsg" class="storage-warning-target"></div>
+  </section>
+
+  <section class="card">
+    <h2>Progression</h2>
+    <div class="charts-grid" id="chartsGrid"></div>
+  </section>
+
+  <section class="card">
+    <h2>Historique des séances</h2>
+    <div class="filters">
+      <label class="field">Recherche (type, sport)
+        <input type="text" id="searchInput" placeholder="ex. course, hiking...">
+      </label>
+      <label class="field">Du
+        <input type="date" id="dateFrom">
+      </label>
+      <label class="field">Au
+        <input type="date" id="dateTo">
+      </label>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Type</th><th>Distance</th><th>D+</th><th>Durée</th><th>Allure</th><th>FC moy.</th></tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+    <div id="historyEmpty" class="empty" style="display:none;">Aucune séance importée pour l'instant.</div>
+  </section>
+
+  <section class="card" id="detailPanel">
+    <button class="btn close-detail" id="closeDetailBtn" type="button">Fermer ✕</button>
+    <h2 id="detailTitle">Détail de la séance</h2>
+    <div class="metrics-grid" id="detailMetrics"></div>
+    <label class="field" style="max-width:280px;margin-top:6px;">Paire de chaussures utilisée
+      <select id="gearSelect"><option value="">Non renseignée</option></select>
+    </label>
+    <div class="plan-compare" id="planCompare" style="display:none;"></div>
+    <div class="ai-block">
+      <div class="row">
+        <button class="btn primary" id="aiGenBtn" type="button">Générer le retour IA</button>
+        <span id="aiStatus"></span>
+      </div>
+      <div id="aiFeedbackBox"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+
+<script>
+/* --------------------------- IMPORT .FIT --------------------------- */
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+document.getElementById('pickFileBtn').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+dropzone.addEventListener('click', e => { if (e.target === dropzone) fileInput.click(); });
+
+async function handleFiles(fileList) {
+  const files = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.fit'));
+  if (!files.length) { showMsg('importMsg', 'Aucun fichier .fit valide sélectionné.', 'err'); return; }
+  let ok = 0, fail = 0;
+  const errors = [];
+  for (const file of files) {
+    try {
+      const buffer = await file.arrayBuffer();
+      const messages = parseFit(buffer);
+      const summary = summarizeFit(messages, file);
+      const id = summary.date + '_' + (summary.sport || 'activite').replace(/\s+/g,'-') + '_' + Math.round((summary.distanceKm||0)*1000);
+      summary.id = id;
+      summary.fileName = file.name;
+      summary.importedAt = new Date().toISOString();
+      const idx = loadIndex();
+      if (!idx.includes(id)) idx.push(id);
+      if (saveIndex(idx) && saveSession(id, summary)) ok++;
+      else fail++;
+    } catch (err) { fail++; errors.push(file.name + ' : ' + err.message); }
+  }
+  let msg = ok + ' séance(s) importée(s).';
+  if (fail) msg += ' ' + fail + ' échec(s) : ' + errors.join(' | ');
+  showMsg('importMsg', msg, fail ? 'err' : 'ok');
+  fileInput.value = '';
+  refreshAll();
+}
+
+/* --------------------------- HISTORIQUE + FILTRES --------------------------- */
+document.getElementById('searchInput').addEventListener('input', renderHistory);
+document.getElementById('dateFrom').addEventListener('change', renderHistory);
+document.getElementById('dateTo').addEventListener('change', renderHistory);
+
+function renderHistory() {
+  const sessions = loadAllSessions();
+  const search = document.getElementById('searchInput').value.trim().toLowerCase();
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  const filtered = sessions.filter(s => {
+    if (search && !((s.sport||'').toLowerCase().includes(search) || (s.fileName||'').toLowerCase().includes(search))) return false;
+    if (from && s.date < from) return false;
+    if (to && s.date > to) return false;
+    return true;
+  }).sort((a,b) => b.date.localeCompare(a.date));
+
+  const body = document.getElementById('historyBody');
+  document.getElementById('historyEmpty').style.display = filtered.length ? 'none' : 'block';
+  body.innerHTML = filtered.map(s => (
+    '<tr class="session-row" data-id="' + s.id + '">' +
+    '<td>' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + '</td>' +
+    '<td class="sans">' + (s.sport || 'Non disponible') + '</td>' +
+    '<td>' + fmtNum(s.distanceKm, ' km', 1) + '</td>' +
+    '<td>' + fmtNum(s.ascent, ' m', 0) + '</td>' +
+    '<td>' + fmtDuration(s.durationS) + '</td>' +
+    '<td>' + fmtPace(s.avgPaceSecPerKm) + '</td>' +
+    '<td>' + (s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible') + '</td>' +
+    '</tr>'
+  )).join('');
+  body.querySelectorAll('tr.session-row').forEach(tr => tr.addEventListener('click', () => openDetail(tr.dataset.id)));
+}
+
+/* --------------------------- DÉTAIL + PLAN + CHAUSSURE + IA --------------------------- */
+let currentSessionId = null;
+
+function openDetail(id) {
+  const s = loadSession(id);
+  if (!s) return;
+  currentSessionId = id;
+  document.getElementById('detailPanel').classList.add('open');
+  document.getElementById('detailTitle').textContent = 'Séance du ' + fmtDate(s.date) + (s.dateApprox ? ' (date approximative, non trouvée dans le fichier)' : '');
+
+  const metrics = [
+    ['Type', s.sport || 'Non disponible'],
+    ['Distance', fmtNum(s.distanceKm, ' km', 2)],
+    ['Durée', fmtDuration(s.durationS)],
+    ['Allure moy.', fmtPace(s.avgPaceSecPerKm)],
+    ['D+', fmtNum(s.ascent, ' m', 0)],
+    ['D-', fmtNum(s.descent, ' m', 0)],
+    ['FC moyenne', s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible'],
+    ['FC max', s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible'],
+    ['Cadence', s.cadenceSpm != null ? s.cadenceSpm + ' pas/min' : 'Non disponible'],
+  ];
+  document.getElementById('detailMetrics').innerHTML = metrics.map(([lbl,val]) =>
+    '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val==='Non disponible'?' na':'') + '">' + val + '</div></div>'
+  ).join('');
+
+  const gearSelect = document.getElementById('gearSelect');
+  const gear = getGear();
+  gearSelect.innerHTML = '<option value="">Non renseignée</option>' + gear.map(g => '<option value="'+g.id+'">'+escapeHtml(g.nom)+'</option>').join('');
+  gearSelect.value = s.gearId || '';
+
+  const planned = findPlannedSession(s.date);
+  const planBox = document.getElementById('planCompare');
+  planBox.style.display = 'block';
+  if (planned) {
+    planBox.innerHTML = '<h4>Séance prévue au plan ce jour-là</h4>' +
+      '<div>' + escapeHtml(planned.type) + ' — ' + planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+ (' + escapeHtml(planned.intensite) + ')</div>' +
+      (planned.notes ? '<div class="hint">' + escapeHtml(planned.notes) + '</div>' : '');
+  } else {
+    planBox.innerHTML = '<h4>Séance prévue au plan</h4><div class="hint">Aucune séance planifiée trouvée pour cette date (ou plan non importé — voir page Paramètres).</div>';
+  }
+
+  document.getElementById('aiFeedbackBox').innerHTML = s.aiFeedback ? '<div class="ai-feedback">' + escapeHtml(s.aiFeedback) + '</div>' : '';
+  document.getElementById('aiStatus').textContent = '';
+  document.getElementById('aiGenBtn').textContent = s.aiFeedback ? 'Regénérer le retour IA' : 'Générer le retour IA';
+  document.getElementById('detailPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+document.getElementById('closeDetailBtn').addEventListener('click', () => {
+  document.getElementById('detailPanel').classList.remove('open');
+  currentSessionId = null;
+});
+
+document.getElementById('gearSelect').addEventListener('change', () => {
+  if (!currentSessionId) return;
+  const s = loadSession(currentSessionId);
+  if (!s) return;
+  s.gearId = document.getElementById('gearSelect').value || null;
+  saveSession(s.id, s);
+});
+
+document.getElementById('aiGenBtn').addEventListener('click', async () => {
+  if (!currentSessionId) return;
+  const apiKey = getApiKey();
+  const statusEl = document.getElementById('aiStatus');
+  const boxEl = document.getElementById('aiFeedbackBox');
+  const btn = document.getElementById('aiGenBtn');
+
+  if (!apiKey) {
+    statusEl.innerHTML = '<span style="color:var(--danger)">Aucune clé API enregistrée — renseignez-la dans la page Paramètres.</span>';
+    return;
+  }
+
+  const s = loadSession(currentSessionId);
+  const planned = findPlannedSession(s.date);
+  const profile = getProfile();
+
+  btn.disabled = true;
+  statusEl.innerHTML = '<span class="spinner"></span>Génération du retour en cours…';
+  boxEl.innerHTML = '';
+
+  const promptParts = [];
+  promptParts.push("Tu es un assistant qui aide un traileur solo, sans coach, a analyser une seance de course a pied / trail. Reponds en francais, sans jargon de data science, avec un vocabulaire clair de coureur (allure, denivele, frequence cardiaque, cadence).");
+  promptParts.push("Structure ta reponse en exactement deux blocs avec ces titres : 'Points positifs' puis 'Points d'amelioration'. Chaque bloc : 2 a 4 phrases, concretes, appuyees sur les chiffres fournis. Pas de generalites du type 'bravo continue comme ca'.");
+  if (profile.sante && profile.sante.trim()) {
+    promptParts.push("Points de vigilance sante de l'utilisateur (issus de son profil) a prendre en compte si pertinent au vu des donnees de la seance : " + profile.sante.trim());
+  }
+  promptParts.push("\nDonnees de la seance realisee (" + fmtDate(s.date) + ") :");
+  promptParts.push("- Type : " + (s.sport || 'non disponible'));
+  promptParts.push("- Distance : " + fmtNum(s.distanceKm, ' km', 2));
+  promptParts.push("- Duree : " + fmtDuration(s.durationS));
+  promptParts.push("- Allure moyenne : " + fmtPace(s.avgPaceSecPerKm));
+  promptParts.push("- D+ / D- : " + fmtNum(s.ascent,' m',0) + " / " + fmtNum(s.descent,' m',0));
+  promptParts.push("- FC moyenne / max : " + (s.avgHr ?? 'non disponible') + " / " + (s.maxHr ?? 'non disponible') + " bpm");
+  promptParts.push("- Cadence : " + (s.cadenceSpm ?? 'non disponible') + " pas/min");
+  if (planned) {
+    promptParts.push("\nSeance prevue au plan ce jour-la : " + planned.type + ", " + planned.distanceKm + " km / " + planned.deniveleM + " m D+, intensite " + planned.intensite + (planned.notes ? (" — note du plan : " + planned.notes) : ""));
+  } else {
+    promptParts.push("\nAucune seance planifiee trouvee pour cette date dans le plan (ou plan non fourni) — ne compare pas a un plan que tu ne connais pas.");
+  }
+  promptParts.push("\nSi une metrique est indiquee 'non disponible', ne l'invente pas et n'en tiens simplement pas compte.");
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 700, messages: [{ role: 'user', content: promptParts.join('\n') }] }),
+    });
+    if (!resp.ok) { const errBody = await resp.text(); throw new Error('HTTP ' + resp.status + ' — ' + errBody.slice(0,200)); }
+    const data = await resp.json();
+    const text = (data.content || []).map(c => c.text || '').join('\n').trim();
+    if (!text) throw new Error('Réponse vide de l\'API.');
+    s.aiFeedback = text;
+    saveSession(s.id, s);
+    boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>';
+    statusEl.textContent = '';
+    btn.textContent = 'Regénérer le retour IA';
+  } catch (err) {
+    statusEl.innerHTML = '<span style="color:var(--danger)">Erreur lors de l\'appel à l\'API : ' + escapeHtml(err.message) + ' (vérifiez la clé API et votre connexion).</span>';
+  } finally { btn.disabled = false; }
+});
+
+/* --------------------------- GRAPHIQUES --------------------------- */
+function svgEmpty(title) { return '<div class="chart-box"><h3>' + title + '</h3><div class="empty">Pas encore assez de séances pour ce graphique (2 minimum).</div></div>'; }
+
+function lineChartSvg(title, points, opts) {
+  opts = opts || {};
+  if (points.length < 2) return svgEmpty(title);
+  const w = 560, h = 200, padL = 42, padR = 14, padT = 14, padB = 26;
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = opts.yMin ?? Math.min(...ys), maxY = opts.yMax ?? Math.max(...ys);
+  const spanY = (maxY - minY) || 1;
+  const spanX = (maxX - minX) || 1;
+  const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
+  const sy = y => (h - padB) - (y - minY) / spanY * (h - padT - padB);
+  const path = points.map((p,i) => (i===0?'M':'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
+  const dots = points.map(p => '<circle cx="'+sx(p.x).toFixed(1)+'" cy="'+sy(p.y).toFixed(1)+'" r="3" fill="var(--accent)"><title>'+p.label+'</title></circle>').join('');
+  const firstLabel = points[0].xLabel, lastLabel = points[points.length-1].xLabel;
+  return '<div class="chart-box"><h3>' + title + '</h3><svg viewBox="0 0 '+w+' '+h+'">' +
+    '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    '<text x="'+padL+'" y="'+(padT+8)+'" font-size="10" fill="var(--muted)">'+(opts.yMaxLabel ?? maxY.toFixed(opts.decimals??0))+'</text>' +
+    '<text x="'+padL+'" y="'+(h-padB)+'" font-size="10" fill="var(--muted)">'+(opts.yMinLabel ?? minY.toFixed(opts.decimals??0))+'</text>' +
+    '<text x="'+padL+'" y="'+(h-4)+'" font-size="10" fill="var(--muted)">'+firstLabel+'</text>' +
+    '<text x="'+(w-padR-40)+'" y="'+(h-4)+'" font-size="10" fill="var(--muted)">'+lastLabel+'</text>' +
+    '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots +
+  '</svg></div>';
+}
+function barChartSvg(title, bars) {
+  if (!bars.length) return svgEmpty(title);
+  const w = 560, h = 200, padL = 42, padR = 14, padT = 14, padB = 34;
+  const maxV = Math.max(...bars.map(b => b.value), 1);
+  const bw = (w - padL - padR) / bars.length;
+  const barsSvg = bars.map((b,i) => {
+    const bh = (b.value / maxV) * (h - padT - padB);
+    const x = padL + i * bw + bw*0.15;
+    const y = (h - padB) - bh;
+    return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(bw*0.7).toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="var(--secondary)"><title>'+b.label+': '+b.value.toFixed(1)+'</title></rect>' +
+      (i % Math.ceil(bars.length/8||1) === 0 ? '<text x="'+(x+bw*0.35).toFixed(1)+'" y="'+(h-8)+'" font-size="9" fill="var(--muted)" text-anchor="middle">'+b.shortLabel+'</text>' : '');
+  }).join('');
+  return '<div class="chart-box"><h3>' + title + '</h3><svg viewBox="0 0 '+w+' '+h+'">' +
+    '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    '<text x="4" y="'+(padT+8)+'" font-size="10" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
+    barsSvg +
+  '</svg></div>';
+}
+function renderCharts() {
+  const sessions = loadAllSessions();
+  const grid = document.getElementById('chartsGrid');
+  const paceSessions = sessions.filter(s => s.avgPaceSecPerKm != null);
+  const pacePoints = paceSessions.map((s,i) => ({ x:i, y:s.avgPaceSecPerKm, xLabel: fmtDate(s.date), label: fmtDate(s.date)+' : '+fmtPace(s.avgPaceSecPerKm) }));
+  const paceChart = lineChartSvg('Allure moyenne dans le temps (min/km, axe inversé = plus bas = plus rapide)', pacePoints, { decimals:0 });
+  const hrSessions = sessions.filter(s => s.avgHr != null);
+  const hrPoints = hrSessions.map((s,i) => ({ x:i, y:s.avgHr, xLabel: fmtDate(s.date), label: fmtDate(s.date)+' : '+s.avgHr+' bpm' }));
+  const hrChart = lineChartSvg('Fréquence cardiaque moyenne par séance (bpm)', hrPoints);
+  const weekMap = {};
+  sessions.forEach(s => {
+    const wk = isoWeek(s.date);
+    weekMap[wk] = weekMap[wk] || { km:0, dplus:0 };
+    if (s.distanceKm) weekMap[wk].km += s.distanceKm;
+    if (s.ascent) weekMap[wk].dplus += s.ascent;
+  });
+  const weeks = Object.keys(weekMap).sort();
+  const kmBars = weeks.map(w => ({ label:'Semaine du '+fmtDate(w), shortLabel: w.slice(5), value: weekMap[w].km }));
+  const dplusBars = weeks.map(w => ({ label:'Semaine du '+fmtDate(w), shortLabel: w.slice(5), value: weekMap[w].dplus }));
+  grid.innerHTML = paceChart + hrChart + barChartSvg('Volume hebdomadaire (km)', kmBars) + barChartSvg('Dénivelé positif hebdomadaire (m)', dplusBars);
+}
+
+function refreshAll() { renderHistory(); renderCharts(); }
+refreshAll();
+</script>
+</body>
+</html>
