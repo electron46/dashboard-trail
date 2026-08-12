@@ -108,9 +108,9 @@ tr.session-row:hover{background:var(--bg);}
 .badge.warn-badge{background:var(--warn-soft);color:var(--warn);border:1px solid transparent;}
 .badge.danger-badge{background:var(--danger-soft);color:var(--danger);border:1px solid transparent;}
 
-.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;}
-.chart-box{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;}
-.chart-box h3{margin:0 0 6px;font-size:.88rem;color:var(--muted);font-weight:600;}
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:18px;}
+.chart-box{border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;}
+.chart-box h3{margin:0 0 10px;font-size:.95rem;color:var(--muted);font-weight:600;}
 .chart-box svg{width:100%;height:auto;display:block;}
 .chart-box svg text{font-family:var(--font-mono);}
 .chart-box svg [data-tooltip]{cursor:crosshair;}
