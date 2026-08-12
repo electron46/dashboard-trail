@@ -20,9 +20,14 @@
   <nav class="app-nav">
     <a href="index.html">Accueil</a>
     <a href="historique.html">Historique</a>
-    <a href="profil.html">Profil</a>
-    <a href="equipements.html" class="active">Équipements</a>
-    <a href="parametres.html">Paramètres</a>
+    <div class="nav-dropdown">
+      <button type="button" class="nav-dropdown-trigger active">Paramètres ▾</button>
+      <div class="nav-dropdown-menu">
+        <a href="parametres.html">Paramètres</a>
+        <a href="profil.html">Profil</a>
+        <a href="equipements.html" class="active">Équipements</a>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -43,10 +48,18 @@
 <div class="modal-backdrop" id="gearModalBackdrop">
   <div class="modal">
     <h3 id="gearModalTitle">Ajouter une paire</h3>
-    <div class="row" style="flex-direction:column;align-items:stretch;">
+    <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
       <label class="field">Nom du modèle
         <input type="text" id="gearNom" placeholder="ex. Salomon Speedcross 6">
       </label>
+      <label class="field">Photo (optionnel)
+        <div class="row">
+          <button class="btn small" id="gearPhotoBtn" type="button">Choisir une photo</button>
+          <button class="btn small danger" id="gearPhotoClearBtn" type="button" style="display:none;">Retirer</button>
+          <input type="file" id="gearPhotoInput" accept="image/*">
+        </div>
+      </label>
+      <div id="gearPhotoPreviewBox"></div>
       <label class="field">Date d'achat
         <input type="date" id="gearDate">
       </label>
@@ -83,6 +96,7 @@ function renderGear() {
     const cls = pct >= 100 ? 'danger' : (pct >= 80 ? 'warn' : '');
     const badge = !g.actif ? '<span class="badge na">Hors service</span>' : (pct >= 100 ? '<span class="badge danger-badge">À remplacer</span>' : (pct >= 80 ? '<span class="badge warn-badge">Bientôt</span>' : '<span class="badge ok-badge">OK</span>'));
     return '<div class="item-card">' +
+      (g.photo ? '<img src="' + g.photo + '" alt="' + escapeHtml(g.nom) + '" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius-md);margin-bottom:8px;">' : '') +
       '<div class="row" style="justify-content:space-between;align-items:flex-start;">' +
         '<h3>' + escapeHtml(g.nom) + '</h3>' + badge +
       '</div>' +
@@ -96,6 +110,14 @@ function renderGear() {
 }
 
 let editingGearId = null;
+let currentPhoto = null;
+
+function renderPhotoPreview() {
+  document.getElementById('gearPhotoPreviewBox').innerHTML = currentPhoto
+    ? '<img src="' + currentPhoto + '" alt="Aperçu" style="max-width:160px;max-height:120px;border-radius:var(--radius-md);margin-top:6px;">' : '';
+  document.getElementById('gearPhotoClearBtn').style.display = currentPhoto ? 'inline-block' : 'none';
+}
+
 function openGearModal(id) {
   editingGearId = id || null;
   const g = id ? getGear().find(x => x.id === id) : null;
@@ -107,6 +129,9 @@ function openGearModal(id) {
   document.getElementById('gearActif').checked = g ? !!g.actif : true;
   document.getElementById('deleteGearBtn').style.display = g ? 'inline-block' : 'none';
   document.getElementById('gearModalMsg').innerHTML = '';
+  document.getElementById('gearPhotoInput').value = '';
+  currentPhoto = g ? (g.photo || null) : null;
+  renderPhotoPreview();
   document.getElementById('gearModalBackdrop').classList.add('open');
 }
 function closeGearModal() { document.getElementById('gearModalBackdrop').classList.remove('open'); editingGearId = null; }
@@ -114,6 +139,22 @@ function closeGearModal() { document.getElementById('gearModalBackdrop').classLi
 document.getElementById('addGearBtn').addEventListener('click', () => openGearModal(null));
 document.getElementById('cancelGearBtn').addEventListener('click', closeGearModal);
 document.getElementById('gearModalBackdrop').addEventListener('click', e => { if (e.target.id === 'gearModalBackdrop') closeGearModal(); });
+document.getElementById('gearPhotoBtn').addEventListener('click', () => document.getElementById('gearPhotoInput').click());
+document.getElementById('gearPhotoInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    currentPhoto = await resizeImageFile(file, 500);
+    renderPhotoPreview();
+  } catch (err) {
+    showMsg('gearModalMsg', 'Impossible de lire cette image : ' + err.message, 'err');
+  }
+});
+document.getElementById('gearPhotoClearBtn').addEventListener('click', () => {
+  currentPhoto = null;
+  document.getElementById('gearPhotoInput').value = '';
+  renderPhotoPreview();
+});
 document.getElementById('saveGearBtn').addEventListener('click', () => {
   const nom = document.getElementById('gearNom').value.trim();
   const kmInitial = parseFloat(document.getElementById('gearKmInitial').value) || 0;
@@ -122,6 +163,7 @@ document.getElementById('saveGearBtn').addEventListener('click', () => {
   upsertGearItem({
     id: editingGearId,
     nom,
+    photo: currentPhoto,
     dateAchat: document.getElementById('gearDate').value || null,
     kmInitial,
     seuilKm,

@@ -20,9 +20,14 @@
   <nav class="app-nav">
     <a href="index.html">Accueil</a>
     <a href="historique.html">Historique</a>
-    <a href="profil.html" class="active">Profil</a>
-    <a href="equipements.html">Équipements</a>
-    <a href="parametres.html">Paramètres</a>
+    <div class="nav-dropdown">
+      <button type="button" class="nav-dropdown-trigger active">Paramètres ▾</button>
+      <div class="nav-dropdown-menu">
+        <a href="parametres.html">Paramètres</a>
+        <a href="profil.html" class="active">Profil</a>
+        <a href="equipements.html">Équipements</a>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -41,10 +46,13 @@
   </section>
 
   <section class="card">
-    <h2>Objectifs de course <small>temps visé par échéance — les courses elles-mêmes se gèrent en page Accueil</small></h2>
+    <h2>Objectifs de course <small>principaux, secondaires ou envisagés</small></h2>
     <div id="objectifsRacesBox"></div>
-    <label class="field" style="margin-top:10px;">Autres courses envisagées dans l'année (nom, distance, date, statut)
-      <textarea id="profObjectifsAutres" placeholder="ex. Ti Bénare, 32 km envisagés (vs 51 km), statut à confirmer"></textarea>
+    <div class="row" style="margin-top:10px;">
+      <button class="btn small" id="addObjectifBtn" type="button">+ Ajouter un objectif</button>
+    </div>
+    <label class="field" style="margin-top:10px;">Notes libres sur d'autres pistes non encore formalisées
+      <textarea id="profObjectifsAutres" placeholder="ex. envie d'un ultra en 2027, encore flou"></textarea>
     </label>
   </section>
 
@@ -91,20 +99,61 @@
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
 
+<div class="modal-backdrop" id="objModalBackdrop">
+  <div class="modal">
+    <h3 id="objModalTitle">Ajouter un objectif</h3>
+    <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
+      <label class="field">Nom de la course
+        <input type="text" id="objName" placeholder="ex. Ti Bénare">
+      </label>
+      <label class="field">Date
+        <input type="date" id="objDate">
+      </label>
+      <label class="field">Distance (km)
+        <input type="number" id="objDistance" min="0" step="0.1">
+      </label>
+      <label class="field">Dénivelé positif (m)
+        <input type="number" id="objDenivele" min="0" step="10">
+      </label>
+      <label class="field">Statut
+        <select id="objStatut">
+          <option value="principal">Objectif principal</option>
+          <option value="secondaire">Objectif secondaire</option>
+          <option value="envisage">Objectif envisagé</option>
+        </select>
+      </label>
+      <label class="field">Temps visé (optionnel)
+        <input type="text" id="objTempsVise" placeholder="ex. 12h00">
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px;justify-content:space-between;">
+      <button class="btn danger small" id="deleteObjBtn" type="button" style="display:none;">Supprimer</button>
+      <div class="row">
+        <button class="btn" id="cancelObjBtn" type="button">Annuler</button>
+        <button class="btn primary" id="saveObjBtn" type="button">Enregistrer</button>
+      </div>
+    </div>
+    <div id="objModalMsg"></div>
+  </div>
+</div>
+
 <script>
 let records = [];
+function statutLabelText(s) { return s === 'principal' ? 'objectif principal' : (s === 'envisage' ? 'objectif envisagé' : 'objectif secondaire'); }
 
-/* --------------------------- OBJECTIFS DE COURSE (temps visé) --------------------------- */
+/* --------------------------- OBJECTIFS DE COURSE (ajout/édition/suppression + temps visé) --------------------------- */
 function renderObjectifsRaces() {
   const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
   const box = document.getElementById('objectifsRacesBox');
-  if (!races.length) { box.innerHTML = '<div class="empty">Aucune course enregistrée — ajoute-en depuis la page Accueil.</div>'; return; }
+  if (!races.length) { box.innerHTML = '<div class="empty">Aucun objectif enregistré pour l\'instant.</div>'; return; }
   box.innerHTML = races.map(r => (
     '<div class="row" style="align-items:center;">' +
-      '<div style="flex:1 1 240px;"><strong>' + escapeHtml(r.name) + '</strong> <span class="hint">(' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+, ' + (r.statut === 'principal' ? 'objectif principal' : 'objectif secondaire') + ')</span></div>' +
+      '<div style="flex:1 1 240px;"><strong>' + escapeHtml(r.name) + '</strong> <span class="hint">(' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+, ' + statutLabelText(r.statut) + ')</span></div>' +
       '<label class="field" style="flex:1 1 160px;">Temps visé<input type="text" data-race="' + r.id + '" value="' + escapeHtml(r.tempsVise || '') + '" placeholder="ex. 12h00"></label>' +
+      '<button class="btn small" data-edit-obj="' + r.id + '" type="button">Modifier</button>' +
     '</div>'
   )).join('');
+  box.querySelectorAll('[data-edit-obj]').forEach(btn => btn.addEventListener('click', () => openObjModal(btn.dataset.editObj)));
 }
 function saveObjectifsRaces() {
   document.querySelectorAll('#objectifsRacesBox [data-race]').forEach(inp => {
@@ -113,6 +162,48 @@ function saveObjectifsRaces() {
   });
 }
 
+let editingObjId = null;
+function openObjModal(id) {
+  editingObjId = id || null;
+  const race = id ? getRaces().find(r => r.id === id) : null;
+  document.getElementById('objModalTitle').textContent = race ? 'Modifier l\'objectif' : 'Ajouter un objectif';
+  document.getElementById('objName').value = race ? race.name : '';
+  document.getElementById('objDate').value = race ? race.date : '';
+  document.getElementById('objDistance').value = race ? race.distanceKm : '';
+  document.getElementById('objDenivele').value = race ? race.denivele : '';
+  document.getElementById('objStatut').value = race ? race.statut : 'envisage';
+  document.getElementById('objTempsVise').value = race ? (race.tempsVise || '') : '';
+  document.getElementById('deleteObjBtn').style.display = race ? 'inline-block' : 'none';
+  document.getElementById('objModalMsg').innerHTML = '';
+  document.getElementById('objModalBackdrop').classList.add('open');
+}
+function closeObjModal() { document.getElementById('objModalBackdrop').classList.remove('open'); editingObjId = null; }
+document.getElementById('addObjectifBtn').addEventListener('click', () => openObjModal(null));
+document.getElementById('cancelObjBtn').addEventListener('click', closeObjModal);
+document.getElementById('objModalBackdrop').addEventListener('click', e => { if (e.target.id === 'objModalBackdrop') closeObjModal(); });
+document.getElementById('saveObjBtn').addEventListener('click', () => {
+  const name = document.getElementById('objName').value.trim();
+  const date = document.getElementById('objDate').value;
+  const distanceKm = parseFloat(document.getElementById('objDistance').value);
+  const denivele = parseFloat(document.getElementById('objDenivele').value);
+  const statut = document.getElementById('objStatut').value;
+  const tempsVise = document.getElementById('objTempsVise').value.trim();
+  if (!name || !date || isNaN(distanceKm) || isNaN(denivele)) {
+    showMsg('objModalMsg', 'Merci de remplir tous les champs (nom, date, distance, dénivelé).', 'err');
+    return;
+  }
+  upsertRace({ id: editingObjId, name, date, distanceKm, denivele, statut, tempsVise });
+  closeObjModal();
+  renderObjectifsRaces();
+});
+document.getElementById('deleteObjBtn').addEventListener('click', () => {
+  if (!editingObjId) return;
+  if (!confirm('Supprimer cet objectif ?')) return;
+  deleteRace(editingObjId);
+  closeObjModal();
+  renderObjectifsRaces();
+});
+
 /* --------------------------- CHAMPS GÉNÉRIQUES (historique, physio, dispo...) --------------------------- */
 function renderFieldGroups(profile) {
   const container = document.getElementById('fieldGroups');
@@ -120,10 +211,16 @@ function renderFieldGroups(profile) {
     '<section class="card">' +
     '<h2>' + escapeHtml(group.title) + '</h2>' +
     '<div class="row">' +
-    group.fields.map(([key, label, type, placeholder]) => {
+    group.fields.map(([key, label, type, placeholder, options]) => {
       const val = escapeHtml(profile[key] || '');
       if (type === 'textarea') {
         return '<label class="field" style="flex:1 1 100%;">' + escapeHtml(label) + '<textarea data-key="' + key + '" placeholder="' + escapeHtml(placeholder) + '">' + val + '</textarea></label>';
+      }
+      if (type === 'checkboxset') {
+        const selected = (profile[key] || '').split(',').map(s => s.trim()).filter(Boolean);
+        return '<div class="field" style="flex:1 1 100%;"><span>' + escapeHtml(label) + '</span><div class="checkbox-row">' +
+          options.map(opt => '<label class="checkbox-pill"><input type="checkbox" data-key="' + key + '" value="' + escapeHtml(opt) + '"' + (selected.includes(opt) ? ' checked' : '') + '> ' + escapeHtml(opt) + '</label>').join('') +
+          '</div></div>';
       }
       return '<label class="field">' + escapeHtml(label) + '<input type="' + type + '" data-key="' + key + '" value="' + val + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
     }).join('') +
@@ -142,7 +239,16 @@ function renderFieldGroups(profile) {
 }
 function collectFieldGroupValues() {
   const values = {};
-  document.querySelectorAll('#fieldGroups [data-key]').forEach(el => { values[el.dataset.key] = el.value.trim(); });
+  document.querySelectorAll('#fieldGroups [data-key]').forEach(el => {
+    const key = el.dataset.key;
+    if (el.type === 'checkbox') {
+      if (!(key in values)) values[key] = [];
+      if (el.checked) values[key].push(el.value);
+    } else {
+      values[key] = el.value.trim();
+    }
+  });
+  Object.keys(values).forEach(k => { if (Array.isArray(values[k])) values[k] = values[k].join(', '); });
   return values;
 }
 
@@ -199,7 +305,7 @@ function buildAiSummary() {
   lines.push('');
   lines.push('## Objectifs de course');
   races.forEach(r => {
-    lines.push('- ' + (r.statut === 'principal' ? 'Objectif principal' : 'Objectif secondaire') + ' : ' + r.name + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+ — ' + fmtDate(r.date) + ' — Temps visé : ' + na(r.tempsVise));
+    lines.push('- ' + statutLabelText(r.statut).replace(/^./, c => c.toUpperCase()) + ' : ' + r.name + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+ — ' + fmtDate(r.date) + ' — Temps visé : ' + na(r.tempsVise));
   });
   lines.push('- Autres courses envisagées : ' + na(p.objectifsAutres));
   lines.push('');

@@ -40,6 +40,7 @@ const BASE_TYPES = {
 const RECORD_FIELDS = {
   253:['timestamp',null,null], 2:['altitude',5,500], 3:['heart_rate',null,null],
   4:['cadence',null,null], 5:['distance',100,0], 6:['speed',1000,0],
+  7:['power',null,null], 13:['temperature',null,null],
   73:['enhanced_speed',1000,0], 78:['enhanced_altitude',5,500],
 };
 const SESSION_FIELDS = {
@@ -47,10 +48,20 @@ const SESSION_FIELDS = {
   7:['total_elapsed_time',1000,0], 8:['total_timer_time',1000,0], 9:['total_distance',100,0],
   11:['total_calories',null,null], 14:['avg_speed',1000,0], 15:['max_speed',1000,0],
   16:['avg_heart_rate',null,null], 17:['max_heart_rate',null,null], 18:['avg_cadence',null,null],
-  19:['max_cadence',null,null], 22:['total_ascent',null,null], 23:['total_descent',null,null],
+  19:['max_cadence',null,null], 20:['avg_power',null,null], 21:['max_power',null,null],
+  22:['total_ascent',null,null], 23:['total_descent',null,null],
   124:['enhanced_avg_speed',1000,0], 125:['enhanced_max_speed',1000,0],
 };
-const FIELD_MAPS = { record:RECORD_FIELDS, session:SESSION_FIELDS };
+// Champs "lap" — mêmes numéros de champ que "session" pour le socle commun (résumé par portion),
+// à l'exception des variantes enhanced_* qui divergent selon le type de message dans le format FIT.
+const LAP_FIELDS = {
+  253:['timestamp',null,null], 2:['start_time',null,null],
+  7:['total_elapsed_time',1000,0], 8:['total_timer_time',1000,0], 9:['total_distance',100,0],
+  14:['avg_speed',1000,0], 15:['max_speed',1000,0],
+  16:['avg_heart_rate',null,null], 17:['max_heart_rate',null,null],
+  22:['total_ascent',null,null], 23:['total_descent',null,null],
+};
+const FIELD_MAPS = { record:RECORD_FIELDS, session:SESSION_FIELDS, lap:LAP_FIELDS };
 const SPORT_LABELS = { 0:'Activité générique', 1:'Course à pied', 2:'Vélo', 4:'Renforcement / fitness', 5:'Natation', 11:'Randonnée', 254:'Activité' };
 
 class FitParseError extends Error {}
@@ -146,6 +157,8 @@ function summarizeFit(messages, fileMeta) {
   let avgHr = session.avg_heart_rate;
   let maxHr = session.max_heart_rate;
   let avgCadence = session.avg_cadence;
+  let avgPower = session.avg_power;
+  let maxPower = session.max_power;
   let avgSpeed = session.enhanced_avg_speed || session.avg_speed;
   if ((distanceM == null || durationS == null) && records.length >= 2) {
     const withDist = records.filter(r => r.distance != null);
@@ -161,6 +174,12 @@ function summarizeFit(messages, fileMeta) {
     const cads = records.map(r => r.cadence).filter(v => v != null);
     if (cads.length) avgCadence = Math.round(cads.reduce((a,b)=>a+b,0)/cads.length);
   }
+  if (avgPower == null) {
+    const pows = records.map(r => r.power).filter(v => v != null);
+    if (pows.length) { avgPower = Math.round(pows.reduce((a,b)=>a+b,0)/pows.length); maxPower = maxPower ?? Math.max(...pows); }
+  }
+  const temps = records.map(r => r.temperature).filter(v => v != null);
+  const avgTemp = temps.length ? Math.round(temps.reduce((a,b)=>a+b,0)/temps.length) : null;
   if ((ascent == null || descent == null)) {
     const alts = records.map(r => r.enhanced_altitude ?? r.altitude).filter(v => v != null);
     if (alts.length >= 2) {
@@ -171,6 +190,44 @@ function summarizeFit(messages, fileMeta) {
     }
   }
   if (avgSpeed == null && distanceM != null && durationS) avgSpeed = distanceM / durationS;
+
+  // Série temporelle downsamplée pour les courbes de séance (allure/FC/altitude/cadence) —
+  // on limite à ~120 points pour rester léger en localStorage, quel que soit le nombre de records bruts.
+  const withTs = records.filter(r => r.timestamp != null);
+  let series = [];
+  if (withTs.length >= 2) {
+    const t0 = withTs[0].timestamp;
+    const maxPoints = 120;
+    const step = Math.max(1, Math.ceil(withTs.length / maxPoints));
+    for (let i = 0; i < withTs.length; i += step) {
+      const r = withTs[i];
+      const spd = r.enhanced_speed || r.speed;
+      series.push({
+        t: r.timestamp - t0,
+        distKm: r.distance != null ? r.distance / 1000 : null,
+        paceSecKm: (spd && spd > 0) ? Math.round(1000 / spd) : null,
+        hr: r.heart_rate ?? null,
+        alt: r.enhanced_altitude ?? r.altitude ?? null,
+        cadenceSpm: r.cadence != null ? Math.round(r.cadence * 2) : null,
+      });
+    }
+  }
+
+  // Splits par portion (laps) — le plus souvent un auto-lap par km sur Garmin, utile pour repérer les montées.
+  const laps = (messages.lap || []).map((l, i) => {
+    const lDist = l.total_distance;
+    const lDur = l.total_timer_time || l.total_elapsed_time;
+    const lSpeed = l.avg_speed || (lDist && lDur ? lDist / lDur : null);
+    return {
+      index: i + 1,
+      distanceKm: lDist != null ? lDist / 1000 : null,
+      durationS: lDur != null ? Math.round(lDur) : null,
+      avgPaceSecPerKm: (lSpeed && lSpeed > 0) ? Math.round(1000 / lSpeed) : null,
+      avgHr: l.avg_heart_rate ?? null,
+      ascent: l.total_ascent ?? null,
+    };
+  }).filter(l => l.distanceKm != null && l.distanceKm > 0);
+
   return {
     date: startDate.toISOString().slice(0,10),
     dateApprox,
@@ -183,6 +240,11 @@ function summarizeFit(messages, fileMeta) {
     maxHr: maxHr != null ? Math.round(maxHr) : null,
     cadenceSpm: avgCadence != null ? Math.round(avgCadence * 2) : null,
     avgPaceSecPerKm: (avgSpeed && avgSpeed > 0) ? Math.round(1000 / avgSpeed) : null,
+    avgPower: avgPower != null ? Math.round(avgPower) : null,
+    maxPower: maxPower != null ? Math.round(maxPower) : null,
+    avgTemp: avgTemp,
+    series: series,
+    laps: laps,
   };
 }
 
@@ -232,33 +294,42 @@ function upsertRace(race) {
 function deleteRace(id) { saveRaces(getRaces().filter(r => r.id !== id)); }
 
 // --- Profil traileur ---
+const WEEKDAYS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+const DAYTIMES = ['Matin','Midi','Soir'];
 // Groupes de champs affichés sur profil.html et repris dans le résumé exportable pour l'IA.
-// Chaque champ : [clé dans l'objet profil, libellé, type ('text'|'number'|'textarea'), placeholder]
+// Chaque champ : [clé dans l'objet profil, libellé, type ('text'|'number'|'textarea'|'date'|'checkboxset'), placeholder, options (pour checkboxset)]
 const PROFILE_FIELD_GROUPS = [
   { title: 'Historique sportif', fields: [
-    ['histPratiqueDepuis', 'Pratique la course à pied depuis (date / période)', 'text', 'ex. février 2026'],
-    ['histVolumeHebdo', 'Volume hebdomadaire habituel (km / D+ / nb de jours)', 'text', 'ex. ~40 km / 1000 m D+ sur 4 jours'],
-    ['histMeilleurePerf', 'Meilleure perf / référence chrono récente', 'text', 'ex. 10 km en 48 min le 12/05/2026'],
-    ['histPratiqueAnt', 'Pratique sportive antérieure (type, fréquence actuelle)', 'text', 'ex. padel, 1x/semaine'],
+    ['histPratiqueDepuis', 'Pratique la course à pied depuis', 'date', ''],
+    ['histVolumeKm', 'Volume hebdomadaire habituel (km/semaine)', 'number', ''],
+    ['histVolumeDplus', 'Volume hebdomadaire habituel (m D+/semaine)', 'number', ''],
+    ['histVolumeJours', 'Nombre de jours de course par semaine', 'number', ''],
+    ['histPerfDistanceKm', 'Meilleure perf récente — distance (km)', 'number', ''],
+    ['histPerfTemps', 'Meilleure perf récente — temps (hh:mm:ss)', 'text', 'ex. 0:48:00'],
+    ['histPerfCourse', 'Meilleure perf récente — course', 'text', ''],
+    ['histPerfDate', 'Meilleure perf récente — date', 'date', ''],
+    ['histPratiqueAntType', 'Pratique sportive antérieure (type)', 'text', 'ex. padel'],
+    ['histPratiqueAntFreq', 'Pratique sportive antérieure (fréquence, x/semaine)', 'number', ''],
   ]},
   { title: 'Données physiologiques', fields: [
     ['age', 'Âge', 'number', ''],
     ['poids', 'Poids (kg)', 'number', ''],
     ['fcMax', 'FC max (bpm)', 'number', ''],
     ['fcRepos', 'FC repos (bpm)', 'number', ''],
-    ['vma', 'VMA (km/h)', 'text', ''],
+    ['vma', 'VMA (km/h)', 'number', ''],
     ['allureSeuil', 'Allure seuil / allure spécifique trail (min/km)', 'text', ''],
   ]},
   { title: 'Disponibilités', fields: [
-    ['dispoJours', 'Jours disponibles pour courir', 'text', 'ex. lundi, mardi, jeudi, samedi'],
-    ['dispoRenfo', 'Jour(s) dédié(s) au renforcement', 'text', 'ex. jeudi'],
-    ['dispoCreneaux', 'Créneaux horaires habituels (matin/midi/soir)', 'text', ''],
-    ['dispoDureeMax', 'Durée max sortie longue le week-end', 'text', 'ex. 3h30'],
+    ['dispoJours', 'Jours disponibles pour courir', 'checkboxset', '', WEEKDAYS],
+    ['dispoRenfo', 'Jour(s) dédié(s) au renforcement', 'checkboxset', '', WEEKDAYS],
+    ['dispoCreneaux', 'Créneaux horaires habituels', 'checkboxset', '', DAYTIMES],
+    ['dispoDureeMax', 'Durée max sortie longue le week-end (minutes)', 'number', 'ex. 210 pour 3h30'],
   ]},
   { title: 'Contraintes géographiques et matérielles', fields: [
     ['geoBase', 'Lieu de vie / base actuelle', 'text', ''],
-    ['geoPeriodeUrbaine', 'Période(s) en zone urbaine / sans dénivelé', 'text', 'ex. Toulouse, fin août → mi-octobre 2026'],
-    ['geoRetour', 'Retour prévu vers le terrain d\'entraînement spécifique', 'text', ''],
+    ['geoPeriodeUrbaineDebut', 'Début période en zone urbaine / sans dénivelé', 'date', ''],
+    ['geoPeriodeUrbaineFin', 'Fin période en zone urbaine / sans dénivelé', 'date', ''],
+    ['geoRetour', 'Retour prévu vers le terrain d\'entraînement spécifique', 'date', ''],
     ['geoOptionMontagne', 'Options d\'accès au dénivelé pendant les périodes urbaines', 'text', ''],
     ['geoChaleur', 'Accès sauna / bain chaud pendant les périodes sans chaleur naturelle', 'text', ''],
     ['geoEquipement', 'Équipement possédé (bâtons, sac, GPS...)', 'textarea', ''],
@@ -266,7 +337,7 @@ const PROFILE_FIELD_GROUPS = [
   { title: 'Blessures et limitations (au-delà des points de vigilance ci-dessus)', fields: [
     ['blessureAutresZones', 'Autres zones fragiles / douleurs récurrentes', 'text', ''],
     ['blessureLimiteur', 'Limiteur principal identifié sur l\'objectif principal', 'text', 'ex. fatigue musculaire quadriceps en descente'],
-    ['blessureExcentrique', 'Fréquence actuelle de travail excentrique dédié (squats négatifs, step-downs...)', 'text', ''],
+    ['blessureExcentrique', 'Fréquence actuelle de travail excentrique dédié (x/semaine)', 'number', ''],
   ]},
   { title: 'Outils de suivi', fields: [
     ['outilsMontre', 'Montre connectée (marque, modèle)', 'text', ''],
@@ -276,11 +347,12 @@ const PROFILE_FIELD_GROUPS = [
   { title: 'Contraintes de vie', fields: [
     ['vieAssociative', 'Engagement associatif / bénévolat (charge)', 'text', ''],
     ['viePro', 'Activité professionnelle (temps, fatigue induite)', 'text', ''],
-    ['vieAutreSport', 'Autre pratique sportive régulière (fréquence)', 'text', ''],
+    ['vieAutreSportType', 'Autre pratique sportive régulière (type)', 'text', ''],
+    ['vieAutreSportFreq', 'Autre pratique sportive régulière (fréquence, x/semaine)', 'number', ''],
     ['vieFamiliale', 'Contraintes familiales / autres', 'text', ''],
   ]},
   { title: 'Nutrition course', fields: [
-    ['nutriGlucides', 'Glucides testés à l\'entraînement sur sortie longue (g/h, tolérance digestive)', 'text', ''],
+    ['nutriGlucides', 'Glucides testés à l\'entraînement sur sortie longue (g/h)', 'number', ''],
     ['nutriGout', 'Préférence gustative (salé/sucré) et lassitude connue en effort long', 'text', ''],
     ['nutriHydratation', 'Stratégie hydratation/sel actuelle (mL/h, sodium mg/h)', 'text', ''],
     ['nutriGels', 'Gels / barres / solides déjà testés et validés', 'textarea', ''],
@@ -405,6 +477,27 @@ function showMsg(elId, text, kind) {
   if (kind === 'ok') setTimeout(() => { if (el.firstChild) el.innerHTML=''; }, 5000);
 }
 function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str ?? ''; return d.innerHTML; }
+// Redimensionne une image côté navigateur avant stockage en localStorage (évite de saturer le quota avec des photos pleine taille).
+function resizeImageFile(file, maxDim) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Lecture du fichier impossible.'));
+    reader.onload = () => {
+      img.onerror = () => reject(new Error('Image invalide.'));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 function isoWeek(dateISO) {
   const d = new Date(dateISO + 'T00:00:00Z');
   const day = (d.getUTCDay() + 6) % 7;
@@ -426,6 +519,29 @@ function computePrepStatus(raceDateISO) {
   return { pct, doneKm, plannedKm };
 }
 
+// Info-bulle interactive au survol pour les graphiques SVG (remplace les <title> natifs, peu lisibles
+// et lents à apparaître). Les éléments survolables portent un attribut data-tooltip="texte".
+function initChartTooltips(container) {
+  if (!container || container.dataset.tooltipWired) return;
+  container.dataset.tooltipWired = '1';
+  let tip = document.getElementById('chartTooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'chartTooltip';
+    tip.className = 'chart-tooltip';
+    document.body.appendChild(tip);
+  }
+  container.addEventListener('mousemove', e => {
+    const target = e.target.closest('[data-tooltip]');
+    if (!target) { tip.style.display = 'none'; return; }
+    tip.textContent = target.getAttribute('data-tooltip');
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+  });
+  container.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('themeToggle');
   if (btn) btn.addEventListener('click', toggleTheme);
@@ -433,5 +549,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.storage-warning-target').forEach(el => {
       el.innerHTML = '<div class="msg err">Le stockage local du navigateur n\'est pas disponible (navigation privée ?) — les données ne seront pas conservées après fermeture de la page.</div>';
     });
+  }
+  const trigger = document.querySelector('.nav-dropdown-trigger');
+  const menu = document.querySelector('.nav-dropdown-menu');
+  if (trigger && menu) {
+    trigger.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('open'); });
+    menu.addEventListener('click', e => e.stopPropagation());
+    document.addEventListener('click', () => menu.classList.remove('open'));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.classList.remove('open'); });
   }
 });

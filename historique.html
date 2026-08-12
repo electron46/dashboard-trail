@@ -20,9 +20,14 @@
   <nav class="app-nav">
     <a href="index.html">Accueil</a>
     <a href="historique.html" class="active">Historique</a>
-    <a href="profil.html">Profil</a>
-    <a href="equipements.html">Équipements</a>
-    <a href="parametres.html">Paramètres</a>
+    <div class="nav-dropdown">
+      <button type="button" class="nav-dropdown-trigger">Paramètres ▾</button>
+      <div class="nav-dropdown-menu">
+        <a href="parametres.html">Paramètres</a>
+        <a href="profil.html">Profil</a>
+        <a href="equipements.html">Équipements</a>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -76,6 +81,7 @@
     <label class="field" style="max-width:280px;margin-top:6px;">Paire de chaussures utilisée
       <select id="gearSelect"><option value="">Non renseignée</option></select>
     </label>
+    <div class="charts-grid" id="detailChartsGrid" style="margin-top:14px;"></div>
     <div class="plan-compare" id="planCompare" style="display:none;"></div>
     <div class="ai-block">
       <div class="row">
@@ -182,10 +188,14 @@ function openDetail(id) {
     ['FC moyenne', s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible'],
     ['FC max', s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible'],
     ['Cadence', s.cadenceSpm != null ? s.cadenceSpm + ' pas/min' : 'Non disponible'],
+    ['Puissance moy.', s.avgPower != null ? s.avgPower + ' W' : 'Non disponible'],
+    ['Température moy.', s.avgTemp != null ? s.avgTemp + ' °C' : 'Non disponible'],
   ];
   document.getElementById('detailMetrics').innerHTML = metrics.map(([lbl,val]) =>
     '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val==='Non disponible'?' na':'') + '">' + val + '</div></div>'
   ).join('');
+
+  renderDetailCharts(s);
 
   const gearSelect = document.getElementById('gearSelect');
   const gear = getGear();
@@ -296,15 +306,22 @@ function lineChartSvg(title, points, opts) {
   const minY = opts.yMin ?? Math.min(...ys), maxY = opts.yMax ?? Math.max(...ys);
   const spanY = (maxY - minY) || 1;
   const spanX = (maxX - minX) || 1;
+  const midY = (minY + maxY) / 2;
   const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
   const sy = y => (h - padB) - (y - minY) / spanY * (h - padT - padB);
   const path = points.map((p,i) => (i===0?'M':'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
-  const dots = points.map(p => '<circle cx="'+sx(p.x).toFixed(1)+'" cy="'+sy(p.y).toFixed(1)+'" r="3" fill="var(--accent)"><title>'+p.label+'</title></circle>').join('');
+  const dots = points.map(p => {
+    const cx = sx(p.x).toFixed(1), cy = sy(p.y).toFixed(1);
+    return '<circle cx="'+cx+'" cy="'+cy+'" r="9" fill="transparent" data-tooltip="'+escapeHtml(p.label)+'"/>' +
+      '<circle cx="'+cx+'" cy="'+cy+'" r="3" fill="var(--accent)" style="pointer-events:none;"/>';
+  }).join('');
   const firstLabel = points[0].xLabel, lastLabel = points[points.length-1].xLabel;
   return '<div class="chart-box"><h3>' + title + '</h3><svg viewBox="0 0 '+w+' '+h+'">' +
+    '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--border)" stroke-dasharray="2,2"/>' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<text x="'+padL+'" y="'+(padT+8)+'" font-size="10" fill="var(--muted)">'+(opts.yMaxLabel ?? maxY.toFixed(opts.decimals??0))+'</text>' +
+    '<text x="'+padL+'" y="'+(sy(midY)-3).toFixed(1)+'" font-size="9" fill="var(--muted)">'+midY.toFixed(opts.decimals??0)+'</text>' +
     '<text x="'+padL+'" y="'+(h-padB)+'" font-size="10" fill="var(--muted)">'+(opts.yMinLabel ?? minY.toFixed(opts.decimals??0))+'</text>' +
     '<text x="'+padL+'" y="'+(h-4)+'" font-size="10" fill="var(--muted)">'+firstLabel+'</text>' +
     '<text x="'+(w-padR-40)+'" y="'+(h-4)+'" font-size="10" fill="var(--muted)">'+lastLabel+'</text>' +
@@ -325,7 +342,8 @@ function groupedBarChartSvg(title, weeks, series) {
       const bh = (val / maxV) * (h - padT - padB);
       const x = groupX + si * barW;
       const y = (h - padB) - bh;
-      bars += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(barW*0.85).toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+s.color+'"><title>'+s.name+' — semaine du '+wk.shortLabel+' : '+val.toFixed(1)+'</title></rect>';
+      const tip = escapeHtml(s.name + ' — ' + (wk.tooltipLabel || ('semaine du ' + wk.shortLabel)) + ' : ' + val.toFixed(1));
+      bars += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(barW*0.85).toFixed(1)+'" height="'+Math.max(bh,1).toFixed(1)+'" fill="'+s.color+'" data-tooltip="'+tip+'"/>';
     });
     if (i % Math.ceil(weeks.length/8||1) === 0) {
       bars += '<text x="'+(groupX+groupW*0.35).toFixed(1)+'" y="'+(h-10)+'" font-size="9" fill="var(--muted)" text-anchor="middle">'+wk.shortLabel+'</text>';
@@ -337,6 +355,35 @@ function groupedBarChartSvg(title, weeks, series) {
     '<text x="4" y="'+(padT+8)+'" font-size="10" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
     bars +
   '</svg></div>';
+}
+
+function renderDetailCharts(s) {
+  const grid = document.getElementById('detailChartsGrid');
+  const series = s.series || [];
+  const withDist = series.filter(p => p.distKm != null);
+  const charts = [];
+
+  const pacePts = withDist.filter(p => p.paceSecKm != null).map(p => ({ x:p.distKm, y:p.paceSecKm, label: p.distKm.toFixed(1)+' km : '+fmtPace(p.paceSecKm) }));
+  if (pacePts.length >= 2) charts.push(lineChartSvg('Allure sur la séance (par km parcouru)', pacePts, { decimals:0 }));
+
+  const hrPts = withDist.filter(p => p.hr != null).map(p => ({ x:p.distKm, y:p.hr, label: p.distKm.toFixed(1)+' km : '+p.hr+' bpm' }));
+  if (hrPts.length >= 2) charts.push(lineChartSvg('Fréquence cardiaque sur la séance (bpm)', hrPts));
+
+  const altPts = withDist.filter(p => p.alt != null).map(p => ({ x:p.distKm, y:p.alt, label: p.distKm.toFixed(1)+' km : '+Math.round(p.alt)+' m' }));
+  if (altPts.length >= 2) charts.push(lineChartSvg('Profil altimétrique de la séance (m)', altPts, { decimals:0 }));
+
+  if (s.laps && s.laps.length >= 2) {
+    const cats = s.laps.map(l => ({ shortLabel: 'Km ' + l.index, tooltipLabel: 'Km ' + l.index + (l.avgPaceSecPerKm ? ' (' + fmtPace(l.avgPaceSecPerKm) + ')' : '') }));
+    const speedSeries = [{ name:'Vitesse', color:'var(--secondary)', values: s.laps.map(l => l.avgPaceSecPerKm ? +(3600/l.avgPaceSecPerKm).toFixed(2) : 0) }];
+    charts.push(groupedBarChartSvg('Allure par kilomètre (splits, km/h — plus haut = plus rapide)', cats, speedSeries));
+  }
+
+  if (!charts.length) {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1;">Pas de courbe disponible pour cette séance (fichier importé avant la mise à jour du parseur, ou fichier .fit sans données détaillées par seconde). Réimporte le fichier .fit depuis la page Historique pour en bénéficier.</div>';
+    return;
+  }
+  grid.innerHTML = charts.join('');
+  initChartTooltips(grid);
 }
 
 function renderCharts() {
@@ -377,6 +424,7 @@ function renderCharts() {
   const kmChart = groupedBarChartSvg('Volume hebdomadaire (km) — réalisé vs planifié', weeks, kmSeries);
   const dplusChart = groupedBarChartSvg('Dénivelé positif hebdomadaire (m) — réalisé vs planifié', weeks, dplusSeries);
   grid.innerHTML = paceChart + hrChart + kmChart + dplusChart;
+  initChartTooltips(grid);
 }
 
 function refreshAll() { renderHistory(); renderCharts(); }

@@ -20,9 +20,14 @@
   <nav class="app-nav">
     <a href="index.html" class="active">Accueil</a>
     <a href="historique.html">Historique</a>
-    <a href="profil.html">Profil</a>
-    <a href="equipements.html">Équipements</a>
-    <a href="parametres.html">Paramètres</a>
+    <div class="nav-dropdown">
+      <button type="button" class="nav-dropdown-trigger">Paramètres ▾</button>
+      <div class="nav-dropdown-menu">
+        <a href="parametres.html">Paramètres</a>
+        <a href="profil.html">Profil</a>
+        <a href="equipements.html">Équipements</a>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -54,7 +59,7 @@
 <div class="modal-backdrop" id="raceModalBackdrop">
   <div class="modal">
     <h3 id="raceModalTitle">Ajouter une course</h3>
-    <div class="row" style="flex-direction:column;align-items:stretch;">
+    <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
       <label class="field">Nom de la course
         <input type="text" id="raceName" placeholder="ex. Trail des Cascades">
       </label>
@@ -71,6 +76,7 @@
         <select id="raceStatut">
           <option value="principal">Objectif principal</option>
           <option value="secondaire">Objectif secondaire</option>
+          <option value="envisage">Objectif envisagé</option>
         </select>
       </label>
       <label class="field">Temps visé (optionnel)
@@ -89,7 +95,7 @@
 </div>
 
 <script>
-function statutLabel(s) { return s === 'principal' ? 'Objectif principal' : 'Objectif secondaire'; }
+function statutLabel(s) { return s === 'principal' ? 'Objectif principal' : (s === 'envisage' ? 'Objectif envisagé' : 'Objectif secondaire'); }
 
 function renderRaces() {
   const today = new Date().toISOString().slice(0,10);
@@ -152,12 +158,17 @@ function renderTimeline() {
   const markers = races.map(r => {
     const x = pos(r.date);
     const isPrincipal = r.statut === 'principal';
-    const color = isPrincipal ? 'var(--accent)' : 'var(--secondary)';
+    const isEnvisage = r.statut === 'envisage';
+    const color = isPrincipal ? 'var(--accent)' : (isEnvisage ? 'var(--muted)' : 'var(--secondary)');
     const dy = isPrincipal ? -14 : 14;
-    return '<g>' +
-      '<line x1="'+x.toFixed(1)+'" y1="'+y+'" x2="'+x.toFixed(1)+'" y2="'+(y+dy).toFixed(1)+'" stroke="'+color+'" stroke-width="2"/>' +
-      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="5" fill="'+color+'"><title>'+escapeHtml(r.name)+' — '+fmtDate(r.date)+'</title></circle>' +
-      '<text x="'+x.toFixed(1)+'" y="'+(y+dy+(isPrincipal?-8:16)).toFixed(1)+'" font-size="10" fill="var(--text)" text-anchor="middle">'+escapeHtml(r.name)+'</text>' +
+    const dash = isEnvisage ? ' stroke-dasharray="2,2"' : '';
+    // Évite que le nom de la course soit tronqué près des bords du cadre (ancrage du texte adapté à la position).
+    const anchor = x < 55 ? 'start' : (x > w - 55 ? 'end' : 'middle');
+    return '<g' + (isEnvisage ? ' opacity="0.7"' : '') + '>' +
+      '<line x1="'+x.toFixed(1)+'" y1="'+y+'" x2="'+x.toFixed(1)+'" y2="'+(y+dy).toFixed(1)+'" stroke="'+color+'" stroke-width="2"'+dash+'/>' +
+      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="10" fill="transparent" data-tooltip="'+escapeHtml(r.name+' — '+fmtDate(r.date))+'"/>' +
+      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="5" fill="'+color+'" style="pointer-events:none;"/>' +
+      '<text x="'+x.toFixed(1)+'" y="'+(y+dy+(isPrincipal?-8:16)).toFixed(1)+'" font-size="10" fill="var(--text)" text-anchor="'+anchor+'">'+escapeHtml(r.name)+'</text>' +
     '</g>';
   }).join('');
   box.innerHTML = '<div class="chart-box"><svg viewBox="0 0 '+w+' '+h+'">' +
@@ -166,6 +177,7 @@ function renderTimeline() {
     '<text x="'+todayX.toFixed(1)+'" y="'+(y+38)+'" font-size="9" fill="var(--danger)" text-anchor="middle">aujourd\'hui</text>' +
     markers +
   '</svg></div>';
+  initChartTooltips(box);
 }
 
 function renderSummary() {

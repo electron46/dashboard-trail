@@ -30,6 +30,16 @@ nav.app-nav{max-width:1100px;margin:10px auto 0;display:flex;gap:4px;flex-wrap:w
 nav.app-nav a{font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-decoration:none;padding:7px 11px;border-radius:var(--radius-md);border:1px solid transparent;}
 nav.app-nav a:hover{color:var(--text);background:var(--bg);}
 nav.app-nav a.active{color:var(--text);border-color:var(--border);background:var(--bg);font-weight:600;}
+
+.nav-dropdown{position:relative;}
+.nav-dropdown-trigger{font:inherit;font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:none;border:1px solid transparent;padding:7px 11px;border-radius:var(--radius-md);cursor:pointer;}
+.nav-dropdown-trigger:hover{color:var(--text);background:var(--bg);}
+.nav-dropdown-trigger.active{color:var(--text);border-color:var(--border);background:var(--bg);font-weight:600;}
+.nav-dropdown-menu{position:absolute;top:100%;left:0;margin-top:4px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow);display:none;flex-direction:column;min-width:170px;z-index:30;overflow:hidden;}
+.nav-dropdown-menu.open{display:flex;}
+.nav-dropdown-menu a{font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text);text-decoration:none;padding:10px 12px;}
+.nav-dropdown-menu a:hover{background:var(--bg);}
+.nav-dropdown-menu a.active{font-weight:600;background:var(--bg);}
 #themeToggle{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:var(--radius-pill);padding:6px 12px;font-family:var(--font-mono);font-size:.75rem;cursor:pointer;}
 #themeToggle:hover{background:var(--bg);}
 
@@ -42,9 +52,11 @@ section.card h2 small{font-family:var(--font-mono);color:var(--muted);font-weigh
 .race-chip{border-radius:var(--radius-md);padding:12px 14px;flex:1 1 240px;border:1px solid var(--border);position:relative;}
 .race-chip.principal{background:var(--text);border-color:var(--text);color:var(--bg);}
 .race-chip.secondaire{background:var(--panel);border-color:var(--border);color:var(--text);}
+.race-chip.envisage{background:var(--panel);border-color:var(--border);border-style:dashed;color:var(--muted);}
 .race-chip .tag{font-family:var(--font-mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;font-weight:500;}
 .race-chip.principal .tag{color:var(--muted-2);}
 .race-chip.secondaire .tag{color:var(--muted);}
+.race-chip.envisage .tag{color:var(--muted);}
 .race-chip h3{margin:4px 0 2px;font-size:1rem;font-weight:600;}
 .race-chip small{font-family:var(--font-mono);color:inherit;opacity:.85;}
 .race-chip strong{font-family:var(--font-mono);font-weight:600;}
@@ -101,6 +113,10 @@ tr.session-row:hover{background:var(--bg);}
 .chart-box h3{margin:0 0 6px;font-size:.88rem;color:var(--muted);font-weight:600;}
 .chart-box svg{width:100%;height:auto;display:block;}
 .chart-box svg text{font-family:var(--font-mono);}
+.chart-box svg [data-tooltip]{cursor:crosshair;}
+.chart-box svg circle[data-tooltip]:hover{r:5;opacity:.85;}
+.chart-box svg rect[data-tooltip]:hover{opacity:.75;}
+.chart-tooltip{position:fixed;display:none;pointer-events:none;background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:.72rem;padding:5px 9px;border-radius:6px;z-index:200;white-space:nowrap;box-shadow:var(--shadow);}
 .empty{color:var(--muted);font-size:.85rem;padding:14px;text-align:center;}
 
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0;}
@@ -138,7 +154,24 @@ footer.app{max-width:1100px;margin:0 auto;padding:20px;color:var(--muted);font-s
 .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;max-width:480px;width:100%;box-shadow:var(--shadow);}
 .modal.wide{max-width:720px;position:relative;}
 .modal h3{margin:0 0 12px;}
+/* .field a flex:1 1 160px pensé pour une rangée horizontale : dans une rangée en colonne,
+   ce flex-basis s'appliquerait à la hauteur et créerait un espacement énorme entre champs. */
+.modal-form .field{flex:none;}
 .records-table input{padding:6px 8px;font-size:.82rem;}
+
+/* Onglets internes (ex. page Paramètres) */
+.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:0;}
+.tabs button{font:inherit;font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:none;border:1px solid transparent;border-bottom:2px solid transparent;padding:9px 12px;cursor:pointer;margin-bottom:-1px;}
+.tabs button:hover{color:var(--text);}
+.tabs button.active{color:var(--text);border-bottom-color:var(--text);font-weight:600;}
+.tab-panel{display:none;flex-direction:column;gap:18px;}
+.tab-panel.active{display:flex;}
+
+/* Cases à cocher en pilules (jours, créneaux...) */
+.checkbox-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+.checkbox-pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:var(--radius-pill);padding:5px 11px;font-size:.8rem;cursor:pointer;background:var(--panel);}
+.checkbox-pill input{width:auto;accent-color:var(--accent);}
+.checkbox-pill:has(input:checked){background:var(--bg);border-color:var(--muted-2);font-weight:600;}
 
 /* Bandeau d'alerte (ex. usure chaussures) */
 .alert-banner{border-radius:var(--radius-md);padding:10px 14px;font-size:.85rem;margin-bottom:12px;border:1px solid transparent;}
@@ -161,6 +194,9 @@ footer.app{max-width:1100px;margin:0 auto;padding:20px;color:var(--muted);font-s
     z-index:20;
   }
   header.app nav.app-nav a{flex:1 1 0;text-align:center;padding:8px 2px;font-size:.66rem;}
+  header.app nav.app-nav .nav-dropdown{flex:1 1 0;}
+  header.app nav.app-nav .nav-dropdown-trigger{width:100%;text-align:center;padding:8px 2px;font-size:.66rem;}
+  header.app nav.app-nav .nav-dropdown-menu{top:auto;bottom:100%;left:50%;transform:translateX(-50%);margin-top:0;margin-bottom:6px;}
   main{padding-bottom:70px;}
   footer.app{padding-bottom:70px;}
 }
