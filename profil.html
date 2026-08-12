@@ -41,12 +41,22 @@
   </section>
 
   <section class="card">
+    <h2>Objectifs de course <small>temps visé par échéance — les courses elles-mêmes se gèrent en page Accueil</small></h2>
+    <div id="objectifsRacesBox"></div>
+    <label class="field" style="margin-top:10px;">Autres courses envisagées dans l'année (nom, distance, date, statut)
+      <textarea id="profObjectifsAutres" placeholder="ex. Ti Bénare, 32 km envisagés (vs 51 km), statut à confirmer"></textarea>
+    </label>
+  </section>
+
+  <section class="card">
     <h2>Points de vigilance santé <small>utilisés automatiquement par le retour IA en page Historique</small></h2>
     <p class="hint">Ex. blessures passées, fragilités à surveiller (entorses, tendinites...), consignes de renforcement/proprioception. Laisse vide si rien à signaler.</p>
     <label class="field">
       <textarea id="profSante" placeholder="ex. Entorse de cheville fin 2025 : travail systematique de proprioception et renforcement excentrique des mollets a surveiller, en particulier sur les sorties techniques ou en descente."></textarea>
     </label>
   </section>
+
+  <div id="fieldGroups"></div>
 
   <section class="card">
     <h2>Records personnels</h2>
@@ -66,6 +76,17 @@
     <div id="profileMsg"></div>
   </section>
 
+  <section class="card">
+    <h2>Résumé pour l'IA <small>à coller dans une conversation Claude pour construire un plan d'entraînement complet</small></h2>
+    <p class="hint">Génère un texte structuré à partir de tout ce que tu as renseigné ci-dessus (les champs laissés vides apparaissent comme "non renseigné"). Enregistre d'abord le profil, puis génère et copie le résumé.</p>
+    <div class="row">
+      <button class="btn" id="genSummaryBtn" type="button">Générer le résumé</button>
+      <button class="btn" id="copySummaryBtn" type="button">Copier le texte</button>
+    </div>
+    <textarea id="summaryOutput" readonly style="min-height:260px;font-size:.75rem;margin-top:10px;"></textarea>
+    <div id="summaryMsg"></div>
+  </section>
+
 </main>
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
@@ -73,6 +94,59 @@
 <script>
 let records = [];
 
+/* --------------------------- OBJECTIFS DE COURSE (temps visé) --------------------------- */
+function renderObjectifsRaces() {
+  const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
+  const box = document.getElementById('objectifsRacesBox');
+  if (!races.length) { box.innerHTML = '<div class="empty">Aucune course enregistrée — ajoute-en depuis la page Accueil.</div>'; return; }
+  box.innerHTML = races.map(r => (
+    '<div class="row" style="align-items:center;">' +
+      '<div style="flex:1 1 240px;"><strong>' + escapeHtml(r.name) + '</strong> <span class="hint">(' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+, ' + (r.statut === 'principal' ? 'objectif principal' : 'objectif secondaire') + ')</span></div>' +
+      '<label class="field" style="flex:1 1 160px;">Temps visé<input type="text" data-race="' + r.id + '" value="' + escapeHtml(r.tempsVise || '') + '" placeholder="ex. 12h00"></label>' +
+    '</div>'
+  )).join('');
+}
+function saveObjectifsRaces() {
+  document.querySelectorAll('#objectifsRacesBox [data-race]').forEach(inp => {
+    const race = getRaces().find(r => r.id === inp.dataset.race);
+    if (race) upsertRace(Object.assign({}, race, { tempsVise: inp.value.trim() }));
+  });
+}
+
+/* --------------------------- CHAMPS GÉNÉRIQUES (historique, physio, dispo...) --------------------------- */
+function renderFieldGroups(profile) {
+  const container = document.getElementById('fieldGroups');
+  container.innerHTML = PROFILE_FIELD_GROUPS.map(group => (
+    '<section class="card">' +
+    '<h2>' + escapeHtml(group.title) + '</h2>' +
+    '<div class="row">' +
+    group.fields.map(([key, label, type, placeholder]) => {
+      const val = escapeHtml(profile[key] || '');
+      if (type === 'textarea') {
+        return '<label class="field" style="flex:1 1 100%;">' + escapeHtml(label) + '<textarea data-key="' + key + '" placeholder="' + escapeHtml(placeholder) + '">' + val + '</textarea></label>';
+      }
+      return '<label class="field">' + escapeHtml(label) + '<input type="' + type + '" data-key="' + key + '" value="' + val + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
+    }).join('') +
+    '</div>' +
+    (group.title === 'Données physiologiques' ? '<div class="hint" id="karvonenHint"></div>' : '') +
+    '</section>'
+  )).join('');
+  const fcMaxInput = container.querySelector('[data-key="fcMax"]');
+  const fcReposInput = container.querySelector('[data-key="fcRepos"]');
+  function updateKarvonen() {
+    const z = karvonenZ2(parseFloat(fcMaxInput.value), parseFloat(fcReposInput.value));
+    const hint = document.getElementById('karvonenHint');
+    hint.textContent = z ? ('Zone Z2 estimée (Karvonen 60-70 %, indicatif) : ' + z.low + '–' + z.high + ' bpm') : '';
+  }
+  if (fcMaxInput && fcReposInput) { fcMaxInput.addEventListener('input', updateKarvonen); fcReposInput.addEventListener('input', updateKarvonen); updateKarvonen(); }
+}
+function collectFieldGroupValues() {
+  const values = {};
+  document.querySelectorAll('#fieldGroups [data-key]').forEach(el => { values[el.dataset.key] = el.value.trim(); });
+  return values;
+}
+
+/* --------------------------- RECORDS PERSONNELS --------------------------- */
 function renderRecords() {
   const body = document.getElementById('recordsBody');
   if (!records.length) { body.innerHTML = '<tr><td colspan="5" class="sans" style="color:var(--muted);">Aucun record enregistré.</td></tr>'; return; }
@@ -93,21 +167,74 @@ function renderRecords() {
     renderRecords();
   }));
 }
-
 document.getElementById('addRecordBtn').addEventListener('click', () => {
   records.push({ label:'', temps:'', course:'', date:'' });
   renderRecords();
 });
 
+/* --------------------------- ENREGISTREMENT --------------------------- */
 document.getElementById('saveProfileBtn').addEventListener('click', () => {
-  const profile = {
-    nom: document.getElementById('profNom').value.trim(),
-    naissance: document.getElementById('profNaissance').value,
-    sante: document.getElementById('profSante').value.trim(),
-    records: records.filter(r => r.label || r.temps || r.course || r.date),
-  };
+  const profile = Object.assign(
+    {
+      nom: document.getElementById('profNom').value.trim(),
+      naissance: document.getElementById('profNaissance').value,
+      sante: document.getElementById('profSante').value.trim(),
+      objectifsAutres: document.getElementById('profObjectifsAutres').value.trim(),
+      records: records.filter(r => r.label || r.temps || r.course || r.date),
+    },
+    collectFieldGroupValues()
+  );
   saveProfile(profile);
+  saveObjectifsRaces();
   showMsg('profileMsg', 'Profil enregistré.', 'ok');
+});
+
+/* --------------------------- RÉSUMÉ POUR L'IA --------------------------- */
+function buildAiSummary() {
+  const p = getProfile();
+  const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
+  const na = v => (v && String(v).trim()) ? v : 'non renseigné';
+  const lines = [];
+  lines.push('PROFIL TRAILEUR — ' + (p.nom || 'Nico'));
+  lines.push('');
+  lines.push('## Objectifs de course');
+  races.forEach(r => {
+    lines.push('- ' + (r.statut === 'principal' ? 'Objectif principal' : 'Objectif secondaire') + ' : ' + r.name + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+ — ' + fmtDate(r.date) + ' — Temps visé : ' + na(r.tempsVise));
+  });
+  lines.push('- Autres courses envisagées : ' + na(p.objectifsAutres));
+  lines.push('');
+  PROFILE_FIELD_GROUPS.forEach(group => {
+    lines.push('## ' + group.title);
+    group.fields.forEach(([key, label]) => { lines.push('- ' + label + ' : ' + na(p[key])); });
+    lines.push('');
+  });
+  const z = karvonenZ2(parseFloat(p.fcMax), parseFloat(p.fcRepos));
+  if (z) lines.push('- Zone Z2 estimée (Karvonen 60-70 %, indicatif) : ' + z.low + '–' + z.high + ' bpm');
+  lines.push('## Points de vigilance santé');
+  lines.push(na(p.sante));
+  lines.push('');
+  lines.push('## Records personnels');
+  if (p.records && p.records.length) {
+    p.records.forEach(r => lines.push('- ' + na(r.label) + ' : ' + na(r.temps) + (r.course ? (' (' + r.course + (r.date ? ', ' + fmtDate(r.date) : '') + ')') : '')));
+  } else {
+    lines.push('non renseigné');
+  }
+  return lines.join('\n');
+}
+document.getElementById('genSummaryBtn').addEventListener('click', () => {
+  document.getElementById('summaryOutput').value = buildAiSummary();
+  showMsg('summaryMsg', 'Résumé généré ci-dessous — pense à l\'enregistrer via "Enregistrer le profil" avant si tu viens de modifier des champs.', 'info');
+});
+document.getElementById('copySummaryBtn').addEventListener('click', async () => {
+  const text = document.getElementById('summaryOutput').value;
+  if (!text) { showMsg('summaryMsg', 'Génère d\'abord le résumé.', 'err'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    showMsg('summaryMsg', 'Texte copié dans le presse-papiers.', 'ok');
+  } catch (e) {
+    document.getElementById('summaryOutput').select();
+    showMsg('summaryMsg', 'Copie automatique indisponible — le texte est sélectionné, utilise Ctrl+C (ou Cmd+C).', 'info');
+  }
 });
 
 (function init() {
@@ -115,8 +242,11 @@ document.getElementById('saveProfileBtn').addEventListener('click', () => {
   document.getElementById('profNom').value = p.nom || '';
   document.getElementById('profNaissance').value = p.naissance || '';
   document.getElementById('profSante').value = p.sante || '';
+  document.getElementById('profObjectifsAutres').value = p.objectifsAutres || '';
   records = (p.records || []).slice();
   renderRecords();
+  renderObjectifsRaces();
+  renderFieldGroups(p);
 })();
 </script>
 </body>

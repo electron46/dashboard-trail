@@ -232,9 +232,72 @@ function upsertRace(race) {
 function deleteRace(id) { saveRaces(getRaces().filter(r => r.id !== id)); }
 
 // --- Profil traileur ---
-const DEFAULT_PROFILE = { nom:'', naissance:'', sante:'', records:[] };
+// Groupes de champs affichés sur profil.html et repris dans le résumé exportable pour l'IA.
+// Chaque champ : [clé dans l'objet profil, libellé, type ('text'|'number'|'textarea'), placeholder]
+const PROFILE_FIELD_GROUPS = [
+  { title: 'Historique sportif', fields: [
+    ['histPratiqueDepuis', 'Pratique la course à pied depuis (date / période)', 'text', 'ex. février 2026'],
+    ['histVolumeHebdo', 'Volume hebdomadaire habituel (km / D+ / nb de jours)', 'text', 'ex. ~40 km / 1000 m D+ sur 4 jours'],
+    ['histMeilleurePerf', 'Meilleure perf / référence chrono récente', 'text', 'ex. 10 km en 48 min le 12/05/2026'],
+    ['histPratiqueAnt', 'Pratique sportive antérieure (type, fréquence actuelle)', 'text', 'ex. padel, 1x/semaine'],
+  ]},
+  { title: 'Données physiologiques', fields: [
+    ['age', 'Âge', 'number', ''],
+    ['poids', 'Poids (kg)', 'number', ''],
+    ['fcMax', 'FC max (bpm)', 'number', ''],
+    ['fcRepos', 'FC repos (bpm)', 'number', ''],
+    ['vma', 'VMA (km/h)', 'text', ''],
+    ['allureSeuil', 'Allure seuil / allure spécifique trail (min/km)', 'text', ''],
+  ]},
+  { title: 'Disponibilités', fields: [
+    ['dispoJours', 'Jours disponibles pour courir', 'text', 'ex. lundi, mardi, jeudi, samedi'],
+    ['dispoRenfo', 'Jour(s) dédié(s) au renforcement', 'text', 'ex. jeudi'],
+    ['dispoCreneaux', 'Créneaux horaires habituels (matin/midi/soir)', 'text', ''],
+    ['dispoDureeMax', 'Durée max sortie longue le week-end', 'text', 'ex. 3h30'],
+  ]},
+  { title: 'Contraintes géographiques et matérielles', fields: [
+    ['geoBase', 'Lieu de vie / base actuelle', 'text', ''],
+    ['geoPeriodeUrbaine', 'Période(s) en zone urbaine / sans dénivelé', 'text', 'ex. Toulouse, fin août → mi-octobre 2026'],
+    ['geoRetour', 'Retour prévu vers le terrain d\'entraînement spécifique', 'text', ''],
+    ['geoOptionMontagne', 'Options d\'accès au dénivelé pendant les périodes urbaines', 'text', ''],
+    ['geoChaleur', 'Accès sauna / bain chaud pendant les périodes sans chaleur naturelle', 'text', ''],
+    ['geoEquipement', 'Équipement possédé (bâtons, sac, GPS...)', 'textarea', ''],
+  ]},
+  { title: 'Blessures et limitations (au-delà des points de vigilance ci-dessus)', fields: [
+    ['blessureAutresZones', 'Autres zones fragiles / douleurs récurrentes', 'text', ''],
+    ['blessureLimiteur', 'Limiteur principal identifié sur l\'objectif principal', 'text', 'ex. fatigue musculaire quadriceps en descente'],
+    ['blessureExcentrique', 'Fréquence actuelle de travail excentrique dédié (squats négatifs, step-downs...)', 'text', ''],
+  ]},
+  { title: 'Outils de suivi', fields: [
+    ['outilsMontre', 'Montre connectée (marque, modèle)', 'text', ''],
+    ['outilsPlateforme', 'Plateformes utilisées (Garmin Connect, Strava, Intervals.icu...)', 'text', ''],
+    ['outilsDashboards', 'Autres dashboards ou outils de suivi existants', 'textarea', ''],
+  ]},
+  { title: 'Contraintes de vie', fields: [
+    ['vieAssociative', 'Engagement associatif / bénévolat (charge)', 'text', ''],
+    ['viePro', 'Activité professionnelle (temps, fatigue induite)', 'text', ''],
+    ['vieAutreSport', 'Autre pratique sportive régulière (fréquence)', 'text', ''],
+    ['vieFamiliale', 'Contraintes familiales / autres', 'text', ''],
+  ]},
+  { title: 'Nutrition course', fields: [
+    ['nutriGlucides', 'Glucides testés à l\'entraînement sur sortie longue (g/h, tolérance digestive)', 'text', ''],
+    ['nutriGout', 'Préférence gustative (salé/sucré) et lassitude connue en effort long', 'text', ''],
+    ['nutriHydratation', 'Stratégie hydratation/sel actuelle (mL/h, sodium mg/h)', 'text', ''],
+    ['nutriGels', 'Gels / barres / solides déjà testés et validés', 'textarea', ''],
+  ]},
+];
+const DEFAULT_PROFILE = Object.assign(
+  { nom:'', naissance:'', sante:'', records:[], objectifsAutres:'' },
+  ...PROFILE_FIELD_GROUPS.flatMap(g => g.fields.map(([key]) => ({ [key]: '' })))
+);
 function getProfile() { try { const raw = localStorage.getItem(PROFILE_KEY); return raw ? Object.assign({}, DEFAULT_PROFILE, JSON.parse(raw)) : Object.assign({}, DEFAULT_PROFILE); } catch (e) { return Object.assign({}, DEFAULT_PROFILE); } }
 function saveProfile(profile) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); return true; } catch (e) { return false; } }
+// Zone Z2 indicative (méthode Karvonen, 60-70% de réserve cardiaque) — repère, pas une prescription médicale.
+function karvonenZ2(fcMax, fcRepos) {
+  if (!fcMax || !fcRepos) return null;
+  const reserve = fcMax - fcRepos;
+  return { low: Math.round(fcRepos + reserve * 0.6), high: Math.round(fcRepos + reserve * 0.7) };
+}
 
 // --- Équipements (chaussures) ---
 function getGear() { try { return JSON.parse(localStorage.getItem(GEAR_KEY) || '[]'); } catch (e) { return []; } }

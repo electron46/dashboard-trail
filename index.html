@@ -73,6 +73,9 @@
           <option value="secondaire">Objectif secondaire</option>
         </select>
       </label>
+      <label class="field">Temps visé (optionnel)
+        <input type="text" id="raceTempsVise" placeholder="ex. 12h00">
+      </label>
     </div>
     <div class="row" style="margin-top:14px;justify-content:space-between;">
       <button class="btn danger small" id="deleteRaceBtn" type="button" style="display:none;">Supprimer cette course</button>
@@ -110,6 +113,7 @@ function renderRaces() {
       '<h3>' + escapeHtml(r.name) + '</h3>' +
       '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+' + (ratio ? ' (' + ratio + ' m/km)' : '') + '</small><br>' +
       '<strong>' + (days >= 0 ? ('J-' + days + ' jours') : 'passée') + '</strong>' +
+      (r.tempsVise ? ' <small>— visé ' + escapeHtml(r.tempsVise) + '</small>' : '') +
       prepHtml +
     '</div>';
   }).join('');
@@ -194,6 +198,7 @@ function openRaceModal(id) {
   document.getElementById('raceDistance').value = race ? race.distanceKm : '';
   document.getElementById('raceDenivele').value = race ? race.denivele : '';
   document.getElementById('raceStatut').value = race ? race.statut : 'secondaire';
+  document.getElementById('raceTempsVise').value = race ? (race.tempsVise || '') : '';
   document.getElementById('deleteRaceBtn').style.display = race ? 'inline-block' : 'none';
   document.getElementById('raceModalMsg').innerHTML = '';
   document.getElementById('raceModalBackdrop').classList.add('open');
@@ -209,11 +214,12 @@ document.getElementById('saveRaceBtn').addEventListener('click', () => {
   const distanceKm = parseFloat(document.getElementById('raceDistance').value);
   const denivele = parseFloat(document.getElementById('raceDenivele').value);
   const statut = document.getElementById('raceStatut').value;
+  const tempsVise = document.getElementById('raceTempsVise').value.trim();
   if (!name || !date || isNaN(distanceKm) || isNaN(denivele)) {
     showMsg('raceModalMsg', 'Merci de remplir tous les champs (nom, date, distance, dénivelé).', 'err');
     return;
   }
-  upsertRace({ id: editingRaceId, name, date, distanceKm, denivele, statut });
+  upsertRace({ id: editingRaceId, name, date, distanceKm, denivele, statut, tempsVise });
   closeRaceModal();
   renderRaces();
   renderTimeline();
