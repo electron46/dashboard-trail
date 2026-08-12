@@ -279,6 +279,7 @@ function parsePlanCsv(text) {
   if (!lines.length) return [];
   const header = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
   const idx = {
+    bloc: header.findIndex(h => h.includes('bloc')),
     jour: header.findIndex(h => h.includes('jour')),
     type: header.findIndex(h => h.includes('type')),
     distance: header.findIndex(h => h.includes('distance')),
@@ -295,6 +296,7 @@ function parsePlanCsv(text) {
     const dateISO = PLAN_YEAR + '-' + m[2] + '-' + m[1];
     out.push({
       date: dateISO,
+      bloc: (cols[idx.bloc] || '').trim(),
       type: (cols[idx.type] || '').trim(),
       distanceKm: parseFloat(cols[idx.distance]) || 0,
       deniveleM: parseFloat(cols[idx.denivele]) || 0,
@@ -303,6 +305,19 @@ function parsePlanCsv(text) {
     });
   }
   return out;
+}
+// Bloc du plan en cours (colonne "Bloc" du CSV) : dernière entrée dont la date <= aujourd'hui.
+function getCurrentBloc() {
+  const plan = getPlan();
+  if (!plan || !plan.length) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const past = plan.filter(p => p.date <= today && p.bloc).sort((a,b) => b.date.localeCompare(a.date));
+  return past.length ? past[0].bloc : null;
+}
+// Ratio dénivelé positif / distance (m par km) — repère de technicité d'une séance ou d'une course.
+function ratioDplusKm(ascentM, distanceKm) {
+  if (ascentM == null || !distanceKm) return null;
+  return Math.round(ascentM / distanceKm);
 }
 
 /* --------------------------- 5) FORMATAGE --------------------------- */

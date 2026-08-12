@@ -29,11 +29,17 @@
 <main>
 
   <section class="card">
+    <div id="gearAlertBox"></div>
     <h2>Échéances</h2>
     <div class="races" id="racesBox"></div>
     <div class="row" style="margin-top:12px;">
       <button class="btn" id="addRaceBtn" type="button">+ Ajouter une course</button>
     </div>
+  </section>
+
+  <section class="card">
+    <h2>Saison en un coup d'œil</h2>
+    <div id="timelineBox"></div>
   </section>
 
   <section class="card">
@@ -97,16 +103,65 @@ function renderRaces() {
           '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pct) + '%"></div></div></div>'
         : '<div class="prep" style="opacity:.75;">Importe un plan (page Paramètres) pour suivre l\'état de préparation.</div>';
     }
+    const ratio = ratioDplusKm(r.denivele, r.distanceKm);
     return '<div class="race-chip ' + r.statut + '" data-id="' + r.id + '">' +
       '<button class="edit-btn" data-edit="' + r.id + '" title="Modifier">✎</button>' +
       '<span class="tag">' + statutLabel(r.statut) + '</span>' +
       '<h3>' + escapeHtml(r.name) + '</h3>' +
-      '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small><br>' +
-      '<strong>' + (days >= 0 ? ('J-' + days) : 'passée') + '</strong>' +
+      '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+' + (ratio ? ' (' + ratio + ' m/km)' : '') + '</small><br>' +
+      '<strong>' + (days >= 0 ? ('J-' + days + ' jours') : 'passée') + '</strong>' +
       prepHtml +
     '</div>';
   }).join('');
   box.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openRaceModal(btn.dataset.edit)));
+}
+
+function renderGearAlert() {
+  const box = document.getElementById('gearAlertBox');
+  const alerts = getGear().filter(g => g.actif !== false).map(g => {
+    const km = (g.kmInitial || 0) + gearKmFromSessions(g.id);
+    const seuil = g.seuilKm || 700;
+    return { nom: g.nom, pct: Math.round((km / seuil) * 100) };
+  }).filter(a => a.pct >= 80).sort((a,b) => b.pct - a.pct);
+  if (!alerts.length) { box.innerHTML = ''; return; }
+  const worst = alerts[0];
+  const cls = worst.pct >= 100 ? 'danger' : 'warn';
+  const msg = alerts.map(a => escapeHtml(a.nom) + ' (' + a.pct + '%)').join(', ');
+  box.innerHTML = '<div class="alert-banner ' + cls + '">⚠ Usure chaussures à surveiller : ' + msg + ' — <a href="equipements.html">voir la page Équipements</a></div>';
+}
+
+function renderTimeline() {
+  const box = document.getElementById('timelineBox');
+  const races = getRaces();
+  if (!races.length) { box.innerHTML = '<div class="empty">Ajoute une course pour voir la frise de la saison.</div>'; return; }
+  const today = new Date();
+  const todayISO = today.toISOString().slice(0,10);
+  const dates = races.map(r => r.date).concat([todayISO]);
+  const minDate = new Date(dates.reduce((a,b) => a < b ? a : b));
+  const maxDate = new Date(dates.reduce((a,b) => a > b ? a : b));
+  minDate.setDate(minDate.getDate() - 7);
+  maxDate.setDate(maxDate.getDate() + 7);
+  const span = maxDate - minDate || 1;
+  const w = 640, h = 90, padL = 10, padR = 10, y = 46;
+  const pos = d => padL + (new Date(d) - minDate) / span * (w - padL - padR);
+  const todayX = pos(todayISO);
+  const markers = races.map(r => {
+    const x = pos(r.date);
+    const isPrincipal = r.statut === 'principal';
+    const color = isPrincipal ? 'var(--accent)' : 'var(--secondary)';
+    const dy = isPrincipal ? -14 : 14;
+    return '<g>' +
+      '<line x1="'+x.toFixed(1)+'" y1="'+y+'" x2="'+x.toFixed(1)+'" y2="'+(y+dy).toFixed(1)+'" stroke="'+color+'" stroke-width="2"/>' +
+      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="5" fill="'+color+'"><title>'+escapeHtml(r.name)+' — '+fmtDate(r.date)+'</title></circle>' +
+      '<text x="'+x.toFixed(1)+'" y="'+(y+dy+(isPrincipal?-8:16)).toFixed(1)+'" font-size="10" fill="var(--text)" text-anchor="middle">'+escapeHtml(r.name)+'</text>' +
+    '</g>';
+  }).join('');
+  box.innerHTML = '<div class="chart-box"><svg viewBox="0 0 '+w+' '+h+'">' +
+    '<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="2"/>' +
+    '<line x1="'+todayX.toFixed(1)+'" y1="'+(y-26)+'" x2="'+todayX.toFixed(1)+'" y2="'+(y+26)+'" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="3,3"/>' +
+    '<text x="'+todayX.toFixed(1)+'" y="'+(y+38)+'" font-size="9" fill="var(--danger)" text-anchor="middle">aujourd\'hui</text>' +
+    markers +
+  '</svg></div>';
 }
 
 function renderSummary() {
@@ -118,11 +173,13 @@ function renderSummary() {
   const last = sessions[sessions.length-1];
   const plan = getPlan();
   const nextPlanned = plan ? plan.filter(p => p.date >= today).sort((a,b)=>a.date.localeCompare(b.date))[0] : null;
+  const bloc = getCurrentBloc();
   const items = [
     ['Séances enregistrées', String(sessions.length)],
     ['Km cette semaine', fmtNum(weekKm, ' km', 1)],
     ['Dernière séance', last ? fmtDate(last.date) : 'Non disponible'],
     ['Prochaine séance planifiée', nextPlanned ? (fmtDate(nextPlanned.date) + ' — ' + nextPlanned.type) : 'Non disponible'],
+    ['Bloc de plan actuel', bloc || 'Non disponible'],
   ];
   grid.innerHTML = items.map(([lbl,val]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val'+(val==='Non disponible'?' na':'')+'">'+escapeHtml(val)+'</div></div>').join('');
 }
@@ -159,6 +216,7 @@ document.getElementById('saveRaceBtn').addEventListener('click', () => {
   upsertRace({ id: editingRaceId, name, date, distanceKm, denivele, statut });
   closeRaceModal();
   renderRaces();
+  renderTimeline();
 });
 document.getElementById('deleteRaceBtn').addEventListener('click', () => {
   if (!editingRaceId) return;
@@ -166,9 +224,12 @@ document.getElementById('deleteRaceBtn').addEventListener('click', () => {
   deleteRace(editingRaceId);
   closeRaceModal();
   renderRaces();
+  renderTimeline();
 });
 
 renderRaces();
+renderGearAlert();
+renderTimeline();
 renderSummary();
 </script>
 </body>

@@ -65,7 +65,11 @@
     <div id="historyEmpty" class="empty" style="display:none;">Aucune séance importée pour l'instant.</div>
   </section>
 
-  <section class="card" id="detailPanel">
+
+</main>
+
+<div class="modal-backdrop" id="detailModalBackdrop">
+  <div class="modal wide">
     <button class="btn close-detail" id="closeDetailBtn" type="button">Fermer ✕</button>
     <h2 id="detailTitle">Détail de la séance</h2>
     <div class="metrics-grid" id="detailMetrics"></div>
@@ -80,9 +84,8 @@
       </div>
       <div id="aiFeedbackBox"></div>
     </div>
-  </section>
-
-</main>
+  </div>
+</div>
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
 
@@ -164,9 +167,10 @@ function openDetail(id) {
   const s = loadSession(id);
   if (!s) return;
   currentSessionId = id;
-  document.getElementById('detailPanel').classList.add('open');
+  document.getElementById('detailModalBackdrop').classList.add('open');
   document.getElementById('detailTitle').textContent = 'Séance du ' + fmtDate(s.date) + (s.dateApprox ? ' (date approximative, non trouvée dans le fichier)' : '');
 
+  const ratio = ratioDplusKm(s.ascent, s.distanceKm);
   const metrics = [
     ['Type', s.sport || 'Non disponible'],
     ['Distance', fmtNum(s.distanceKm, ' km', 2)],
@@ -174,6 +178,7 @@ function openDetail(id) {
     ['Allure moy.', fmtPace(s.avgPaceSecPerKm)],
     ['D+', fmtNum(s.ascent, ' m', 0)],
     ['D-', fmtNum(s.descent, ' m', 0)],
+    ['Ratio D+/km', ratio != null ? ratio + ' m/km' : 'Non disponible'],
     ['FC moyenne', s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible'],
     ['FC max', s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible'],
     ['Cadence', s.cadenceSpm != null ? s.cadenceSpm + ' pas/min' : 'Non disponible'],
@@ -201,13 +206,14 @@ function openDetail(id) {
   document.getElementById('aiFeedbackBox').innerHTML = s.aiFeedback ? '<div class="ai-feedback">' + escapeHtml(s.aiFeedback) + '</div>' : '';
   document.getElementById('aiStatus').textContent = '';
   document.getElementById('aiGenBtn').textContent = s.aiFeedback ? 'Regénérer le retour IA' : 'Générer le retour IA';
-  document.getElementById('detailPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-document.getElementById('closeDetailBtn').addEventListener('click', () => {
-  document.getElementById('detailPanel').classList.remove('open');
+function closeDetail() {
+  document.getElementById('detailModalBackdrop').classList.remove('open');
   currentSessionId = null;
-});
+}
+document.getElementById('closeDetailBtn').addEventListener('click', closeDetail);
+document.getElementById('detailModalBackdrop').addEventListener('click', e => { if (e.target.id === 'detailModalBackdrop') closeDetail(); });
 
 document.getElementById('gearSelect').addEventListener('change', () => {
   if (!currentSessionId) return;
@@ -305,26 +311,37 @@ function lineChartSvg(title, points, opts) {
     '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots +
   '</svg></div>';
 }
-function barChartSvg(title, bars) {
-  if (!bars.length) return svgEmpty(title);
-  const w = 560, h = 200, padL = 42, padR = 14, padT = 14, padB = 34;
-  const maxV = Math.max(...bars.map(b => b.value), 1);
-  const bw = (w - padL - padR) / bars.length;
-  const barsSvg = bars.map((b,i) => {
-    const bh = (b.value / maxV) * (h - padT - padB);
-    const x = padL + i * bw + bw*0.15;
-    const y = (h - padB) - bh;
-    return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(bw*0.7).toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="var(--secondary)"><title>'+b.label+': '+b.value.toFixed(1)+'</title></rect>' +
-      (i % Math.ceil(bars.length/8||1) === 0 ? '<text x="'+(x+bw*0.35).toFixed(1)+'" y="'+(h-8)+'" font-size="9" fill="var(--muted)" text-anchor="middle">'+b.shortLabel+'</text>' : '');
-  }).join('');
-  return '<div class="chart-box"><h3>' + title + '</h3><svg viewBox="0 0 '+w+' '+h+'">' +
+function groupedBarChartSvg(title, weeks, series) {
+  if (!weeks.length) return svgEmpty(title);
+  const w = 560, h = 210, padL = 42, padR = 14, padT = 14, padB = 34;
+  const maxV = Math.max(1, ...series.flatMap(s => s.values));
+  const groupW = (w - padL - padR) / weeks.length;
+  const barW = (groupW * 0.7) / series.length;
+  let bars = '';
+  weeks.forEach((wk, i) => {
+    const groupX = padL + i * groupW + groupW * 0.15;
+    series.forEach((s, si) => {
+      const val = s.values[i] || 0;
+      const bh = (val / maxV) * (h - padT - padB);
+      const x = groupX + si * barW;
+      const y = (h - padB) - bh;
+      bars += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(barW*0.85).toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+s.color+'"><title>'+s.name+' — semaine du '+wk.shortLabel+' : '+val.toFixed(1)+'</title></rect>';
+    });
+    if (i % Math.ceil(weeks.length/8||1) === 0) {
+      bars += '<text x="'+(groupX+groupW*0.35).toFixed(1)+'" y="'+(h-10)+'" font-size="9" fill="var(--muted)" text-anchor="middle">'+wk.shortLabel+'</text>';
+    }
+  });
+  const legend = '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>';
+  return '<div class="chart-box"><h3>' + title + '</h3>' + legend + '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<text x="4" y="'+(padT+8)+'" font-size="10" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
-    barsSvg +
+    bars +
   '</svg></div>';
 }
+
 function renderCharts() {
   const sessions = loadAllSessions();
+  const plan = getPlan() || [];
   const grid = document.getElementById('chartsGrid');
   const paceSessions = sessions.filter(s => s.avgPaceSecPerKm != null);
   const pacePoints = paceSessions.map((s,i) => ({ x:i, y:s.avgPaceSecPerKm, xLabel: fmtDate(s.date), label: fmtDate(s.date)+' : '+fmtPace(s.avgPaceSecPerKm) }));
@@ -332,17 +349,34 @@ function renderCharts() {
   const hrSessions = sessions.filter(s => s.avgHr != null);
   const hrPoints = hrSessions.map((s,i) => ({ x:i, y:s.avgHr, xLabel: fmtDate(s.date), label: fmtDate(s.date)+' : '+s.avgHr+' bpm' }));
   const hrChart = lineChartSvg('Fréquence cardiaque moyenne par séance (bpm)', hrPoints);
-  const weekMap = {};
+
+  const doneMap = {};
   sessions.forEach(s => {
     const wk = isoWeek(s.date);
-    weekMap[wk] = weekMap[wk] || { km:0, dplus:0 };
-    if (s.distanceKm) weekMap[wk].km += s.distanceKm;
-    if (s.ascent) weekMap[wk].dplus += s.ascent;
+    doneMap[wk] = doneMap[wk] || { km:0, dplus:0 };
+    if (s.distanceKm) doneMap[wk].km += s.distanceKm;
+    if (s.ascent) doneMap[wk].dplus += s.ascent;
   });
-  const weeks = Object.keys(weekMap).sort();
-  const kmBars = weeks.map(w => ({ label:'Semaine du '+fmtDate(w), shortLabel: w.slice(5), value: weekMap[w].km }));
-  const dplusBars = weeks.map(w => ({ label:'Semaine du '+fmtDate(w), shortLabel: w.slice(5), value: weekMap[w].dplus }));
-  grid.innerHTML = paceChart + hrChart + barChartSvg('Volume hebdomadaire (km)', kmBars) + barChartSvg('Dénivelé positif hebdomadaire (m)', dplusBars);
+  const plannedMap = {};
+  plan.forEach(p => {
+    const wk = isoWeek(p.date);
+    plannedMap[wk] = plannedMap[wk] || { km:0, dplus:0 };
+    plannedMap[wk].km += p.distanceKm || 0;
+    plannedMap[wk].dplus += p.deniveleM || 0;
+  });
+  const weekKeys = Array.from(new Set([...Object.keys(doneMap), ...Object.keys(plannedMap)])).sort();
+  const weeks = weekKeys.map(w => ({ key:w, shortLabel: w.slice(5) }));
+  const kmSeries = [
+    { name:'Réalisé', color:'var(--secondary)', values: weekKeys.map(w => doneMap[w]?.km || 0) },
+    { name:'Planifié', color:'var(--border)', values: weekKeys.map(w => plannedMap[w]?.km || 0) },
+  ];
+  const dplusSeries = [
+    { name:'Réalisé', color:'var(--secondary)', values: weekKeys.map(w => doneMap[w]?.dplus || 0) },
+    { name:'Planifié', color:'var(--border)', values: weekKeys.map(w => plannedMap[w]?.dplus || 0) },
+  ];
+  const kmChart = groupedBarChartSvg('Volume hebdomadaire (km) — réalisé vs planifié', weeks, kmSeries);
+  const dplusChart = groupedBarChartSvg('Dénivelé positif hebdomadaire (m) — réalisé vs planifié', weeks, dplusSeries);
+  grid.innerHTML = paceChart + hrChart + kmChart + dplusChart;
 }
 
 function refreshAll() { renderHistory(); renderCharts(); }

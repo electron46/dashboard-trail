@@ -136,5 +136,31 @@ footer.app{max-width:1100px;margin:0 auto;padding:20px;color:var(--muted);font-s
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto;}
 .modal-backdrop.open{display:flex;}
 .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;max-width:480px;width:100%;box-shadow:var(--shadow);}
+.modal.wide{max-width:720px;position:relative;}
 .modal h3{margin:0 0 12px;}
 .records-table input{padding:6px 8px;font-size:.82rem;}
+
+/* Bandeau d'alerte (ex. usure chaussures) */
+.alert-banner{border-radius:var(--radius-md);padding:10px 14px;font-size:.85rem;margin-bottom:12px;border:1px solid transparent;}
+.alert-banner.warn{background:var(--warn-soft);color:var(--warn);}
+.alert-banner.danger{background:var(--danger-soft);color:var(--danger);}
+.alert-banner a{color:inherit;font-weight:600;}
+
+/* Légende de graphique groupé */
+.chart-legend{display:flex;gap:14px;font-size:.75rem;color:var(--muted);margin-bottom:6px;}
+.chart-legend span{display:inline-flex;align-items:center;gap:5px;}
+.chart-legend .dot{width:9px;height:9px;border-radius:2px;display:inline-block;}
+
+/* Navigation mobile : barre fixe en bas d'écran */
+@media (max-width: 640px) {
+  header.app nav.app-nav{
+    position:fixed;left:0;right:0;bottom:0;margin:0;
+    background:var(--panel);border-top:1px solid var(--border);
+    justify-content:space-around;gap:0;
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+    z-index:20;
+  }
+  header.app nav.app-nav a{flex:1 1 0;text-align:center;padding:8px 2px;font-size:.66rem;}
+  main{padding-bottom:70px;}
+  footer.app{padding-bottom:70px;}
+}
