@@ -259,13 +259,15 @@ const GEAR_KEY = STORAGE_PREFIX + 'gear';
 
 function storageAvailable() { try { const k='__test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; } catch (e) { return false; } }
 function loadIndex() { try { return JSON.parse(localStorage.getItem(IDX_KEY) || '[]'); } catch (e) { console.error('Index illisible', e); return []; } }
-function saveIndex(ids) { try { localStorage.setItem(IDX_KEY, JSON.stringify(ids)); return true; } catch (e) { console.error(e); return false; } }
+function saveIndex(ids) { try { localStorage.setItem(IDX_KEY, JSON.stringify(ids)); scheduleSync(); return true; } catch (e) { console.error(e); return false; } }
 function loadSession(id) { try { const raw = localStorage.getItem(STORAGE_PREFIX + 'seance:' + id); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
-function saveSession(id, data) { try { localStorage.setItem(STORAGE_PREFIX + 'seance:' + id, JSON.stringify(data)); return true; } catch (e) { console.error(e); return false; } }
-function deleteSession(id) { try { localStorage.removeItem(STORAGE_PREFIX + 'seance:' + id); } catch (e) {} }
+function saveSession(id, data) { try { localStorage.setItem(STORAGE_PREFIX + 'seance:' + id, JSON.stringify(data)); scheduleSync(); return true; } catch (e) { console.error(e); return false; } }
+function deleteSession(id) { try { localStorage.removeItem(STORAGE_PREFIX + 'seance:' + id); scheduleSync(); } catch (e) {} }
 function loadAllSessions() { return loadIndex().map(loadSession).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date)); }
 
 function getPlan() { try { const raw = localStorage.getItem(PLAN_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+function savePlan(plan) { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); scheduleSync(); return true; } catch (e) { return false; } }
+function clearPlan() { try { localStorage.removeItem(PLAN_KEY); scheduleSync(); } catch (e) {} }
 function findPlannedSession(dateISO) { const plan = getPlan(); if (!plan) return null; return plan.find(p => p.date === dateISO) || null; }
 function getApiKey() { try { return localStorage.getItem(KEY_KEY); } catch (e) { return null; } }
 
@@ -282,7 +284,7 @@ function getRaces() {
     return DEFAULT_RACES;
   } catch (e) { return DEFAULT_RACES; }
 }
-function saveRaces(races) { try { localStorage.setItem(RACES_KEY, JSON.stringify(races)); return true; } catch (e) { return false; } }
+function saveRaces(races) { try { localStorage.setItem(RACES_KEY, JSON.stringify(races)); scheduleSync(); return true; } catch (e) { return false; } }
 function upsertRace(race) {
   const races = getRaces();
   if (!race.id) race.id = 'course-' + Date.now();
@@ -363,7 +365,7 @@ const DEFAULT_PROFILE = Object.assign(
   ...PROFILE_FIELD_GROUPS.flatMap(g => g.fields.map(([key]) => ({ [key]: '' })))
 );
 function getProfile() { try { const raw = localStorage.getItem(PROFILE_KEY); return raw ? Object.assign({}, DEFAULT_PROFILE, JSON.parse(raw)) : Object.assign({}, DEFAULT_PROFILE); } catch (e) { return Object.assign({}, DEFAULT_PROFILE); } }
-function saveProfile(profile) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); return true; } catch (e) { return false; } }
+function saveProfile(profile) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); scheduleSync(); return true; } catch (e) { return false; } }
 // Zone Z2 indicative (méthode Karvonen, 60-70% de réserve cardiaque) — repère, pas une prescription médicale.
 function karvonenZ2(fcMax, fcRepos) {
   if (!fcMax || !fcRepos) return null;
@@ -373,7 +375,7 @@ function karvonenZ2(fcMax, fcRepos) {
 
 // --- Équipements (chaussures) ---
 function getGear() { try { return JSON.parse(localStorage.getItem(GEAR_KEY) || '[]'); } catch (e) { return []; } }
-function saveGear(list) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
+function saveGear(list) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(list)); scheduleSync(); return true; } catch (e) { return false; } }
 function upsertGearItem(item) {
   const list = getGear();
   if (!item.id) item.id = 'chaussure-' + Date.now();
@@ -469,6 +471,111 @@ function fmtPace(secPerKm) {
 }
 function fmtNum(v, unit, digits) { if (v == null || isNaN(v)) return 'Non disponible'; return v.toFixed(digits ?? 0) + (unit || ''); }
 
+/* --------------------------- SYNCHRO SUPABASE (multi-appareils, optionnelle) --------------------------- */
+const SUPA_URL_KEY = STORAGE_PREFIX + 'supabaseUrl';
+const SUPA_ANON_KEY = STORAGE_PREFIX + 'supabaseAnonKey';
+const SUPA_META_KEY = STORAGE_PREFIX + 'supabaseMeta';
+
+function getSupabaseConfig() {
+  try { return { url: localStorage.getItem(SUPA_URL_KEY) || '', anonKey: localStorage.getItem(SUPA_ANON_KEY) || '' }; }
+  catch (e) { return { url:'', anonKey:'' }; }
+}
+function saveSupabaseConfig(url, anonKey) {
+  try { localStorage.setItem(SUPA_URL_KEY, url.trim()); localStorage.setItem(SUPA_ANON_KEY, anonKey.trim()); _supaClient = null; return true; }
+  catch (e) { return false; }
+}
+function clearSupabaseConfig() {
+  try { localStorage.removeItem(SUPA_URL_KEY); localStorage.removeItem(SUPA_ANON_KEY); localStorage.removeItem(SUPA_META_KEY); } catch (e) {}
+  _supaClient = null;
+}
+
+let _supaClient = null;
+function getSupabaseClient() {
+  const { url, anonKey } = getSupabaseConfig();
+  if (!url || !anonKey) return null;
+  if (typeof supabase === 'undefined' || !supabase.createClient) return null;
+  if (!_supaClient) _supaClient = supabase.createClient(url, anonKey);
+  return _supaClient;
+}
+async function supaGetUser() {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data } = await client.auth.getUser();
+  return data ? data.user : null;
+}
+
+function buildSyncPayload() {
+  return { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear() };
+}
+// Pendant l'application des données reçues du cloud, on désactive scheduleSync() pour ne pas
+// renvoyer immédiatement vers Supabase ce qu'on vient d'en recevoir.
+let _applyingRemote = false;
+function applySyncPayload(payload) {
+  _applyingRemote = true;
+  try {
+    if (Array.isArray(payload.sessions)) {
+      loadIndex().forEach(deleteSession);
+      const ids = [];
+      payload.sessions.forEach(s => { if (s && s.id) { saveSession(s.id, s); ids.push(s.id); } });
+      saveIndex(ids);
+    }
+    if (payload.plan) savePlan(payload.plan);
+    if (Array.isArray(payload.races) && payload.races.length) saveRaces(payload.races);
+    if (payload.profile) saveProfile(payload.profile);
+    if (Array.isArray(payload.gear)) saveGear(payload.gear);
+  } finally { _applyingRemote = false; }
+}
+
+let _syncTimer = null;
+// Appelé automatiquement par les fonctions de sauvegarde locales — programme un envoi vers
+// Supabase avec un léger délai (pour regrouper plusieurs modifications rapprochées).
+function scheduleSync() {
+  if (_applyingRemote) return;
+  if (!getSupabaseClient()) return;
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(() => { syncPush(); }, 1500);
+}
+async function syncPush() {
+  const client = getSupabaseClient();
+  if (!client) return { ok:false, reason:'not-configured' };
+  const user = await supaGetUser();
+  if (!user) return { ok:false, reason:'not-logged-in' };
+  const nowIso = new Date().toISOString();
+  const { error } = await client.from('trail_data').upsert({ user_id: user.id, payload: buildSyncPayload(), updated_at: nowIso });
+  if (error) return { ok:false, reason: error.message };
+  try { localStorage.setItem(SUPA_META_KEY, JSON.stringify({ lastRemoteUpdatedAt: nowIso })); } catch (e) {}
+  return { ok:true };
+}
+async function syncPull() {
+  const client = getSupabaseClient();
+  if (!client) return { ok:false, reason:'not-configured' };
+  const user = await supaGetUser();
+  if (!user) return { ok:false, reason:'not-logged-in' };
+  const { data, error } = await client.from('trail_data').select('payload, updated_at').eq('user_id', user.id).maybeSingle();
+  if (error) return { ok:false, reason: error.message };
+  if (!data) return { ok:false, reason:'empty' };
+  applySyncPayload(data.payload || {});
+  try { localStorage.setItem(SUPA_META_KEY, JSON.stringify({ lastRemoteUpdatedAt: data.updated_at })); } catch (e) {}
+  return { ok:true, updatedAt: data.updated_at };
+}
+// Au chargement d'une page : si le cloud a une version plus récente que la dernière connue ici,
+// on la récupère silencieusement puis on recharge une fois la page pour tout ré-afficher à jour.
+async function autoPullIfNewer() {
+  const client = getSupabaseClient();
+  if (!client) return;
+  const user = await supaGetUser();
+  if (!user) return;
+  const { data, error } = await client.from('trail_data').select('updated_at').eq('user_id', user.id).maybeSingle();
+  if (error || !data) return;
+  let meta = {};
+  try { meta = JSON.parse(localStorage.getItem(SUPA_META_KEY) || '{}'); } catch (e) {}
+  if (meta.lastRemoteUpdatedAt && new Date(data.updated_at) <= new Date(meta.lastRemoteUpdatedAt)) return;
+  const guardKey = 'trail:autoPullGuard';
+  if (sessionStorage.getItem(guardKey) === data.updated_at) return; // évite une boucle de rechargement
+  const res = await syncPull();
+  if (res.ok) { sessionStorage.setItem(guardKey, data.updated_at); location.reload(); }
+}
+
 /* --------------------------- 6) UTILITAIRES DOM --------------------------- */
 function showMsg(elId, text, kind) {
   const el = document.getElementById(elId);
@@ -558,4 +665,5 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', () => menu.classList.remove('open'));
     document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.classList.remove('open'); });
   }
+  autoPullIfNewer();
 });

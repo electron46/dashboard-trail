@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Paramètres — ELEV Dashboard Trail</title>
 <link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -37,6 +38,7 @@
     <button type="button" data-tab="plan" class="active">Plan d'entraînement</button>
     <button type="button" data-tab="api">Clé API</button>
     <button type="button" data-tab="donnees">Données</button>
+    <button type="button" data-tab="compte">Compte &amp; synchro</button>
     <button type="button" data-tab="affichage">Affichage</button>
   </div>
 
@@ -90,6 +92,52 @@
     </section>
   </div>
 
+  <div class="tab-panel" data-panel="compte">
+    <section class="card">
+      <h2>Synchronisation entre appareils (Supabase)</h2>
+      <p class="hint">Optionnel. Une fois configuré et connecté, tes données se synchronisent automatiquement entre tous tes appareils (PC, téléphone...) dès qu'ils ont accès à internet. Sans configuration, le dashboard continue de fonctionner normalement en local uniquement.</p>
+      <div class="row">
+        <label class="field" style="flex:1 1 320px;">URL du projet Supabase
+          <input type="text" id="supaUrlInput" placeholder="https://xxxxx.supabase.co">
+        </label>
+        <label class="field" style="flex:1 1 320px;">Clé "anon public"
+          <input type="text" id="supaKeyInput" placeholder="eyJ...">
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="saveSupaConfigBtn" type="button">Enregistrer la configuration</button>
+        <button class="btn danger" id="clearSupaConfigBtn" type="button">Retirer la configuration</button>
+      </div>
+      <div id="supaConfigMsg"></div>
+    </section>
+
+    <section class="card" id="supaAuthCard" style="display:none;">
+      <h2>Compte</h2>
+      <div id="supaAuthStatus"></div>
+      <div class="row" id="supaLoginForm">
+        <label class="field" style="flex:1 1 220px;">Email
+          <input type="email" id="supaEmail" placeholder="toi@exemple.com">
+        </label>
+        <label class="field" style="flex:1 1 180px;">Mot de passe
+          <input type="password" id="supaPassword" placeholder="••••••••">
+        </label>
+        <button class="btn primary" id="supaLoginBtn" type="button" style="align-self:flex-end;">Se connecter</button>
+        <button class="btn" id="supaSignupBtn" type="button" style="align-self:flex-end;">Créer un compte</button>
+      </div>
+      <button class="btn danger" id="supaLogoutBtn" type="button" style="display:none;">Se déconnecter</button>
+      <div id="supaAuthMsg"></div>
+    </section>
+
+    <section class="card" id="supaSyncCard" style="display:none;">
+      <h2>Synchro manuelle</h2>
+      <div class="row">
+        <button class="btn" id="supaPushBtn" type="button">Envoyer vers le cloud</button>
+        <button class="btn" id="supaPullBtn" type="button">Récupérer depuis le cloud</button>
+      </div>
+      <div id="supaSyncMsg"></div>
+    </section>
+  </div>
+
   <div class="tab-panel" data-panel="affichage">
     <section class="card">
       <h2>Affichage</h2>
@@ -134,12 +182,12 @@ document.getElementById('savePlanBtn').addEventListener('click', () => {
   try {
     const parsed = parsePlanCsv(text);
     if (!parsed.length) { showMsg('planMsg', 'Aucune ligne exploitable trouvée dans ce CSV (colonnes attendues : Jour, Type de séance, Distance, D+...).', 'err'); return; }
-    localStorage.setItem(PLAN_KEY, JSON.stringify(parsed));
+    savePlan(parsed);
     showMsg('planMsg', parsed.length + ' séances planifiées enregistrées (année supposée : ' + PLAN_YEAR + ').', 'ok');
   } catch (err) { showMsg('planMsg', 'Erreur lors de la lecture du CSV : ' + err.message, 'err'); }
 });
 document.getElementById('clearPlanBtn').addEventListener('click', () => {
-  localStorage.removeItem(PLAN_KEY);
+  clearPlan();
   document.getElementById('planText').value = '';
   showMsg('planMsg', 'Plan effacé.', 'ok');
 });
@@ -199,7 +247,7 @@ document.getElementById('importFileInput').addEventListener('change', async e =>
       });
       saveIndex(idx);
     }
-    if (data.plan) localStorage.setItem(PLAN_KEY, JSON.stringify(data.plan));
+    if (data.plan) savePlan(data.plan);
     if (Array.isArray(data.races) && data.races.length) saveRaces(data.races);
     if (data.profile) saveProfile(data.profile);
     if (Array.isArray(data.gear)) saveGear(data.gear);
@@ -211,6 +259,95 @@ document.getElementById('importFileInput').addEventListener('change', async e =>
   } catch (err) { showMsg('importJsonMsg', 'Erreur lors de la lecture du fichier : ' + err.message, 'err'); }
 });
 
+/* --------------------------- COMPTE & SYNCHRO SUPABASE --------------------------- */
+(function initSupaConfigField() {
+  const cfg = getSupabaseConfig();
+  document.getElementById('supaUrlInput').value = cfg.url;
+  document.getElementById('supaKeyInput').value = cfg.anonKey;
+})();
+
+document.getElementById('saveSupaConfigBtn').addEventListener('click', () => {
+  const url = document.getElementById('supaUrlInput').value.trim();
+  const key = document.getElementById('supaKeyInput').value.trim();
+  if (!url || !key) { showMsg('supaConfigMsg', 'Renseigne l\'URL et la clé "anon public" du projet Supabase.', 'err'); return; }
+  saveSupabaseConfig(url, key);
+  showMsg('supaConfigMsg', 'Configuration enregistrée.', 'ok');
+  refreshSupaUI();
+});
+document.getElementById('clearSupaConfigBtn').addEventListener('click', () => {
+  if (!confirm('Retirer la configuration Supabase ? La synchro entre appareils sera désactivée sur cet appareil (tes données restent en local).')) return;
+  clearSupabaseConfig();
+  document.getElementById('supaUrlInput').value = '';
+  document.getElementById('supaKeyInput').value = '';
+  showMsg('supaConfigMsg', 'Configuration retirée.', 'ok');
+  refreshSupaUI();
+});
+
+async function refreshSupaUI() {
+  const client = getSupabaseClient();
+  document.getElementById('supaAuthCard').style.display = client ? 'block' : 'none';
+  document.getElementById('supaSyncCard').style.display = 'none';
+  if (!client) return;
+  const user = await supaGetUser();
+  const statusEl = document.getElementById('supaAuthStatus');
+  if (user) {
+    statusEl.innerHTML = '<div class="msg ok">Connecté en tant que ' + escapeHtml(user.email) + '.</div>';
+    document.getElementById('supaLoginForm').style.display = 'none';
+    document.getElementById('supaLogoutBtn').style.display = 'inline-block';
+    document.getElementById('supaSyncCard').style.display = 'block';
+  } else {
+    statusEl.innerHTML = '<div class="msg info">Non connecté — connecte-toi ou crée un compte pour activer la synchro.</div>';
+    document.getElementById('supaLoginForm').style.display = 'flex';
+    document.getElementById('supaLogoutBtn').style.display = 'none';
+  }
+}
+
+document.getElementById('supaSignupBtn').addEventListener('click', async () => {
+  const client = getSupabaseClient();
+  const email = document.getElementById('supaEmail').value.trim();
+  const password = document.getElementById('supaPassword').value;
+  if (!client) { showMsg('supaAuthMsg', 'Enregistre d\'abord la configuration Supabase ci-dessus.', 'err'); return; }
+  if (!email || !password) { showMsg('supaAuthMsg', 'Email et mot de passe requis.', 'err'); return; }
+  const { error } = await client.auth.signUp({ email, password });
+  if (error) { showMsg('supaAuthMsg', 'Erreur : ' + error.message, 'err'); return; }
+  showMsg('supaAuthMsg', 'Compte créé. Selon la configuration du projet, une confirmation par email peut être nécessaire avant de pouvoir te connecter.', 'ok');
+});
+document.getElementById('supaLoginBtn').addEventListener('click', async () => {
+  const client = getSupabaseClient();
+  const email = document.getElementById('supaEmail').value.trim();
+  const password = document.getElementById('supaPassword').value;
+  if (!client) { showMsg('supaAuthMsg', 'Enregistre d\'abord la configuration Supabase ci-dessus.', 'err'); return; }
+  if (!email || !password) { showMsg('supaAuthMsg', 'Email et mot de passe requis.', 'err'); return; }
+  const { error } = await client.auth.signInWithPassword({ email, password });
+  if (error) { showMsg('supaAuthMsg', 'Erreur : ' + error.message, 'err'); return; }
+  showMsg('supaAuthMsg', 'Connecté.', 'ok');
+  document.getElementById('supaPassword').value = '';
+  await refreshSupaUI();
+  const res = await syncPull();
+  if (res.ok) { showMsg('supaAuthMsg', 'Connecté — données récupérées depuis le cloud.', 'ok'); setTimeout(() => location.reload(), 800); }
+});
+document.getElementById('supaLogoutBtn').addEventListener('click', async () => {
+  const client = getSupabaseClient();
+  if (client) await client.auth.signOut();
+  await refreshSupaUI();
+  showMsg('supaAuthMsg', 'Déconnecté (tes données restent en local sur cet appareil).', 'ok');
+});
+
+document.getElementById('supaPushBtn').addEventListener('click', async () => {
+  showMsg('supaSyncMsg', 'Envoi en cours…', 'info');
+  const res = await syncPush();
+  showMsg('supaSyncMsg', res.ok ? 'Données envoyées vers le cloud.' : ('Erreur : ' + res.reason), res.ok ? 'ok' : 'err');
+});
+document.getElementById('supaPullBtn').addEventListener('click', async () => {
+  if (!confirm('Récupérer les données du cloud remplacera les données actuelles sur cet appareil. Continuer ?')) return;
+  showMsg('supaSyncMsg', 'Récupération en cours…', 'info');
+  const res = await syncPull();
+  if (res.ok) { showMsg('supaSyncMsg', 'Données récupérées depuis le cloud. Rechargement…', 'ok'); setTimeout(() => location.reload(), 800); }
+  else showMsg('supaSyncMsg', 'Erreur : ' + res.reason, 'err');
+});
+
+refreshSupaUI();
+
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm('Supprimer TOUTES les données (séances, plan, courses, profil, équipements, clé API) enregistrées dans ce navigateur ? Cette action est irréversible. Pensez à exporter vos données avant si besoin.')) return;
   const idx = loadIndex();
@@ -221,6 +358,7 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   localStorage.removeItem(RACES_KEY);
   localStorage.removeItem(PROFILE_KEY);
   localStorage.removeItem(GEAR_KEY);
+  localStorage.removeItem(SUPA_META_KEY);
   document.getElementById('planText').value = '';
   showMsg('importJsonMsg', 'Toutes les données ont été réinitialisées.', 'ok');
 });
