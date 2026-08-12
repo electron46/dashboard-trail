@@ -2,10 +2,174 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="refresh" content="0; url=dashboard-trail.html">
-<title>Dashboard Trail — Nico</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Accueil — ELEV Dashboard Trail</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/app.js"></script>
 </head>
 <body>
-<p>Redirection vers le <a href="dashboard-trail.html">dashboard</a>...</p>
+
+<header class="app">
+  <div class="app-top">
+    <div>
+      <h1>ELEV — Dashboard Trail</h1>
+      <p>Vue d'ensemble de la saison</p>
+    </div>
+    <button id="themeToggle" type="button">● Sombre</button>
+  </div>
+  <nav class="app-nav">
+    <a href="index.html" class="active">Accueil</a>
+    <a href="historique.html">Historique</a>
+    <a href="profil.html">Profil</a>
+    <a href="equipements.html">Équipements</a>
+    <a href="parametres.html">Paramètres</a>
+  </nav>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Échéances</h2>
+    <div class="races" id="racesBox"></div>
+    <div class="row" style="margin-top:12px;">
+      <button class="btn" id="addRaceBtn" type="button">+ Ajouter une course</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Résumé rapide</h2>
+    <div class="metrics-grid" id="summaryGrid"></div>
+  </section>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+
+<div class="modal-backdrop" id="raceModalBackdrop">
+  <div class="modal">
+    <h3 id="raceModalTitle">Ajouter une course</h3>
+    <div class="row" style="flex-direction:column;align-items:stretch;">
+      <label class="field">Nom de la course
+        <input type="text" id="raceName" placeholder="ex. Trail des Cascades">
+      </label>
+      <label class="field">Date
+        <input type="date" id="raceDate">
+      </label>
+      <label class="field">Distance (km)
+        <input type="number" id="raceDistance" min="0" step="0.1">
+      </label>
+      <label class="field">Dénivelé positif (m)
+        <input type="number" id="raceDenivele" min="0" step="10">
+      </label>
+      <label class="field">Statut
+        <select id="raceStatut">
+          <option value="principal">Objectif principal</option>
+          <option value="secondaire">Objectif secondaire</option>
+        </select>
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px;justify-content:space-between;">
+      <button class="btn danger small" id="deleteRaceBtn" type="button" style="display:none;">Supprimer cette course</button>
+      <div class="row">
+        <button class="btn" id="cancelRaceBtn" type="button">Annuler</button>
+        <button class="btn primary" id="saveRaceBtn" type="button">Enregistrer</button>
+      </div>
+    </div>
+    <div id="raceModalMsg"></div>
+  </div>
+</div>
+
+<script>
+function statutLabel(s) { return s === 'principal' ? 'Objectif principal' : 'Objectif secondaire'; }
+
+function renderRaces() {
+  const today = new Date().toISOString().slice(0,10);
+  const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
+  const box = document.getElementById('racesBox');
+  if (!races.length) { box.innerHTML = '<div class="empty">Aucune course enregistrée pour l\'instant.</div>'; return; }
+  box.innerHTML = races.map(r => {
+    const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
+    const prep = computePrepStatus(r.date);
+    let prepHtml = '';
+    if (days >= 0) {
+      prepHtml = prep
+        ? '<div class="prep">Volume 28 derniers jours vs plan : ' + prep.pct + '%' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pct) + '%"></div></div></div>'
+        : '<div class="prep" style="opacity:.75;">Importe un plan (page Paramètres) pour suivre l\'état de préparation.</div>';
+    }
+    return '<div class="race-chip ' + r.statut + '" data-id="' + r.id + '">' +
+      '<button class="edit-btn" data-edit="' + r.id + '" title="Modifier">✎</button>' +
+      '<span class="tag">' + statutLabel(r.statut) + '</span>' +
+      '<h3>' + escapeHtml(r.name) + '</h3>' +
+      '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small><br>' +
+      '<strong>' + (days >= 0 ? ('J-' + days) : 'passée') + '</strong>' +
+      prepHtml +
+    '</div>';
+  }).join('');
+  box.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openRaceModal(btn.dataset.edit)));
+}
+
+function renderSummary() {
+  const sessions = loadAllSessions();
+  const grid = document.getElementById('summaryGrid');
+  const today = new Date().toISOString().slice(0,10);
+  const weekStart = isoWeek(today);
+  const weekKm = sessions.filter(s => s.date >= weekStart && s.date <= today).reduce((s,x)=>s+(x.distanceKm||0),0);
+  const last = sessions[sessions.length-1];
+  const plan = getPlan();
+  const nextPlanned = plan ? plan.filter(p => p.date >= today).sort((a,b)=>a.date.localeCompare(b.date))[0] : null;
+  const items = [
+    ['Séances enregistrées', String(sessions.length)],
+    ['Km cette semaine', fmtNum(weekKm, ' km', 1)],
+    ['Dernière séance', last ? fmtDate(last.date) : 'Non disponible'],
+    ['Prochaine séance planifiée', nextPlanned ? (fmtDate(nextPlanned.date) + ' — ' + nextPlanned.type) : 'Non disponible'],
+  ];
+  grid.innerHTML = items.map(([lbl,val]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val'+(val==='Non disponible'?' na':'')+'">'+escapeHtml(val)+'</div></div>').join('');
+}
+
+let editingRaceId = null;
+function openRaceModal(id) {
+  editingRaceId = id || null;
+  const race = id ? getRaces().find(r => r.id === id) : null;
+  document.getElementById('raceModalTitle').textContent = race ? 'Modifier la course' : 'Ajouter une course';
+  document.getElementById('raceName').value = race ? race.name : '';
+  document.getElementById('raceDate').value = race ? race.date : '';
+  document.getElementById('raceDistance').value = race ? race.distanceKm : '';
+  document.getElementById('raceDenivele').value = race ? race.denivele : '';
+  document.getElementById('raceStatut').value = race ? race.statut : 'secondaire';
+  document.getElementById('deleteRaceBtn').style.display = race ? 'inline-block' : 'none';
+  document.getElementById('raceModalMsg').innerHTML = '';
+  document.getElementById('raceModalBackdrop').classList.add('open');
+}
+function closeRaceModal() { document.getElementById('raceModalBackdrop').classList.remove('open'); editingRaceId = null; }
+
+document.getElementById('addRaceBtn').addEventListener('click', () => openRaceModal(null));
+document.getElementById('cancelRaceBtn').addEventListener('click', closeRaceModal);
+document.getElementById('raceModalBackdrop').addEventListener('click', e => { if (e.target.id === 'raceModalBackdrop') closeRaceModal(); });
+document.getElementById('saveRaceBtn').addEventListener('click', () => {
+  const name = document.getElementById('raceName').value.trim();
+  const date = document.getElementById('raceDate').value;
+  const distanceKm = parseFloat(document.getElementById('raceDistance').value);
+  const denivele = parseFloat(document.getElementById('raceDenivele').value);
+  const statut = document.getElementById('raceStatut').value;
+  if (!name || !date || isNaN(distanceKm) || isNaN(denivele)) {
+    showMsg('raceModalMsg', 'Merci de remplir tous les champs (nom, date, distance, dénivelé).', 'err');
+    return;
+  }
+  upsertRace({ id: editingRaceId, name, date, distanceKm, denivele, statut });
+  closeRaceModal();
+  renderRaces();
+});
+document.getElementById('deleteRaceBtn').addEventListener('click', () => {
+  if (!editingRaceId) return;
+  if (!confirm('Supprimer cette course ?')) return;
+  deleteRace(editingRaceId);
+  closeRaceModal();
+  renderRaces();
+});
+
+renderRaces();
+renderSummary();
+</script>
 </body>
 </html>
