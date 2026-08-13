@@ -21,7 +21,8 @@
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Historique</a>
+    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+    <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
@@ -35,18 +36,22 @@
 
 <main>
 
+  <div id="gearAlertBox"></div>
+
   <section class="card">
-    <div id="gearAlertBox"></div>
-    <h2>Échéances</h2>
-    <div class="races" id="racesBox"></div>
-    <div class="row" style="margin-top:12px;">
-      <button class="btn" id="addRaceBtn" type="button">+ Ajouter une course</button>
-    </div>
+    <h2>Prochain objectif</h2>
+    <div id="nextObjectiveBox"></div>
   </section>
 
   <section class="card">
-    <h2>Saison en un coup d'œil</h2>
-    <div id="timelineBox"></div>
+    <h2>Cette période <small>(28 derniers jours vs 28 jours précédents)</small></h2>
+    <div class="metrics-grid" id="periodCompareGrid"></div>
+  </section>
+
+  <section class="card">
+    <h2>Charge d'entraînement <small>(12 dernières semaines)</small></h2>
+    <div id="loadChartBox"></div>
+    <p class="hint">Charge aiguë = volume de la semaine. Charge chronique = moyenne des 4 dernières semaines. Un fort écart entre les deux (aiguë largement au-dessus de la chronique) signale une montée en charge rapide, à surveiller.</p>
   </section>
 
   <section class="card">
@@ -66,6 +71,8 @@
     </div>
     <p class="hint">Calcul indicatif à partir de la réserve cardiaque (FC max − FC repos). Ces deux valeurs sont celles de ton profil ; les modifier ici les met aussi à jour là-bas.</p>
     <div id="fcZonesBox" style="margin-top:10px;"></div>
+    <h3 style="margin:16px 0 6px;font-size:.9rem;color:var(--muted);">Répartition du temps passé par zone <small style="font-weight:400;">(30 derniers jours)</small></h3>
+    <div id="fcDistributionBox"></div>
   </section>
 
 </main>
@@ -76,113 +83,14 @@
 
 <nav class="mobile-nav">
   <a href="index.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Historique</a>
+  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+  <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
   <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
   <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
   <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
 </nav>
 
-<div class="modal-backdrop" id="raceModalBackdrop">
-  <div class="modal">
-    <h3 id="raceModalTitle">Ajouter une course</h3>
-    <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
-      <label class="field">Nom de la course
-        <input type="text" id="raceName" placeholder="ex. Trail des Cascades">
-      </label>
-      <label class="field">Date
-        <input type="date" id="raceDate">
-      </label>
-      <label class="field">Distance (km)
-        <input type="number" id="raceDistance" min="0" step="0.1">
-      </label>
-      <label class="field">Dénivelé positif (m)
-        <input type="number" id="raceDenivele" min="0" step="10">
-      </label>
-      <label class="field">Statut
-        <select id="raceStatut">
-          <option value="principal">Objectif principal</option>
-          <option value="secondaire">Objectif secondaire</option>
-          <option value="envisage">Objectif envisagé</option>
-        </select>
-      </label>
-      <label class="field">Temps visé (optionnel)
-        <input type="text" id="raceTempsVise" placeholder="ex. 12h00">
-      </label>
-      <h4 class="modal-section">Conditions de course (pour l'estimation IA)</h4>
-      <label class="field">Technicité du terrain (optionnel)
-        <textarea id="raceTechnicite" rows="2" placeholder="ex. sentiers techniques, pierriers, single tracks, portage"></textarea>
-      </label>
-      <label class="field">Conditions de chaleur attendues (optionnel)
-        <textarea id="raceChaleur" rows="2" placeholder="ex. course historiquement très chaude en journée, peu d'ombre"></textarea>
-      </label>
-    </div>
-    <div class="row" style="margin-top:14px;justify-content:space-between;">
-      <button class="btn danger small" id="deleteRaceBtn" type="button" style="display:none;">Supprimer cette course</button>
-      <div class="row">
-        <button class="btn" id="cancelRaceBtn" type="button">Annuler</button>
-        <button class="btn primary" id="saveRaceBtn" type="button">Enregistrer</button>
-      </div>
-    </div>
-    <div id="raceModalMsg"></div>
-    <div class="ai-block" id="raceAiBlock" style="display:none;">
-      <h4 style="margin-bottom:4px;">Estimation IA du temps de course</h4>
-      <p class="hint">Basée sur ton historique d'entraînement, tes données physio (profil) et les informations de terrain/chaleur ci-dessus. Enregistre d'abord la course si tu viens d'ajouter ou de modifier la technicité/chaleur.</p>
-      <div class="row">
-        <button class="btn primary" id="raceAiBtn" type="button">Estimer mon temps (IA)</button>
-        <span id="raceAiStatus"></span>
-      </div>
-      <div id="raceAiBox"></div>
-      <div class="row" id="raceAiUseRow" style="display:none;margin-top:8px;">
-        <button class="btn small" id="raceAiUseBtn" type="button">Utiliser comme temps visé</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
-function statutLabel(s) { return s === 'principal' ? 'Objectif principal' : (s === 'envisage' ? 'Objectif envisagé' : 'Objectif secondaire'); }
-
-function renderRaces() {
-  const today = new Date().toISOString().slice(0,10);
-  const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
-  const box = document.getElementById('racesBox');
-  if (!races.length) {
-    box.innerHTML = '<div class="empty">Aucune course enregistrée pour l\'instant.<br><button class="btn small" id="emptyAddRaceBtn" type="button" style="margin-top:8px;">+ Ajouter ta première course</button></div>';
-    document.getElementById('emptyAddRaceBtn').addEventListener('click', () => openRaceModal(null));
-    return;
-  }
-  box.innerHTML = races.map(r => {
-    const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
-    const prep = computePrepStatus(r.date);
-    let prepHtml = '';
-    if (days >= 0) {
-      if (prep) {
-        const levelBadge = prep.level === 'low' ? '<span class="badge warn-badge">Sous le plan</span>'
-          : (prep.level === 'high' ? '<span class="badge danger-badge">Au-dessus du plan</span>' : '<span class="badge ok-badge">Dans le plan</span>');
-        prepHtml = '<div class="prep">Volume 28 derniers jours vs plan : ' + prep.pct + '% ' + levelBadge +
-          '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pct) + '%"></div></div>' +
-          (prep.pctDplus != null ? '<div style="margin-top:4px;">D+ cumulé vs plan : ' + prep.pctDplus + '%<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pctDplus) + '%"></div></div></div>' : '') +
-          '</div>';
-      } else {
-        prepHtml = '<div class="prep" style="opacity:.75;">Importe un plan (page Paramètres) pour suivre l\'état de préparation.</div>';
-      }
-    }
-    const ratio = ratioDplusKm(r.denivele, r.distanceKm);
-    return '<div class="race-chip ' + r.statut + '" data-id="' + r.id + '">' +
-      '<button class="edit-btn" data-edit="' + r.id + '" title="Modifier">✎</button>' +
-      '<span class="tag">' + statutLabel(r.statut) + '</span>' +
-      '<h3>' + escapeHtml(r.name) + '</h3>' +
-      '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small>' +
-      (ratio ? ' <span class="badge brand-badge" title="Ratio dénivelé / distance — plus le chiffre est élevé, plus le terrain est raide">' + ratio + ' m/km</span>' : '') +
-      '<br>' +
-      '<strong>' + (days >= 0 ? ('J-' + days + ' jours') : 'passée') + '</strong>' +
-      (r.tempsVise ? ' <small>— visé ' + escapeHtml(r.tempsVise) + '</small>' : '') +
-      prepHtml +
-    '</div>';
-  }).join('');
-  box.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openRaceModal(btn.dataset.edit)));
-}
-
 function renderGearAlert() {
   const box = document.getElementById('gearAlertBox');
   const alerts = getGear().filter(g => g.actif !== false).map(g => {
@@ -197,43 +105,86 @@ function renderGearAlert() {
   box.innerHTML = '<div class="alert-banner ' + cls + '">⚠ Usure chaussures à surveiller : ' + msg + ' — <a href="equipements.html">voir la page Équipements</a></div>';
 }
 
-function renderTimeline() {
-  const box = document.getElementById('timelineBox');
-  const races = getRaces();
-  if (!races.length) { box.innerHTML = '<div class="empty">Ajoute une course pour voir la frise de la saison.</div>'; return; }
+function renderNextObjective() {
+  const box = document.getElementById('nextObjectiveBox');
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = getRaces().filter(r => r.date >= today).sort((a,b) => a.date.localeCompare(b.date));
+  if (!upcoming.length) {
+    box.innerHTML = '<div class="empty">Aucune course à venir. <a href="objectifs.html">Ajoute ta prochaine course</a>.</div>';
+    return;
+  }
+  const r = upcoming[0];
+  const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
+  const prep = computePrepStatus(r.date);
+  const ratio = ratioDplusKm(r.denivele, r.distanceKm);
+  let prepHtml = '';
+  if (prep) {
+    const levelBadge = prep.level === 'low' ? '<span class="badge warn-badge">Sous le plan</span>'
+      : (prep.level === 'high' ? '<span class="badge danger-badge">Au-dessus du plan</span>' : '<span class="badge ok-badge">Dans le plan</span>');
+    prepHtml = '<div class="prep">Volume 28 derniers jours vs plan : ' + prep.pct + '% ' + levelBadge +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pct) + '%"></div></div></div>';
+  } else {
+    prepHtml = '<div class="prep" style="opacity:.75;">Importe un plan (page Paramètres) pour suivre l\'état de préparation.</div>';
+  }
+  box.innerHTML = '<div class="race-chip ' + r.statut + '" style="flex:1 1 100%;">' +
+    '<span class="tag">' + statutLabel(r.statut) + '</span>' +
+    '<h3>' + escapeHtml(r.name) + '</h3>' +
+    '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small>' +
+    (ratio ? ' <span class="badge brand-badge">' + ratio + ' m/km</span>' : '') +
+    '<br><strong>J-' + days + ' jours</strong>' +
+    (r.tempsVise ? ' <small>— visé ' + escapeHtml(r.tempsVise) + '</small>' : '') +
+    prepHtml +
+    '</div>' +
+    '<div class="row" style="margin-top:10px;"><a class="btn small" href="objectifs.html">Voir tous les objectifs →</a></div>';
+}
+
+function renderPeriodCompare() {
+  const grid = document.getElementById('periodCompareGrid');
+  const sessions = loadAllSessions();
+  const today = new Date().toISOString().slice(0,10);
+  const d28 = new Date(); d28.setDate(d28.getDate() - 28);
+  const d56 = new Date(); d56.setDate(d56.getDate() - 56);
+  const c28 = d28.toISOString().slice(0,10), c56 = d56.toISOString().slice(0,10);
+  const current = sessions.filter(s => s.date > c28 && s.date <= today);
+  const previous = sessions.filter(s => s.date > c56 && s.date <= c28);
+  const sum = (arr, key) => arr.reduce((a,s) => a + (s[key] || 0), 0);
+  const pctDelta = (cur, prev) => {
+    if (!prev) return cur > 0 ? '+100%' : '—';
+    const d = Math.round(((cur - prev) / prev) * 100);
+    return (d >= 0 ? '+' : '') + d + '%';
+  };
+  const items = [
+    ['Distance', fmtNum(sum(current,'distanceKm'), ' km', 1), pctDelta(sum(current,'distanceKm'), sum(previous,'distanceKm'))],
+    ['D+', fmtNum(sum(current,'ascent'), ' m', 0), pctDelta(sum(current,'ascent'), sum(previous,'ascent'))],
+    ['Temps', fmtNum(sum(current,'durationS')/3600, ' h', 1), pctDelta(sum(current,'durationS'), sum(previous,'durationS'))],
+    ['Séances', String(current.length), pctDelta(current.length, previous.length)],
+  ];
+  if (!sessions.length) { grid.innerHTML = '<div class="empty">Importe des séances (page Activités) pour voir cette comparaison.</div>'; return; }
+  grid.innerHTML = items.map(([lbl,val,delta]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="hint" style="margin-top:2px;">'+delta+' vs période précédente</div></div>').join('');
+}
+
+function renderLoadChart() {
+  const box = document.getElementById('loadChartBox');
+  const sessions = loadAllSessions();
+  if (sessions.length < 2) { box.innerHTML = svgEmpty('Charge d\'entraînement'); return; }
+  const weeks = [];
   const today = new Date();
-  const todayISO = today.toISOString().slice(0,10);
-  const dates = races.map(r => r.date).concat([todayISO]);
-  const minDate = new Date(dates.reduce((a,b) => a < b ? a : b));
-  const maxDate = new Date(dates.reduce((a,b) => a > b ? a : b));
-  minDate.setDate(minDate.getDate() - 16);
-  maxDate.setDate(maxDate.getDate() + 16);
-  const span = maxDate - minDate || 1;
-  const w = 700, h = 130, padL = 20, padR = 20, y = 65;
-  const pos = d => padL + (new Date(d) - minDate) / span * (w - padL - padR);
-  const todayX = pos(todayISO);
-  const markers = races.map(r => {
-    const x = pos(r.date);
-    const isPrincipal = r.statut === 'principal';
-    const isEnvisage = r.statut === 'envisage';
-    const color = isPrincipal ? 'var(--accent)' : (isEnvisage ? 'var(--muted)' : 'var(--secondary)');
-    const dy = isPrincipal ? -20 : 20;
-    const dash = isEnvisage ? ' stroke-dasharray="2,2"' : '';
-    // Évite que le nom de la course soit tronqué près des bords du cadre (ancrage du texte adapté à la position).
-    const anchor = x < 65 ? 'start' : (x > w - 65 ? 'end' : 'middle');
-    return '<g' + (isEnvisage ? ' opacity="0.7"' : '') + '>' +
-      '<line x1="'+x.toFixed(1)+'" y1="'+y+'" x2="'+x.toFixed(1)+'" y2="'+(y+dy).toFixed(1)+'" stroke="'+color+'" stroke-width="2.5"'+dash+'/>' +
-      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="11" fill="transparent" data-tooltip="'+escapeHtml(r.name+' — '+fmtDate(r.date))+'"/>' +
-      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="6" fill="'+color+'" style="pointer-events:none;"/>' +
-      '<text x="'+x.toFixed(1)+'" y="'+(y+dy+(isPrincipal?-10:20)).toFixed(1)+'" font-size="13" fill="var(--text)" text-anchor="'+anchor+'">'+escapeHtml(r.name)+'</text>' +
-    '</g>';
-  }).join('');
-  box.innerHTML = '<div class="chart-box"><svg viewBox="0 0 '+w+' '+h+'">' +
-    '<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="2"/>' +
-    '<line x1="'+todayX.toFixed(1)+'" y1="'+(y-38)+'" x2="'+todayX.toFixed(1)+'" y2="'+(y+38)+'" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="3,3"/>' +
-    '<text x="'+todayX.toFixed(1)+'" y="'+(y+54)+'" font-size="12" fill="var(--danger)" text-anchor="middle">aujourd\'hui</text>' +
-    markers +
-  '</svg></div>';
+  for (let i = 11; i >= 0; i--) {
+    const weekStartISO = isoWeek(new Date(today.getTime() - i*7*86400000).toISOString().slice(0,10));
+    const weekEndDate = new Date(weekStartISO); weekEndDate.setDate(weekEndDate.getDate() + 6);
+    const weekEndISO = weekEndDate.toISOString().slice(0,10);
+    const km = sessions.filter(s => s.date >= weekStartISO && s.date <= weekEndISO).reduce((a,s) => a + (s.distanceKm||0), 0);
+    weeks.push({ startISO: weekStartISO, km, shortLabel: weekStartISO.slice(8,10)+'/'+weekStartISO.slice(5,7), tooltipLabel: 'semaine du ' + fmtDate(weekStartISO) });
+  }
+  weeks.forEach((w, i) => {
+    const windowVals = weeks.slice(Math.max(0,i-3), i+1).map(x => x.km);
+    w.chronic = +(windowVals.reduce((a,b)=>a+b,0) / windowVals.length).toFixed(1);
+  });
+  const series = [
+    { name: 'Charge aiguë (semaine)', color: 'var(--accent)', values: weeks.map(w => +w.km.toFixed(1)) },
+    { name: 'Charge chronique (moy. 4 sem.)', color: 'var(--secondary)', values: weeks.map(w => w.chronic) },
+  ];
+  box.innerHTML = groupedBarChartSvg('Kilomètres par semaine', weeks, series);
   initChartTooltips(box);
 }
 
@@ -266,11 +217,48 @@ function renderFcZones() {
   const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
   if (!zones) {
     box.innerHTML = '<div class="hint">Renseigne ta FC max et ta FC repos ci-dessus pour voir tes zones.</div>';
+    document.getElementById('fcDistributionBox').innerHTML = '';
     return;
   }
   box.innerHTML = '<div class="metrics-grid">' + zones.map(z =>
     '<div class="metric"><div class="lbl">' + escapeHtml(z.label) + '</div><div class="val">' + z.low + '–' + z.high + ' bpm</div></div>'
   ).join('') + '</div>';
+  renderFcDistribution(zones);
+}
+
+// Estime le temps passé dans chaque zone FC sur les 30 derniers jours, à partir des séries de séance
+// (poids de chaque intervalle = son écart de temps réel entre deux points de mesure, pas un simple compte de points).
+function renderFcDistribution(zones) {
+  const box = document.getElementById('fcDistributionBox');
+  const today = new Date().toISOString().slice(0,10);
+  const d30 = new Date(); d30.setDate(d30.getDate() - 30);
+  const c30 = d30.toISOString().slice(0,10);
+  const sessions = loadAllSessions().filter(s => s.date >= c30 && s.date <= today && Array.isArray(s.series) && s.series.length >= 2);
+  const zoneSeconds = zones.map(() => 0);
+  let totalSeconds = 0;
+  sessions.forEach(s => {
+    const pts = s.series.filter(p => p.hr != null && p.t != null);
+    for (let i = 1; i < pts.length; i++) {
+      const dt = pts[i].t - pts[i-1].t;
+      if (dt <= 0 || dt > 300) continue; // ignore les trous (pause, arrêt GPS...)
+      const hr = (pts[i].hr + pts[i-1].hr) / 2;
+      let zi = zones.findIndex(z => hr >= z.low && hr <= z.high);
+      if (zi < 0) zi = hr < zones[0].low ? 0 : zones.length - 1;
+      zoneSeconds[zi] += dt;
+      totalSeconds += dt;
+    }
+  });
+  if (!totalSeconds) {
+    box.innerHTML = '<div class="empty">Pas assez de séances avec FC sur les 30 derniers jours.</div>';
+    return;
+  }
+  box.innerHTML = zones.map((z, i) => {
+    const pct = Math.round((zoneSeconds[i] / totalSeconds) * 100);
+    return '<div style="margin-bottom:8px;">' +
+      '<div class="row" style="justify-content:space-between;font-size:.82rem;"><span>' + escapeHtml(z.label) + '</span><span>' + pct + '%</span></div>' +
+      '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%;"></div></div>' +
+    '</div>';
+  }).join('');
 }
 function saveFcZoneField(key, value) {
   const profile = getProfile();
@@ -281,202 +269,10 @@ function saveFcZoneField(key, value) {
 document.getElementById('fcZoneMax').addEventListener('change', e => saveFcZoneField('fcMax', e.target.value));
 document.getElementById('fcZoneRepos').addEventListener('change', e => saveFcZoneField('fcRepos', e.target.value));
 
-let editingRaceId = null;
-function openRaceModal(id) {
-  editingRaceId = id || null;
-  const race = id ? getRaces().find(r => r.id === id) : null;
-  document.getElementById('raceModalTitle').textContent = race ? 'Modifier la course' : 'Ajouter une course';
-  document.getElementById('raceName').value = race ? race.name : '';
-  document.getElementById('raceDate').value = race ? race.date : '';
-  document.getElementById('raceDistance').value = race ? race.distanceKm : '';
-  document.getElementById('raceDenivele').value = race ? race.denivele : '';
-  document.getElementById('raceStatut').value = race ? race.statut : 'secondaire';
-  document.getElementById('raceTempsVise').value = race ? (race.tempsVise || '') : '';
-  document.getElementById('raceTechnicite').value = race ? (race.technicite || '') : '';
-  document.getElementById('raceChaleur').value = race ? (race.chaleur || '') : '';
-  document.getElementById('deleteRaceBtn').style.display = race ? 'inline-block' : 'none';
-  document.getElementById('raceModalMsg').innerHTML = '';
-  document.getElementById('raceAiBlock').style.display = race ? 'block' : 'none';
-  document.getElementById('raceAiBox').innerHTML = race && race.aiEstimation ? '<div class="ai-feedback">' + escapeHtml(race.aiEstimation) + '</div>' : '';
-  document.getElementById('raceAiStatus').textContent = '';
-  document.getElementById('raceAiBtn').textContent = race && race.aiEstimation ? 'Regénérer l\'estimation' : 'Estimer mon temps (IA)';
-  document.getElementById('raceAiUseRow').style.display = race && race.aiEstimation ? 'flex' : 'none';
-  document.getElementById('raceModalBackdrop').classList.add('open');
-}
-function closeRaceModal() { document.getElementById('raceModalBackdrop').classList.remove('open'); editingRaceId = null; }
-
-document.getElementById('addRaceBtn').addEventListener('click', () => openRaceModal(null));
-document.getElementById('cancelRaceBtn').addEventListener('click', closeRaceModal);
-document.getElementById('raceModalBackdrop').addEventListener('click', e => { if (e.target.id === 'raceModalBackdrop') closeRaceModal(); });
-document.getElementById('saveRaceBtn').addEventListener('click', () => {
-  const name = document.getElementById('raceName').value.trim();
-  const date = document.getElementById('raceDate').value;
-  const distanceKm = parseFloat(document.getElementById('raceDistance').value);
-  const denivele = parseFloat(document.getElementById('raceDenivele').value);
-  const statut = document.getElementById('raceStatut').value;
-  const tempsVise = document.getElementById('raceTempsVise').value.trim();
-  const technicite = document.getElementById('raceTechnicite').value.trim();
-  const chaleur = document.getElementById('raceChaleur').value.trim();
-  if (!name || !date || isNaN(distanceKm) || isNaN(denivele)) {
-    showMsg('raceModalMsg', 'Merci de remplir tous les champs (nom, date, distance, dénivelé).', 'err');
-    return;
-  }
-  // Fusionne avec la course existante pour ne pas perdre une estimation IA déjà générée.
-  const existing = editingRaceId ? getRaces().find(r => r.id === editingRaceId) : null;
-  upsertRace(Object.assign({}, existing, { id: editingRaceId, name, date, distanceKm, denivele, statut, tempsVise, technicite, chaleur }));
-  closeRaceModal();
-  renderRaces();
-  renderTimeline();
-});
-document.getElementById('deleteRaceBtn').addEventListener('click', () => {
-  if (!editingRaceId) return;
-  if (!confirm('Supprimer cette course ?')) return;
-  deleteRace(editingRaceId);
-  closeRaceModal();
-  renderRaces();
-  renderTimeline();
-});
-
-/* --------------------------- ESTIMATION IA DU TEMPS DE COURSE --------------------------- */
-const AI_RACE_SYSTEM_PROMPT = `<persona>
-Vous êtes un coach de trail et course à pied, spécialisé dans le pronostic de temps de course pour des coureurs amateurs qui s'entraînent seuls, sans encadrement. Vous savez estimer une performance réaliste à partir de l'historique d'entraînement réel, des données physiologiques disponibles, et des caractéristiques de la course (distance, dénivelé, technicité du terrain, conditions de chaleur attendues). Votre ton est direct, factuel, jamais survendeur.
-</persona>
-
-<instructions>
-1) Évaluez le niveau de forme actuel à partir de l'historique d'entraînement fourni (volume récent, dénivelé cumulé, allures, FC, plus longue sortie réalisée) et des données physiologiques/records du profil si disponibles.
-2) Ajustez l'estimation en fonction du dénivelé de la course et de sa technicité (terrain technique, portage, single tracks = allure ralentie par rapport à un terrain roulant).
-3) Ajustez explicitement à la hausse le temps estimé si de fortes chaleurs sont attendues, en expliquant l'impact (déshydratation, baisse d'allure en cours d'effort).
-4) Donnez une fourchette de temps (optimiste / réaliste / prudent), jamais un chiffre unique présenté comme certain.
-5) Indiquez clairement votre niveau de confiance dans l'estimation selon la quantité et la qualité des données disponibles (peu d'historique ou pas de records = incertitude plus grande, à assumer explicitement plutôt qu'à masquer).
-6) Ne inventez aucune donnée manquante : si une information (VMA, records, historique suffisant) n'est pas fournie, dites "Non communiqué" et basez-vous sur ce qui est disponible.
-7) Terminez par 1 à 2 conseils concrets pour la suite de la préparation (allure de course cible, gestion de la chaleur, stratégie ravitaillement) si pertinent au vu des éléments fournis.
-</instructions>
-
-<format_de_sortie>
-Répondez en 4 sections courtes, sans balises XML dans la réponse finale :
-1. Fourchette de temps estimée (optimiste / réaliste / prudent)
-2. Facteurs pris en compte (forme actuelle, dénivelé/technicité, chaleur — 2-4 phrases)
-3. Niveau de confiance de l'estimation (une phrase, en expliquant pourquoi)
-4. Conseils pour la suite de la préparation (1-2 phrases, ou "Rien de particulier à ajouter")
-</format_de_sortie>`;
-
-function buildTrainingSummaryText(sessions) {
-  if (!sessions.length) return 'Non communiqué (aucune séance enregistrée dans l\'historique).';
-  const today = new Date().toISOString().slice(0,10);
-  const d4 = new Date(); d4.setDate(d4.getDate() - 28);
-  const d8 = new Date(); d8.setDate(d8.getDate() - 56);
-  const c4 = d4.toISOString().slice(0,10), c8 = d8.toISOString().slice(0,10);
-  const last4 = sessions.filter(s => s.date >= c4 && s.date <= today);
-  const last8 = sessions.filter(s => s.date >= c8 && s.date <= today);
-  const sum = (arr, key) => arr.reduce((a,s) => a + (s[key] || 0), 0);
-  const lines = [];
-  lines.push('Nombre total de séances enregistrées : ' + sessions.length + ' (depuis le ' + fmtDate(sessions[0].date) + ')');
-  lines.push('4 dernières semaines : ' + last4.length + ' séance(s), ' + sum(last4,'distanceKm').toFixed(1) + ' km, ' + Math.round(sum(last4,'ascent')) + ' m D+');
-  lines.push('8 dernières semaines : ' + last8.length + ' séance(s), ' + sum(last8,'distanceKm').toFixed(1) + ' km, ' + Math.round(sum(last8,'ascent')) + ' m D+');
-  const longest = sessions.slice().sort((a,b) => (b.distanceKm||0) - (a.distanceKm||0))[0];
-  if (longest) {
-    lines.push('Plus longue sortie réalisée à ce jour : ' + fmtDate(longest.date) + ', ' + fmtNum(longest.distanceKm,' km',1) + ' / ' + fmtNum(longest.ascent,' m',0) + ' D+, allure ' + fmtPace(longest.avgPaceSecPerKm) + (longest.avgHr != null ? ', FC moyenne ' + longest.avgHr + ' bpm' : ''));
-  }
-  lines.push('5 dernières séances :');
-  sessions.slice(-5).forEach(s => lines.push('- ' + fmtDate(s.date) + ' : ' + fmtNum(s.distanceKm,' km',1) + ' / ' + fmtNum(s.ascent,' m',0) + ' D+, allure ' + fmtPace(s.avgPaceSecPerKm) + (s.avgHr != null ? ', FC moyenne ' + s.avgHr + ' bpm' : '')));
-  return lines.join('\n');
-}
-
-function buildProfileSummaryText(profile) {
-  const lines = [];
-  if (profile.age) lines.push('Âge : ' + profile.age + ' ans');
-  if (profile.poids) lines.push('Poids : ' + profile.poids + ' kg');
-  if (profile.vma) lines.push('VMA : ' + profile.vma + ' km/h');
-  if (profile.allureSeuil) lines.push('Allure seuil / spécifique trail : ' + profile.allureSeuil);
-  if (Array.isArray(profile.records) && profile.records.length) {
-    lines.push('Records personnels connus :');
-    profile.records.forEach(r => lines.push('- ' + (r.label || 'Record') + ' : ' + (r.temps || 'Non communiqué') + (r.course ? (' (' + r.course + (r.date ? ', ' + fmtDate(r.date) : '') + ')') : '')));
-  }
-  if (profile.sante && profile.sante.trim()) lines.push('Points de vigilance santé : ' + profile.sante.trim());
-  return lines.length ? lines.join('\n') : 'Non communiqué.';
-}
-
-document.getElementById('raceAiBtn').addEventListener('click', async () => {
-  if (!editingRaceId) return;
-  const apiKey = getApiKey();
-  const statusEl = document.getElementById('raceAiStatus');
-  const boxEl = document.getElementById('raceAiBox');
-  const btn = document.getElementById('raceAiBtn');
-
-  if (!apiKey) {
-    statusEl.innerHTML = '<span style="color:var(--danger)">Aucune clé API enregistrée — renseignez-la dans la page Paramètres.</span>';
-    return;
-  }
-
-  const race = getRaces().find(r => r.id === editingRaceId);
-  if (!race) return;
-  const profile = getProfile();
-  const sessions = loadAllSessions();
-  const ratio = ratioDplusKm(race.denivele, race.distanceKm);
-
-  btn.disabled = true;
-  statusEl.innerHTML = '<span class="spinner"></span>Estimation en cours…';
-  boxEl.innerHTML = '';
-
-  const userParts = [];
-  userParts.push('Course visée : ' + race.name + ', le ' + fmtDate(race.date) + '.');
-  userParts.push('Distance : ' + fmtNum(race.distanceKm,' km',1) + ' — Dénivelé positif : ' + fmtNum(race.denivele,' m',0) + (ratio ? ' (ratio ' + ratio + ' m/km)' : '') + '.');
-  userParts.push('Statut de l\'objectif : ' + statutLabel(race.statut) + '.');
-  userParts.push('Temps visé par l\'utilisateur (optionnel, à titre indicatif seulement) : ' + (race.tempsVise || 'Non communiqué'));
-  userParts.push('\nTechnicité du terrain : ' + (race.technicite && race.technicite.trim() ? race.technicite.trim() : 'Non communiqué.'));
-  userParts.push('\nConditions de chaleur attendues : ' + (race.chaleur && race.chaleur.trim() ? race.chaleur.trim() : 'Non communiqué.'));
-  userParts.push('\nDonnées physiologiques et records (profil utilisateur) :');
-  userParts.push(buildProfileSummaryText(profile));
-  userParts.push('\nHistorique d\'entraînement :');
-  userParts.push(buildTrainingSummaryText(sessions));
-
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 1600,
-        thinking: { type: 'disabled' },
-        system: AI_RACE_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userParts.join('\n') }],
-      }),
-    });
-    if (!resp.ok) { const errBody = await resp.text(); throw new Error('HTTP ' + resp.status + ' — ' + errBody.slice(0,200)); }
-    const data = await resp.json();
-    const text = (data.content || []).map(c => c.text || '').join('\n').trim();
-    if (!text) throw new Error('Réponse vide de l\'API.');
-    upsertRace(Object.assign({}, race, { aiEstimation: text }));
-    boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>';
-    statusEl.textContent = '';
-    btn.textContent = 'Regénérer l\'estimation';
-    document.getElementById('raceAiUseRow').style.display = 'flex';
-  } catch (err) {
-    statusEl.innerHTML = '<span style="color:var(--danger)">Erreur lors de l\'appel à l\'API : ' + escapeHtml(err.message) + ' (vérifiez la clé API et votre connexion).</span>';
-  } finally { btn.disabled = false; }
-});
-
-// Repère un temps plausible dans le texte de l'estimation IA (priorité à la fourchette "réaliste"),
-// pour pré-remplir le champ "temps visé" — l'utilisateur peut toujours ajuster avant de valider.
-function extractTimeGuess(text) {
-  const timePattern = /(\d{1,2}\s*h\s*\d{0,2}|\d{1,2}:\d{2})/i;
-  const realisteMatch = text.match(new RegExp('r[ée]aliste[^\\n]{0,60}?' + timePattern.source, 'i'));
-  const found = realisteMatch ? realisteMatch[1] : (text.match(timePattern) || [])[1];
-  return found ? found.replace(/\s+/g, '') : '';
-}
-document.getElementById('raceAiUseBtn').addEventListener('click', () => {
-  if (!editingRaceId) return;
-  const race = getRaces().find(r => r.id === editingRaceId);
-  if (!race || !race.aiEstimation) return;
-  const guess = extractTimeGuess(race.aiEstimation) || document.getElementById('raceTempsVise').value;
-  const val = window.prompt('Temps visé à enregistrer (modifie si besoin, puis clique sur "Enregistrer" pour valider) :', guess);
-  if (val === null) return;
-  document.getElementById('raceTempsVise').value = val.trim();
-});
-
-renderRaces();
 renderGearAlert();
-renderTimeline();
+renderNextObjective();
+renderPeriodCompare();
+renderLoadChart();
 renderSummary();
 renderFcZones();
 </script>

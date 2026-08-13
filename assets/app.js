@@ -296,6 +296,7 @@ function upsertRace(race) {
   return race;
 }
 function deleteRace(id) { saveRaces(getRaces().filter(r => r.id !== id)); }
+function statutLabel(s) { return s === 'principal' ? 'Objectif principal' : (s === 'envisage' ? 'Objectif envisagé' : 'Objectif secondaire'); }
 
 // --- Profil traileur ---
 const WEEKDAYS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
@@ -686,6 +687,76 @@ function computePrepStatus(raceDateISO) {
   // au-dessus de 130% = possible surcharge (charge cumulée bien supérieure au plan). Indicatif, pas une science exacte.
   const level = pct < 60 ? 'low' : (pct > 130 ? 'high' : 'ok');
   return { pct, doneKm, plannedKm, pctDplus, doneDplus, plannedDplus, level };
+}
+
+/* --------------------------- 7) GRAPHIQUES SVG PARTAGÉS --------------------------- */
+function svgEmpty(title) { return '<div class="chart-box"><h3>' + title + '</h3><div class="empty">Pas encore assez de séances pour ce graphique (2 minimum).</div></div>'; }
+
+let _chartGradientId = 0;
+function lineChartSvg(title, points, opts) {
+  opts = opts || {};
+  if (points.length < 2) return svgEmpty(title);
+  const w = 620, h = 280, padL = 54, padR = 18, padT = 20, padB = 36;
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = opts.yMin ?? Math.min(...ys), maxY = opts.yMax ?? Math.max(...ys);
+  const spanY = (maxY - minY) || 1;
+  const spanX = (maxX - minX) || 1;
+  const midY = (minY + maxY) / 2;
+  const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
+  const sy = y => (h - padB) - (y - minY) / spanY * (h - padT - padB);
+  const path = points.map((p,i) => (i===0?'M':'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
+  const gradId = 'chartFill' + (_chartGradientId++);
+  const areaPath = path + ' L' + sx(points[points.length-1].x).toFixed(1) + ',' + (h-padB) + ' L' + sx(points[0].x).toFixed(1) + ',' + (h-padB) + ' Z';
+  const dots = points.map(p => {
+    const cx = sx(p.x).toFixed(1), cy = sy(p.y).toFixed(1);
+    return '<circle cx="'+cx+'" cy="'+cy+'" r="11" fill="transparent" data-tooltip="'+escapeHtml(p.label)+'"/>' +
+      '<circle cx="'+cx+'" cy="'+cy+'" r="4" fill="var(--accent)" style="pointer-events:none;"/>';
+  }).join('');
+  const firstLabel = points[0].xLabel, lastLabel = points[points.length-1].xLabel;
+  return '<div class="chart-box"><h3>' + title + '</h3><svg viewBox="0 0 '+w+' '+h+'">' +
+    '<defs><linearGradient id="'+gradId+'" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/>' +
+    '</linearGradient></defs>' +
+    '<path d="'+areaPath+'" fill="url(#'+gradId+')" stroke="none"/>' +
+    '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
+    '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+(opts.yMaxLabel ?? maxY.toFixed(opts.decimals??0))+'</text>' +
+    '<text x="4" y="'+(sy(midY)-5).toFixed(1)+'" font-size="12" fill="var(--muted)">'+midY.toFixed(opts.decimals??0)+'</text>' +
+    '<text x="4" y="'+(h-padB+2)+'" font-size="13" fill="var(--muted)">'+(opts.yMinLabel ?? minY.toFixed(opts.decimals??0))+'</text>' +
+    '<text x="'+padL+'" y="'+(h-8)+'" font-size="12" fill="var(--muted)">'+firstLabel+'</text>' +
+    '<text x="'+(w-padR-50)+'" y="'+(h-8)+'" font-size="12" fill="var(--muted)">'+lastLabel+'</text>' +
+    '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' + dots +
+  '</svg></div>';
+}
+function groupedBarChartSvg(title, weeks, series) {
+  if (!weeks.length) return svgEmpty(title);
+  const w = 620, h = 290, padL = 54, padR = 18, padT = 20, padB = 44;
+  const maxV = Math.max(1, ...series.flatMap(s => s.values));
+  const groupW = (w - padL - padR) / weeks.length;
+  const barW = (groupW * 0.7) / series.length;
+  let bars = '';
+  weeks.forEach((wk, i) => {
+    const groupX = padL + i * groupW + groupW * 0.15;
+    series.forEach((s, si) => {
+      const val = s.values[i] || 0;
+      const bh = (val / maxV) * (h - padT - padB);
+      const x = groupX + si * barW;
+      const y = (h - padB) - bh;
+      const tip = escapeHtml(s.name + ' — ' + (wk.tooltipLabel || ('semaine du ' + wk.shortLabel)) + ' : ' + val.toFixed(1));
+      bars += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(barW*0.85).toFixed(1)+'" height="'+Math.max(bh,1).toFixed(1)+'" fill="'+s.color+'" data-tooltip="'+tip+'"/>';
+    });
+    if (i % Math.ceil(weeks.length/8||1) === 0) {
+      bars += '<text x="'+(groupX+groupW*0.35).toFixed(1)+'" y="'+(h-14)+'" font-size="11" fill="var(--muted)" text-anchor="middle">'+wk.shortLabel+'</text>';
+    }
+  });
+  const legend = '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>';
+  return '<div class="chart-box"><h3>' + title + '</h3>' + legend + '<svg viewBox="0 0 '+w+' '+h+'">' +
+    '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
+    bars +
+  '</svg></div>';
 }
 
 // Info-bulle interactive au survol pour les graphiques SVG (remplace les <title> natifs, peu lisibles
