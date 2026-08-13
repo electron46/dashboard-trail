@@ -444,6 +444,7 @@ function parsePlanCsv(text) {
   const delimiter = (lines[0].split(';').length > lines[0].split(',').length) ? ';' : ',';
   const header = parseCsvLine(lines[0], delimiter).map(h => h.trim().toLowerCase());
   const idx = {
+    semaine: header.findIndex(h => h.includes('semaine')),
     bloc: header.findIndex(h => h.includes('bloc')),
     date: header.findIndex(h => h.trim() === 'date'),
     jour: header.findIndex(h => h.includes('jour')),
@@ -476,6 +477,7 @@ function parsePlanCsv(text) {
     const notesVal = idx.objectif >= 0 ? cols[idx.objectif] : (idx.notes >= 0 ? cols[idx.notes] : '');
     out.push({
       date: dateISO,
+      semaine: idx.semaine >= 0 ? (cols[idx.semaine] || '').trim() : '',
       bloc: (cols[idx.bloc] || '').trim(),
       jourLabel: idx.jour >= 0 ? (cols[idx.jour] || '').trim() : '',
       type: (cols[idx.type] || '').trim(),

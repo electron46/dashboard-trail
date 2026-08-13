@@ -69,6 +69,11 @@
       </div>
       <div id="planMsg"></div>
     </section>
+    <section class="card" id="planViewSection" style="display:none;">
+      <h2>Détail du plan importé <small id="planViewCount"></small></h2>
+      <p class="hint">Regroupé par semaine — clique sur une semaine pour la déplier. La semaine en cours est ouverte automatiquement.</p>
+      <div id="planViewBox"></div>
+    </section>
   </div>
 
   <div class="tab-panel" data-panel="api">
@@ -198,12 +203,14 @@ document.getElementById('savePlanBtn').addEventListener('click', () => {
     if (!parsed.length) { showMsg('planMsg', 'Aucune ligne exploitable trouvée dans ce CSV (colonnes attendues : Jour, Type de séance, Distance, D+...).', 'err'); return; }
     savePlan(parsed);
     showMsg('planMsg', parsed.length + ' séances planifiées enregistrées (année utilisée : ' + getPlanYear() + ').', 'ok');
+    renderPlanView();
   } catch (err) { showMsg('planMsg', 'Erreur lors de la lecture du CSV : ' + err.message, 'err'); }
 });
 document.getElementById('clearPlanBtn').addEventListener('click', () => {
   clearPlan();
   document.getElementById('planText').value = '';
   showMsg('planMsg', 'Plan effacé.', 'ok');
+  renderPlanView();
 });
 (function initPlanField() {
   const plan = getPlan();
@@ -211,6 +218,53 @@ document.getElementById('clearPlanBtn').addEventListener('click', () => {
     'Semaine,Bloc,Jour,Type de seance,Distance (km),D+ (m),Intensite (RPE),Notes\n' +
     '(plan déjà enregistré — ' + plan.length + ' séances. Recollez un CSV puis "Enregistrer" pour le remplacer.)';
 })();
+
+/* --------------------------- VUE DÉTAILLÉE DU PLAN --------------------------- */
+function renderPlanView() {
+  const plan = getPlan();
+  const section = document.getElementById('planViewSection');
+  if (!plan || !plan.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  document.getElementById('planViewCount').textContent = '(' + plan.length + ' séances)';
+
+  const today = new Date().toISOString().slice(0,10);
+  const sorted = plan.slice().sort((a,b) => a.date.localeCompare(b.date));
+  const groups = [];
+  let current = null;
+  sorted.forEach(p => {
+    const key = (p.semaine ? 'S' + p.semaine : '') + '|' + (p.bloc || '');
+    if (!current || current.key !== key) {
+      current = { key, semaine: p.semaine, bloc: p.bloc, items: [] };
+      groups.push(current);
+    }
+    current.items.push(p);
+  });
+
+  let openedOnce = false;
+  document.getElementById('planViewBox').innerHTML = groups.map(g => {
+    const title = (g.semaine ? 'Semaine ' + g.semaine : '') + (g.bloc ? (g.semaine ? ' — ' : '') + g.bloc : (g.semaine ? '' : 'Séances'));
+    const isCurrentOrNext = !openedOnce && g.items.some(p => p.date >= today);
+    if (isCurrentOrNext) openedOnce = true;
+    const rows = g.items.map(p => {
+      const jourCourt = (p.jourLabel || '').replace(/\d{2}\/\d{2}(\/\d{4})?/, '').trim();
+      const dplus = p.deniveleM ? (p.deniveleM + ' m') : (p.distanceKm ? '—' : '');
+      const dmoins = p.descenteM ? (' / ' + p.descenteM + ' m') : '';
+      return '<tr>' +
+        '<td>' + fmtDate(p.date) + (jourCourt ? ' <span class="hint">(' + escapeHtml(jourCourt) + ')</span>' : '') + '</td>' +
+        '<td>' + escapeHtml(p.type || '') + '</td>' +
+        '<td>' + (p.distanceKm ? p.distanceKm + ' km' : '—') + '</td>' +
+        '<td>' + (dplus || '—') + dmoins + '</td>' +
+        '<td>' + escapeHtml(p.fcCorpsSeance || p.intensite || '') + '</td>' +
+        '<td class="sans">' + escapeHtml(p.notes || '') + '</td>' +
+      '</tr>';
+    }).join('');
+    return '<details' + (isCurrentOrNext ? ' open' : '') + ' style="margin-bottom:6px;border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 12px;">' +
+      '<summary style="cursor:pointer;font-weight:600;">' + escapeHtml(title || 'Séances') + ' <span class="hint">(' + g.items.length + ')</span></summary>' +
+      '<table style="margin-top:8px;"><thead><tr><th>Jour</th><th>Type</th><th>Distance</th><th>D+/D-</th><th>Zone FC / intensité</th><th>Objectif</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '</details>';
+  }).join('');
+}
+renderPlanView();
 
 /* --------------------------- CLÉ API --------------------------- */
 document.getElementById('saveKeyBtn').addEventListener('click', () => {
