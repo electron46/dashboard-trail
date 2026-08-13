@@ -372,6 +372,24 @@ function karvonenZ2(fcMax, fcRepos) {
   const reserve = fcMax - fcRepos;
   return { low: Math.round(fcRepos + reserve * 0.6), high: Math.round(fcRepos + reserve * 0.7) };
 }
+// Les 5 zones de FC classiques (méthode Karvonen, % de réserve cardiaque) — repère indicatif, pas une prescription médicale.
+const KARVONEN_ZONES = [
+  { key: 'z1', label: 'Z1 — Récupération', low: 0.50, high: 0.60 },
+  { key: 'z2', label: 'Z2 — Endurance fondamentale', low: 0.60, high: 0.70 },
+  { key: 'z3', label: 'Z3 — Tempo / rythme', low: 0.70, high: 0.80 },
+  { key: 'z4', label: 'Z4 — Seuil', low: 0.80, high: 0.90 },
+  { key: 'z5', label: 'Z5 — VMA / anaérobie', low: 0.90, high: 1.00 },
+];
+function karvonenZones(fcMax, fcRepos) {
+  if (!fcMax || !fcRepos || fcMax <= fcRepos) return null;
+  const reserve = fcMax - fcRepos;
+  return KARVONEN_ZONES.map(z => ({
+    key: z.key,
+    label: z.label,
+    low: Math.round(fcRepos + reserve * z.low),
+    high: Math.round(fcRepos + reserve * z.high),
+  }));
+}
 
 // --- Équipements (chaussures) ---
 function getGear() { try { return JSON.parse(localStorage.getItem(GEAR_KEY) || '[]'); } catch (e) { return []; } }

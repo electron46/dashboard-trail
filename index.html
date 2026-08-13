@@ -22,7 +22,7 @@
     <a href="index.html" class="active">Accueil</a>
     <a href="historique.html">Historique</a>
     <div class="nav-dropdown">
-      <button type="button" class="nav-dropdown-trigger">Paramètres ▾</button>
+      <button type="button" class="nav-dropdown-trigger">Plus ▾</button>
       <div class="nav-dropdown-menu">
         <a href="parametres.html">Paramètres</a>
         <a href="profil.html">Profil</a>
@@ -51,6 +51,20 @@
   <section class="card">
     <h2>Résumé rapide</h2>
     <div class="metrics-grid" id="summaryGrid"></div>
+  </section>
+
+  <section class="card">
+    <h2>Zones de fréquence cardiaque (méthode Karvonen)</h2>
+    <div class="row" style="align-items:flex-end;">
+      <label class="field" style="max-width:160px;">FC max (bpm)
+        <input type="number" id="fcZoneMax">
+      </label>
+      <label class="field" style="max-width:160px;">FC repos (bpm)
+        <input type="number" id="fcZoneRepos">
+      </label>
+    </div>
+    <p class="hint">Calcul indicatif à partir de la réserve cardiaque (FC max − FC repos). Ces deux valeurs sont celles de ton profil ; les modifier ici les met aussi à jour là-bas.</p>
+    <div id="fcZonesBox" style="margin-top:10px;"></div>
   </section>
 
 </main>
@@ -150,10 +164,10 @@ function renderTimeline() {
   const dates = races.map(r => r.date).concat([todayISO]);
   const minDate = new Date(dates.reduce((a,b) => a < b ? a : b));
   const maxDate = new Date(dates.reduce((a,b) => a > b ? a : b));
-  minDate.setDate(minDate.getDate() - 7);
-  maxDate.setDate(maxDate.getDate() + 7);
+  minDate.setDate(minDate.getDate() - 16);
+  maxDate.setDate(maxDate.getDate() + 16);
   const span = maxDate - minDate || 1;
-  const w = 700, h = 130, padL = 12, padR = 12, y = 65;
+  const w = 700, h = 130, padL = 20, padR = 20, y = 65;
   const pos = d => padL + (new Date(d) - minDate) / span * (w - padL - padR);
   const todayX = pos(todayISO);
   const markers = races.map(r => {
@@ -200,6 +214,30 @@ function renderSummary() {
   ];
   grid.innerHTML = items.map(([lbl,val]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val'+(val==='Non disponible'?' na':'')+'">'+escapeHtml(val)+'</div></div>').join('');
 }
+
+function renderFcZones() {
+  const profile = getProfile();
+  document.getElementById('fcZoneMax').value = profile.fcMax || '';
+  document.getElementById('fcZoneRepos').value = profile.fcRepos || '';
+
+  const box = document.getElementById('fcZonesBox');
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  if (!zones) {
+    box.innerHTML = '<div class="hint">Renseigne ta FC max et ta FC repos ci-dessus pour voir tes zones.</div>';
+    return;
+  }
+  box.innerHTML = '<div class="metrics-grid">' + zones.map(z =>
+    '<div class="metric"><div class="lbl">' + escapeHtml(z.label) + '</div><div class="val">' + z.low + '–' + z.high + ' bpm</div></div>'
+  ).join('') + '</div>';
+}
+function saveFcZoneField(key, value) {
+  const profile = getProfile();
+  profile[key] = value === '' ? '' : value;
+  saveProfile(profile);
+  renderFcZones();
+}
+document.getElementById('fcZoneMax').addEventListener('change', e => saveFcZoneField('fcMax', e.target.value));
+document.getElementById('fcZoneRepos').addEventListener('change', e => saveFcZoneField('fcRepos', e.target.value));
 
 let editingRaceId = null;
 function openRaceModal(id) {
@@ -250,6 +288,7 @@ renderRaces();
 renderGearAlert();
 renderTimeline();
 renderSummary();
+renderFcZones();
 </script>
 </body>
 </html>
