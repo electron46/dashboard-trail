@@ -429,6 +429,7 @@ document.getElementById('aiGenBtn').addEventListener('click', async () => {
 /* --------------------------- GRAPHIQUES --------------------------- */
 function svgEmpty(title) { return '<div class="chart-box"><h3>' + title + '</h3><div class="empty">Pas encore assez de séances pour ce graphique (2 minimum).</div></div>'; }
 
+let _chartGradientId = 0;
 function lineChartSvg(title, points, opts) {
   opts = opts || {};
   if (points.length < 2) return svgEmpty(title);
@@ -442,6 +443,8 @@ function lineChartSvg(title, points, opts) {
   const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
   const sy = y => (h - padB) - (y - minY) / spanY * (h - padT - padB);
   const path = points.map((p,i) => (i===0?'M':'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
+  const gradId = 'chartFill' + (_chartGradientId++);
+  const areaPath = path + ' L' + sx(points[points.length-1].x).toFixed(1) + ',' + (h-padB) + ' L' + sx(points[0].x).toFixed(1) + ',' + (h-padB) + ' Z';
   const dots = points.map(p => {
     const cx = sx(p.x).toFixed(1), cy = sy(p.y).toFixed(1);
     return '<circle cx="'+cx+'" cy="'+cy+'" r="11" fill="transparent" data-tooltip="'+escapeHtml(p.label)+'"/>' +
@@ -449,6 +452,10 @@ function lineChartSvg(title, points, opts) {
   }).join('');
   const firstLabel = points[0].xLabel, lastLabel = points[points.length-1].xLabel;
   return '<div class="chart-box"><h3>' + title + '</h3><svg viewBox="0 0 '+w+' '+h+'">' +
+    '<defs><linearGradient id="'+gradId+'" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/>' +
+    '</linearGradient></defs>' +
+    '<path d="'+areaPath+'" fill="url(#'+gradId+')" stroke="none"/>' +
     '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
@@ -506,7 +513,7 @@ function renderDetailCharts(s) {
 
   if (s.laps && s.laps.length >= 2) {
     const cats = s.laps.map(l => ({ shortLabel: 'Km ' + l.index, tooltipLabel: 'Km ' + l.index + (l.avgPaceSecPerKm ? ' (' + fmtPace(l.avgPaceSecPerKm) + ')' : '') }));
-    const speedSeries = [{ name:'Vitesse', color:'var(--secondary)', values: s.laps.map(l => l.avgPaceSecPerKm ? +(3600/l.avgPaceSecPerKm).toFixed(2) : 0) }];
+    const speedSeries = [{ name:'Vitesse', color:'var(--accent)', values: s.laps.map(l => l.avgPaceSecPerKm ? +(3600/l.avgPaceSecPerKm).toFixed(2) : 0) }];
     charts.push(groupedBarChartSvg('Allure par kilomètre (splits, km/h — plus haut = plus rapide)', cats, speedSeries));
 
     // Allure moyenne selon le terrain (approximatif : classe chaque split "roulant" ou "montée"
@@ -566,11 +573,11 @@ function renderCharts() {
   const weekKeys = Array.from(new Set([...Object.keys(doneMap), ...Object.keys(plannedMap)])).sort();
   const weeks = weekKeys.map(w => ({ key:w, shortLabel: w.slice(5) }));
   const kmSeries = [
-    { name:'Réalisé', color:'var(--secondary)', values: weekKeys.map(w => doneMap[w]?.km || 0) },
+    { name:'Réalisé', color:'var(--accent)', values: weekKeys.map(w => doneMap[w]?.km || 0) },
     { name:'Planifié', color:'var(--border)', values: weekKeys.map(w => plannedMap[w]?.km || 0) },
   ];
   const dplusSeries = [
-    { name:'Réalisé', color:'var(--secondary)', values: weekKeys.map(w => doneMap[w]?.dplus || 0) },
+    { name:'Réalisé', color:'var(--accent)', values: weekKeys.map(w => doneMap[w]?.dplus || 0) },
     { name:'Planifié', color:'var(--border)', values: weekKeys.map(w => plannedMap[w]?.dplus || 0) },
   ];
   const kmChart = groupedBarChartSvg('Volume hebdomadaire (km) — réalisé vs planifié', weeks, kmSeries);
