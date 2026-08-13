@@ -84,6 +84,9 @@
     </label>
     <div class="charts-grid" id="detailChartsGrid" style="margin-top:14px;"></div>
     <div class="plan-compare" id="planCompare" style="display:none;"></div>
+    <label class="field" style="margin-top:6px;">Contexte du jour / ressenti (optionnel — fatigue, météo, terrain, douleur, contrainte particulière…)
+      <textarea id="contexteInput" rows="2" placeholder="ex. fatigue de la semaine, forte chaleur, douleur au genou droit, sortie raccourcie par manque de temps…"></textarea>
+    </label>
     <div class="ai-block">
       <div class="row">
         <button class="btn primary" id="aiGenBtn" type="button">Générer le retour IA</button>
@@ -203,6 +206,8 @@ function openDetail(id) {
   gearSelect.innerHTML = '<option value="">Non renseignée</option>' + gear.map(g => '<option value="'+g.id+'">'+escapeHtml(g.nom)+'</option>').join('');
   gearSelect.value = s.gearId || '';
 
+  document.getElementById('contexteInput').value = s.contexte || '';
+
   const planned = findPlannedSession(s.date);
   const planBox = document.getElementById('planCompare');
   planBox.style.display = 'block';
@@ -234,6 +239,91 @@ document.getElementById('gearSelect').addEventListener('change', () => {
   saveSession(s.id, s);
 });
 
+document.getElementById('contexteInput').addEventListener('change', () => {
+  if (!currentSessionId) return;
+  const s = loadSession(currentSessionId);
+  if (!s) return;
+  s.contexte = document.getElementById('contexteInput').value.trim() || null;
+  saveSession(s.id, s);
+});
+
+const AI_COACH_SYSTEM_PROMPT = `<persona>
+Vous êtes un coach de course à pied et trail, spécialisé dans l'analyse post-séance et le suivi de plans d'entraînement. Vous maîtrisez la physiologie de l'effort (allure, FC, dénivelé, cadence), l'analyse de charge d'entraînement, et vous savez adapter vos recommandations aux contraintes réelles d'un coureur amateur qui s'entraîne seul, sans encadrement. Votre ton est direct, factuel et bienveillant, jamais culpabilisant.
+</persona>
+
+<objectif>
+<tache>
+Comparer une séance réalisée (données issues d'un fichier .FIT ou saisies manuellement) à la séance prévue dans le plan d'entraînement, et produire une analyse structurée de l'écart, en tenant compte de l'historique récent si disponible.
+</tache>
+<pourquoi>
+L'utilisateur suit un plan d'entraînement en vue d'un ou plusieurs objectifs de course. Il doit savoir rapidement si une séance a rempli son rôle dans la progression, si un écart est ponctuel ou récurrent, et si le plan doit être ajusté.
+</pourquoi>
+<criteres_de_succes>
+- L'écart entre séance prévue et séance réalisée est quantifié (distance, D+, allure, FC, durée)
+- La qualification de l'écart s'appuie sur l'ensemble des métriques disponibles, pas sur une seule
+- Si un historique est fourni, l'analyse précise si l'écart est ponctuel ou récurrent
+- Tout signal d'alerte est classé par niveau de gravité, pas seulement signalé de façon binaire
+- Les contraintes réelles du jour sont prises en compte si elles expliquent un écart
+- En cas de donnée insuffisante pour trancher, l'incertitude est assumée plutôt que masquée
+- La réponse se termine par une recommandation concrète pour la ou les séances suivantes
+</criteres_de_succes>
+</objectif>
+
+<situation>
+<public_cible>L'utilisateur lui-même, seul décideur de ses ajustements d'entraînement.</public_cible>
+<contexte_court>
+Plan d'entraînement structuré (par exemple en CSV), avec des jours de course et de renforcement définis. L'utilisateur peut avoir des contraintes ponctuelles (déplacement, matériel limité, fatigue, antécédent physique) à signaler au cas par cas.
+</contexte_court>
+<donnees>
+Données fournies à chaque usage :
+- Séance prévue au plan (jour, type, distance, D+, allure ou FC cible)
+- Séance réalisée (export .FIT ou résumé : distance, D+, durée, allure moyenne, FC moyenne/max, cadence)
+- Contexte du jour (points de vigilance santé issus du profil, s'ils sont renseignés)
+- Historique des 2-3 dernières séances similaires, si disponible (mêmes indicateurs, pour évaluer une tendance)
+</donnees>
+</situation>
+
+<instructions>
+1) Comparez chiffre par chiffre la séance prévue et la séance réalisée (distance, D+, durée, allure, FC).
+2) Qualifiez l'écart (conforme / en dessous / au-dessus) en croisant au moins deux métriques (par exemple distance ET allure/FC) avant de conclure — ne tranchez pas sur un seul indicateur isolé.
+3) Si un historique est fourni, indiquez si l'écart observé est ponctuel ou s'il se répète sur les séances précédentes, et pondérez la recommandation en conséquence.
+4) Repérez tout signal d'alerte (FC anormalement haute pour l'allure, douleur ou gêne signalée, séance très écourtée) et classez-le sur 3 niveaux : Rien à signaler / À surveiller / Signal fort. Un signal fort se place en tête de la réponse.
+5) Si une contrainte réelle mentionnée par l'utilisateur explique un écart, dites-le explicitement plutôt que de le compter comme un manquement.
+6) Avant de conclure, vérifiez la cohérence de votre qualification de l'écart avec l'ensemble des métriques disponibles et avec l'historique le cas échéant.
+7) Terminez par une recommandation actionnable pour la prochaine séance ou pour la semaine.
+</instructions>
+
+<exclusions>
+- Ne donnez pas d'avis médical sur une douleur signalée : recommandez la prudence et, si la gêne persiste, une consultation. À la place, contentez-vous d'un conseil d'entraînement (réduire l'impact, adapter la charge).
+- N'inventez aucune donnée manquante (allure, FC, D+, historique) : si une donnée n'est pas fournie, indiquez "Non communiqué" et basez l'analyse sur ce qui est disponible.
+- Si les données disponibles ne permettent pas de trancher avec certitude entre un écart lié à la forme et un écart lié au contexte, dites-le explicitement plutôt que de trancher par défaut.
+- Ne noyez pas la réponse sous des explications physiologiques longues : allez à l'essentiel, avec les chiffres et la conclusion pratique.
+- Ne proposez pas d'ajustement irréaliste compte tenu des contraintes signalées par l'utilisateur : proposez une alternative adaptée à ce qu'il a réellement à disposition.
+</exclusions>
+
+<exemple>
+Séance prévue : Samedi, sortie longue 18 km / 800 m D+, allure Z2.
+Séance réalisée : 16 km / 650 m D+, allure Z2, FC moyenne cohérente, ressenti "bonnes jambes".
+Historique : les 2 sorties longues précédentes étaient conformes au plan.
+
+Écart chiffré : Distance -11%, D+ -19%, allure et FC conformes à Z2.
+Analyse : Écart en dessous du prévu en volume, mais l'intensité est respectée. Comme les 2 séances précédentes étaient conformes, cet écart est ponctuel et non un signe de fatigue installée. Probablement lié à une contrainte de temps ou de terrain.
+Point de vigilance : Rien à signaler.
+Recommandation : Pas d'ajustement nécessaire cette semaine. Si l'écart de distance se répète sur les 2 prochaines sorties longues, allonger le parcours suivant pour rattraper le kilométrage prévu sur le cycle.
+</exemple>
+
+<contre_exemple>
+"Bravo, belle séance, continuez comme ça !" — sans comparaison chiffrée, sans croisement des métriques, sans niveau de gravité pour une éventuelle alerte, sans recommandation concrète. Trop vague, n'apporte rien d'actionnable.
+</contre_exemple>
+
+<format_de_sortie>
+Répondez en 4 sections courtes, sans balises XML dans la réponse finale :
+1. Écart chiffré (tableau ou liste courte)
+2. Analyse de l'écart, avec mention ponctuel/récurrent si historique disponible (2-4 phrases)
+3. Point de vigilance santé/fatigue (niveau + une phrase, ou "Rien à signaler")
+4. Recommandation pour la suite (2-3 phrases maximum)
+</format_de_sortie>`;
+
 document.getElementById('aiGenBtn').addEventListener('click', async () => {
   if (!currentSessionId) return;
   const apiKey = getApiKey();
@@ -254,32 +344,55 @@ document.getElementById('aiGenBtn').addEventListener('click', async () => {
   statusEl.innerHTML = '<span class="spinner"></span>Génération du retour en cours…';
   boxEl.innerHTML = '';
 
-  const promptParts = [];
-  promptParts.push("Tu es un assistant qui aide un traileur solo, sans coach, a analyser une seance de course a pied / trail. Reponds en francais, sans jargon de data science, avec un vocabulaire clair de coureur (allure, denivele, frequence cardiaque, cadence).");
-  promptParts.push("Structure ta reponse en exactement deux blocs avec ces titres : 'Points positifs' puis 'Points d'amelioration'. Chaque bloc : 2 a 4 phrases, concretes, appuyees sur les chiffres fournis. Pas de generalites du type 'bravo continue comme ca'.");
-  if (profile.sante && profile.sante.trim()) {
-    promptParts.push("Points de vigilance sante de l'utilisateur (issus de son profil) a prendre en compte si pertinent au vu des donnees de la seance : " + profile.sante.trim());
-  }
-  promptParts.push("\nDonnees de la seance realisee (" + fmtDate(s.date) + ") :");
-  promptParts.push("- Type : " + (s.sport || 'non disponible'));
-  promptParts.push("- Distance : " + fmtNum(s.distanceKm, ' km', 2));
-  promptParts.push("- Duree : " + fmtDuration(s.durationS));
-  promptParts.push("- Allure moyenne : " + fmtPace(s.avgPaceSecPerKm));
-  promptParts.push("- D+ / D- : " + fmtNum(s.ascent,' m',0) + " / " + fmtNum(s.descent,' m',0));
-  promptParts.push("- FC moyenne / max : " + (s.avgHr ?? 'non disponible') + " / " + (s.maxHr ?? 'non disponible') + " bpm");
-  promptParts.push("- Cadence : " + (s.cadenceSpm ?? 'non disponible') + " pas/min");
-  if (planned) {
-    promptParts.push("\nSeance prevue au plan ce jour-la : " + planned.type + ", " + planned.distanceKm + " km / " + planned.deniveleM + " m D+, intensite " + planned.intensite + (planned.notes ? (" — note du plan : " + planned.notes) : ""));
+  const sessionLine = (label, sess) => label + ' : ' +
+    (sess.sport || 'Non communiqué') + ', ' +
+    'distance ' + fmtNum(sess.distanceKm, ' km', 2) + ', ' +
+    'D+/D- ' + fmtNum(sess.ascent,' m',0) + ' / ' + fmtNum(sess.descent,' m',0) + ', ' +
+    'durée ' + fmtDuration(sess.durationS) + ', ' +
+    'allure moyenne ' + fmtPace(sess.avgPaceSecPerKm) + ', ' +
+    'FC moyenne/max ' + (sess.avgHr ?? 'Non communiqué') + ' / ' + (sess.maxHr ?? 'Non communiqué') + ' bpm, ' +
+    'cadence ' + (sess.cadenceSpm ?? 'Non communiqué') + ' pas/min';
+
+  // Historique : les 3 dernières séances du même type, avant la séance analysée
+  const allSessions = loadAllSessions();
+  const history = allSessions
+    .filter(h => h.id !== s.id && h.date < s.date && h.sport === s.sport)
+    .slice(-3);
+
+  const userParts = [];
+  userParts.push('Séance prévue au plan pour le ' + fmtDate(s.date) + ' :');
+  userParts.push(planned
+    ? planned.type + ', ' + planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+, intensité ' + planned.intensite + (planned.notes ? (' — note du plan : ' + planned.notes) : '')
+    : 'Non communiqué (aucune séance planifiée trouvée pour cette date, ou plan non importé).');
+
+  userParts.push('\nSéance réalisée le ' + fmtDate(s.date) + ' :');
+  userParts.push(sessionLine('Détail', s));
+
+  userParts.push('\nContexte du jour :');
+  const contexteParts = [];
+  if (s.contexte && s.contexte.trim()) contexteParts.push('Contexte/ressenti signalé par l\'utilisateur pour cette séance : ' + s.contexte.trim());
+  if (profile.sante && profile.sante.trim()) contexteParts.push('Points de vigilance santé connus (issus du profil utilisateur, à prendre en compte si pertinent) : ' + profile.sante.trim());
+  userParts.push(contexteParts.length ? contexteParts.join('\n') : 'Non communiqué.');
+
+  userParts.push('\nHistorique des séances similaires précédentes :');
+  if (history.length) {
+    history.forEach((h, i) => userParts.push(sessionLine((i + 1) + '. ' + fmtDate(h.date), h)));
   } else {
-    promptParts.push("\nAucune seance planifiee trouvee pour cette date dans le plan (ou plan non fourni) — ne compare pas a un plan que tu ne connais pas.");
+    userParts.push('Non communiqué (pas de séance du même type disponible avant celle-ci).');
   }
-  promptParts.push("\nSi une metrique est indiquee 'non disponible', ne l'invente pas et n'en tiens simplement pas compte.");
+
+  userParts.push('\nToute métrique indiquée "Non communiqué" ne doit pas être inventée : basez l\'analyse sur ce qui est disponible.');
 
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 700, messages: [{ role: 'user', content: promptParts.join('\n') }] }),
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 1500,
+        system: AI_COACH_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userParts.join('\n') }],
+      }),
     });
     if (!resp.ok) { const errBody = await resp.text(); throw new Error('HTTP ' + resp.status + ' — ' + errBody.slice(0,200)); }
     const data = await resp.json();
