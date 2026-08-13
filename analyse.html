@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analyse — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#151E2B">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/app.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+  </div>
+  <nav class="sidebar-nav">
+    <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+    <a href="analyse.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
+    <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+    <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+    <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
+  </nav>
+</aside>
+<div class="app-main">
+<header class="app-topbar">
+  <h1>Analyse — pourquoi ma performance évolue</h1>
+  <button id="themeToggle" type="button">☀ Clair</button>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>Comparer des séances similaires</h2>
+    <div class="row" style="align-items:flex-end;">
+      <label class="field" style="max-width:280px;">Groupe de distance
+        <select id="bucketSelect"></select>
+      </label>
+    </div>
+    <p class="hint">Les séances sont regroupées par distance approchante (par tranche de 5 km) pour comparer ce qui est comparable.</p>
+    <div id="compareTableBox" style="margin-top:12px;"></div>
+  </section>
+
+  <section class="card">
+    <h2>Efficacité <small>(vitesse par battement de cœur — plus c'est haut, plus tu es efficace à effort égal)</small></h2>
+    <div id="efficiencyTrendBox"></div>
+    <div id="efficiencyChartBox" style="margin-top:12px;"></div>
+    <p class="hint">Efficacité = vitesse moyenne (km/h) ÷ FC moyenne (bpm). Si ce chiffre monte dans le temps pour un même type de sortie, tu cours plus vite pour le même effort cardiaque : c'est un signe de progression.</p>
+  </section>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+</div>
+</div>
+
+<nav class="mobile-nav">
+  <a href="index.html"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+  <a href="analyse.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
+  <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+  <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+  <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
+</nav>
+
+<script>
+// Regroupe les séances par tranche de distance de 5 km (ex. 20-25 km, 25-30 km...) pour comparer
+// des sorties de nature comparable plutôt que de mélanger une sortie de 8 km avec un ultra de 80 km.
+function sessionBucket(distanceKm) {
+  if (distanceKm == null || distanceKm <= 0) return null;
+  return Math.max(5, Math.round(distanceKm / 5) * 5);
+}
+function bucketLabel(bucket) { return '~' + bucket + ' km'; }
+
+function getBuckets(sessions) {
+  const map = new Map();
+  sessions.forEach(s => {
+    const b = sessionBucket(s.distanceKm);
+    if (b == null) return;
+    if (!map.has(b)) map.set(b, []);
+    map.get(b).push(s);
+  });
+  // Ne garde que les groupes avec au moins 2 séances (sinon rien à comparer).
+  return [...map.entries()].filter(([, list]) => list.length >= 2).sort((a,b) => b[1].length - a[1].length);
+}
+
+function efficiency(s) {
+  if (!s.avgPaceSecPerKm || !s.avgHr) return null;
+  const speedKmH = 3600 / s.avgPaceSecPerKm;
+  return speedKmH / s.avgHr;
+}
+
+let selectedBucket = null;
+
+function initBucketSelect() {
+  const sessions = loadAllSessions();
+  const buckets = getBuckets(sessions);
+  const select = document.getElementById('bucketSelect');
+  if (!buckets.length) {
+    select.innerHTML = '<option value="">Aucun groupe comparable pour l\'instant</option>';
+    select.disabled = true;
+    renderAll(sessions, null);
+    return;
+  }
+  select.disabled = false;
+  select.innerHTML = buckets.map(([b, list]) => '<option value="'+b+'">' + bucketLabel(b) + ' (' + list.length + ' séances)</option>').join('');
+  selectedBucket = Number(select.value);
+  select.addEventListener('change', () => { selectedBucket = Number(select.value); renderAll(sessions, selectedBucket); });
+  renderAll(sessions, selectedBucket);
+}
+
+function renderAll(sessions, bucket) {
+  renderCompareTable(sessions, bucket);
+  renderEfficiency(sessions, bucket);
+}
+
+function renderCompareTable(sessions, bucket) {
+  const box = document.getElementById('compareTableBox');
+  if (bucket == null) {
+    box.innerHTML = '<div class="empty">Importe au moins 2 séances de distance comparable (page Activités) pour voir une comparaison.</div>';
+    return;
+  }
+  const list = sessions.filter(s => sessionBucket(s.distanceKm) === bucket).sort((a,b) => a.date.localeCompare(b.date)).slice(-6);
+  const rows = [
+    ['Date', list.map(s => fmtDate(s.date))],
+    ['Distance', list.map(s => fmtNum(s.distanceKm, ' km', 1))],
+    ['D+', list.map(s => fmtNum(s.ascent, ' m', 0))],
+    ['Temps', list.map(s => fmtDuration(s.durationS))],
+    ['Allure', list.map(s => fmtPace(s.avgPaceSecPerKm))],
+    ['FC moy.', list.map(s => s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible')],
+  ];
+  box.innerHTML = '<table><tbody>' + rows.map(([label, values]) =>
+    '<tr><th>' + label + '</th>' + values.map(v => '<td>' + escapeHtml(String(v)) + '</td>').join('') + '</tr>'
+  ).join('') + '</tbody></table>';
+}
+
+function renderEfficiency(sessions, bucket) {
+  const trendBox = document.getElementById('efficiencyTrendBox');
+  const chartBox = document.getElementById('efficiencyChartBox');
+  if (bucket == null) {
+    trendBox.innerHTML = '';
+    chartBox.innerHTML = '';
+    return;
+  }
+  const list = sessions.filter(s => sessionBucket(s.distanceKm) === bucket).sort((a,b) => a.date.localeCompare(b.date));
+  const pts = list.map((s, i) => {
+    const eff = efficiency(s);
+    return eff == null ? null : { x: i, y: +eff.toFixed(3), xLabel: fmtDate(s.date).slice(0,5), label: fmtDate(s.date) + ' : ' + eff.toFixed(2) + ' (allure ' + fmtPace(s.avgPaceSecPerKm) + ', FC ' + s.avgHr + ' bpm)' };
+  }).filter(Boolean);
+
+  if (pts.length >= 2) {
+    const first = pts[0].y, last = pts[pts.length-1].y;
+    const delta = Math.round(((last - first) / first) * 100);
+    const badge = delta > 3 ? '<span class="badge ok-badge">+' + delta + '% — en progression</span>'
+      : (delta < -3 ? '<span class="badge warn-badge">' + delta + '% — en baisse sur cette distance</span>'
+      : '<span class="badge brand-badge">stable (' + (delta>=0?'+':'') + delta + '%)</span>');
+    trendBox.innerHTML = '<div class="metrics-grid"><div class="metric"><div class="lbl">Évolution sur ce groupe</div><div class="val">' + badge + '</div></div></div>';
+  } else {
+    trendBox.innerHTML = '';
+  }
+  chartBox.innerHTML = lineChartSvg('Efficacité (km/h par bpm) — ' + bucketLabel(bucket), pts, { decimals: 2 });
+  initChartTooltips(chartBox);
+}
+
+initBucketSelect();
+</script>
+</body>
+</html>
