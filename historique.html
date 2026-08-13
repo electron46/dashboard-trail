@@ -389,7 +389,8 @@ document.getElementById('aiGenBtn').addEventListener('click', async () => {
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 1500,
+        max_tokens: 2000,
+        thinking: { type: 'disabled' },
         system: AI_COACH_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userParts.join('\n') }],
       }),
