@@ -416,7 +416,7 @@ function getPlanYear() { try { return parseInt(localStorage.getItem(PLAN_YEAR_KE
 function savePlanYear(year) { try { localStorage.setItem(PLAN_YEAR_KEY, String(year)); scheduleSync(); return true; } catch (e) { return false; } }
 
 // Découpe une ligne CSV en respectant les champs entre guillemets (ex. notes contenant des virgules).
-function parseCsvLine(line) {
+function parseCsvLine(line, delimiter) {
   const cols = [];
   let cur = '', inQuotes = false;
   for (let i = 0; i < line.length; i++) {
@@ -426,41 +426,69 @@ function parseCsvLine(line) {
       else cur += c;
     } else {
       if (c === '"') inQuotes = true;
-      else if (c === ',') { cols.push(cur); cur = ''; }
+      else if (c === delimiter) { cols.push(cur); cur = ''; }
       else cur += c;
     }
   }
   cols.push(cur);
   return cols;
 }
+// Supporte deux formats de plan :
+// - le format "riche" (séparateur ;) avec colonne Date complète (JJ/MM/AAAA) et zones FC détaillées
+//   par phase (échauffement / corps de séance / retour au calme / moyenne globale) + D- + objectif de séance
+// - l'ancien format (séparateur ,) où seule la colonne "Jour" (ex. "Ven 07/08") donne la date,
+//   complétée par l'année réglée dans Paramètres
 function parsePlanCsv(text) {
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length);
   if (!lines.length) return [];
-  const header = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+  const delimiter = (lines[0].split(';').length > lines[0].split(',').length) ? ';' : ',';
+  const header = parseCsvLine(lines[0], delimiter).map(h => h.trim().toLowerCase());
   const idx = {
     bloc: header.findIndex(h => h.includes('bloc')),
+    date: header.findIndex(h => h.trim() === 'date'),
     jour: header.findIndex(h => h.includes('jour')),
     type: header.findIndex(h => h.includes('type')),
     distance: header.findIndex(h => h.includes('distance')),
     denivele: header.findIndex(h => h.includes('d+')),
+    descente: header.findIndex(h => h.trim() === 'd-'),
+    duree: header.findIndex(h => h.includes('duree')),
+    fcEchauffement: header.findIndex(h => h.includes('echauffement')),
+    fcCorps: header.findIndex(h => h.includes('corps')),
+    fcRetourCalme: header.findIndex(h => h.includes('retour au calme')),
+    fcMoyenne: header.findIndex(h => h.includes('moyenne globale')),
     intensite: header.findIndex(h => h.includes('intensit')),
-    notes: header.findIndex(h => h.includes('notes')),
+    objectif: header.findIndex(h => h.includes('objectif')),
+    notes: header.findIndex(h => h.trim() === 'notes'),
   };
   const out = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = parseCsvLine(lines[i]);
-    const jourRaw = (cols[idx.jour] || '').trim();
-    const m = jourRaw.match(/(\d{2})\/(\d{2})/);
-    if (!m) continue;
-    const dateISO = getPlanYear() + '-' + m[2] + '-' + m[1];
+    const cols = parseCsvLine(lines[i], delimiter);
+    let dateISO = null;
+    if (idx.date >= 0 && cols[idx.date]) {
+      const dm = cols[idx.date].trim().match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dm) dateISO = dm[3] + '-' + dm[2].padStart(2,'0') + '-' + dm[1].padStart(2,'0');
+    }
+    if (!dateISO && idx.jour >= 0) {
+      const m = (cols[idx.jour] || '').trim().match(/(\d{2})\/(\d{2})/);
+      if (m) dateISO = getPlanYear() + '-' + m[2] + '-' + m[1];
+    }
+    if (!dateISO) continue;
+    const notesVal = idx.objectif >= 0 ? cols[idx.objectif] : (idx.notes >= 0 ? cols[idx.notes] : '');
     out.push({
       date: dateISO,
       bloc: (cols[idx.bloc] || '').trim(),
+      jourLabel: idx.jour >= 0 ? (cols[idx.jour] || '').trim() : '',
       type: (cols[idx.type] || '').trim(),
       distanceKm: parseFloat(cols[idx.distance]) || 0,
       deniveleM: parseFloat(cols[idx.denivele]) || 0,
+      descenteM: idx.descente >= 0 ? (parseFloat(cols[idx.descente]) || 0) : null,
+      dureeDetail: idx.duree >= 0 ? (cols[idx.duree] || '').trim() : '',
+      fcEchauffement: idx.fcEchauffement >= 0 ? (cols[idx.fcEchauffement] || '').trim() : '',
+      fcCorpsSeance: idx.fcCorps >= 0 ? (cols[idx.fcCorps] || '').trim() : '',
+      fcRetourCalme: idx.fcRetourCalme >= 0 ? (cols[idx.fcRetourCalme] || '').trim() : '',
+      fcMoyenneGlobale: idx.fcMoyenne >= 0 ? (cols[idx.fcMoyenne] || '').trim() : '',
       intensite: (cols[idx.intensite] || '').trim(),
-      notes: (cols[idx.notes] || '').trim(),
+      notes: (notesVal || '').trim(),
     });
   }
   return out;

@@ -216,9 +216,12 @@ function openDetail(id) {
   const planBox = document.getElementById('planCompare');
   planBox.style.display = 'block';
   if (planned) {
-    planBox.innerHTML = '<h4>Séance prévue au plan ce jour-là</h4>' +
-      '<div>' + escapeHtml(planned.type) + ' — ' + planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+ (' + escapeHtml(planned.intensite) + ')</div>' +
-      (planned.notes ? '<div class="hint">' + escapeHtml(planned.notes) + '</div>' : '');
+    const dplusDmoins = planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+' + (planned.descenteM ? ' / ' + planned.descenteM + ' m D-' : '');
+    planBox.innerHTML = '<h4>Séance prévue au plan ce jour-là' + (planned.bloc ? ' <small class="hint">(' + escapeHtml(planned.bloc) + ')</small>' : '') + '</h4>' +
+      '<div>' + escapeHtml(planned.type) + ' — ' + dplusDmoins + (planned.intensite ? ' (' + escapeHtml(planned.intensite) + ')' : '') + '</div>' +
+      (planned.fcCorpsSeance ? '<div class="hint">Zone FC cible (corps de séance) : ' + escapeHtml(planned.fcCorpsSeance) + '</div>' : '') +
+      (planned.dureeDetail ? '<div class="hint">' + escapeHtml(planned.dureeDetail) + '</div>' : '') +
+      (planned.notes ? '<div class="hint">Objectif : ' + escapeHtml(planned.notes) + '</div>' : '');
   } else {
     planBox.innerHTML = '<h4>Séance prévue au plan</h4><div class="hint">Aucune séance planifiée trouvée pour cette date (ou plan non importé — voir page Paramètres).</div>';
   }
@@ -366,7 +369,9 @@ document.getElementById('aiGenBtn').addEventListener('click', async () => {
   const userParts = [];
   userParts.push('Séance prévue au plan pour le ' + fmtDate(s.date) + ' :');
   userParts.push(planned
-    ? planned.type + ', ' + planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+, intensité ' + planned.intensite + (planned.notes ? (' — note du plan : ' + planned.notes) : '')
+    ? planned.type + ', ' + planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+' + (planned.descenteM ? ' / ' + planned.descenteM + ' m D-' : '') + ', intensité ' + planned.intensite +
+      (planned.fcCorpsSeance ? ' — zone FC cible (corps de séance) : ' + planned.fcCorpsSeance : '') +
+      (planned.notes ? (' — objectif du plan : ' + planned.notes) : '')
     : 'Non communiqué (aucune séance planifiée trouvée pour cette date, ou plan non importé).');
 
   userParts.push('\nSéance réalisée le ' + fmtDate(s.date) + ' :');

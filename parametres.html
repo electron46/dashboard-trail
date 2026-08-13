@@ -49,8 +49,10 @@
   <div class="tab-panel active" data-panel="plan">
     <section class="card">
       <h2>Plan d'entraînement (CSV)</h2>
-      <p class="hint">Colonnes attendues : Semaine, Bloc, Jour (ex. "Ven 07/08"), Type de séance, Distance (km), D+ (m), Intensité (RPE), Notes. La colonne "Jour" ne contient pas d'année : renseigne l'année de la saison ci-dessous.</p>
-      <label class="field" style="max-width:160px;">Année du plan
+      <p class="hint">Deux formats de CSV sont acceptés :</p>
+      <p class="hint">— <strong>Format détaillé</strong> (séparateur point-virgule) : Semaine, Date (JJ/MM/AAAA), Jour, Bloc / Phase, Type de séance, Distance, D+, D-, Durée totale, FC échauffement, FC corps de séance, FC retour au calme, FC moyenne globale, Intensité (RPE), Objectif de la séance. C'est le format à privilégier — la date complète évite d'avoir à préciser l'année.</p>
+      <p class="hint">— <strong>Format simple</strong> (séparateur virgule) : Semaine, Bloc, Jour (ex. "Ven 07/08", sans année), Type de séance, Distance (km), D+ (m), Intensité (RPE), Notes. Dans ce cas, renseigne l'année de la saison ci-dessous.</p>
+      <label class="field" style="max-width:160px;">Année du plan <small>(uniquement pour le format simple)</small>
         <input type="number" id="planYearInput" step="1" min="2020" max="2100">
       </label>
       <div class="row">

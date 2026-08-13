@@ -244,7 +244,7 @@ function renderSummary() {
     ['Séances enregistrées', String(sessions.length)],
     ['Km cette semaine', fmtNum(weekKm, ' km', 1)],
     ['Dernière séance', last ? fmtDate(last.date) : 'Non disponible'],
-    ['Prochaine séance planifiée', nextPlanned ? (fmtDate(nextPlanned.date) + ' — ' + nextPlanned.type) : 'Non disponible'],
+    ['Prochaine séance planifiée', nextPlanned ? (fmtDate(nextPlanned.date) + ' — ' + nextPlanned.type + (nextPlanned.distanceKm ? ' (' + nextPlanned.distanceKm + ' km / ' + nextPlanned.deniveleM + ' m D+)' : '')) : 'Non disponible'],
     ['Bloc de plan actuel', bloc || 'Non disponible'],
   ];
   grid.innerHTML = items.map(([lbl,val]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val'+(val==='Non disponible'?' na':'')+'">'+escapeHtml(val)+'</div></div>').join('');
