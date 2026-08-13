@@ -11,7 +11,7 @@ Objectif principal :
 Créer une application web personnelle qui aide à se préparer au mieux pour plusieurs courses de trail sur une même saison, en distinguant les objectifs principaux des objectifs secondaires. L'application doit permettre de suivre l'entraînement en fonction de chaque échéance et d'ajuster la préparation en conséquence, sans coach ni support extérieur.
 
 Résultat attendu :
-Une application web utilisable en local (ou déployée, à trancher — voir section 16), qui centralise : les courses à venir avec leur statut (objectif principal / secondaire), le plan d'entraînement associé, et le suivi de la progression par rapport à chaque échéance.
+Une application web déployée sur GitHub Pages (voir section 16), qui centralise : les courses à venir avec leur statut (objectif principal / secondaire), le plan d'entraînement associé, et le suivi de la progression par rapport à chaque échéance.
 
 ## 2. Contexte métier
 
@@ -40,13 +40,18 @@ Ce que le projet doit faire :
 Ce que le projet ne doit pas faire pour l'instant :
 - Gestion multi-utilisateurs (usage strictement personnel)
 - Fonctionnalités sociales (partage, comparaison avec d'autres coureurs)
-- Synchronisation automatique entre appareils (PC / téléphone) — se fait pour l'instant par export/import manuel d'un fichier JSON (voir section 15)
 
 Fonctionnalités ajoutées après le MVP initial (à la demande de l'utilisateur) :
 - Gestion des courses via l'interface (ajout/modification/suppression), plus besoin de modifier le code
-- Profil traileur (infos perso, points de vigilance santé réutilisés dans le retour IA, records personnels)
+- Profil traileur (infos perso, points de vigilance santé réutilisés dans le retour IA, records personnels, objectifs de course)
 - Suivi d'usure des chaussures (km cumulés par paire, seuil d'alerte)
-- Mode sombre
+- Zones de fréquence cardiaque (méthode Karvonen) calculées et modifiables en page Accueil
+- Retour IA structuré par séance (persona coach trail : compare au plan, croise plusieurs métriques, distingue écart ponctuel/récurrent via l'historique, signale les alertes santé par niveau de gravité, tient compte du contexte du jour saisi par l'utilisateur)
+- Estimation IA du temps de course (croise technicité du terrain, chaleur attendue, historique d'entraînement et profil physio ; peut être reprise comme temps visé)
+- Plan d'entraînement CSV enrichi : zones FC cibles par phase de séance, D-, bloc/semaine, objectif détaillé — avec vue dépliable par semaine en page Paramètres (les deux formats, riche et simple, restent supportés)
+- Synchronisation entre appareils : export/import JSON manuel, ou synchro automatique optionnelle via Supabase (page Paramètres)
+- Site installable comme application (PWA) sur l'écran d'accueil du téléphone
+- Mode sombre par défaut / clair en option (voir rebranding, section 14)
 - Site à plusieurs pages plutôt qu'un fichier unique (voir section 6)
 
 Version souhaitée :
@@ -64,10 +69,10 @@ Contraintes de budget :
 Non précisé. Claude doit privilégier des solutions gratuites par défaut (usage strictement personnel, pas d'hébergement payant nécessaire a priori).
 
 Contraintes techniques :
-Usage principalement local (PC). Doit aussi pouvoir être consulté depuis un téléphone lors de déplacements (ex. vacances) — donc prévoir un accès à distance simple (ex. hébergement léger ou synchronisation), sans que ce soit la contrainte prioritaire du MVP. ⚠️ Hypothèse : une solution qui fonctionne d'abord en local puis qui peut être exposée simplement (ex. via un petit hébergement gratuit/peu coûteux) est suffisante — à confirmer avec Claude Code lors du choix technique.
+Résolu : site déployé sur GitHub Pages, accessible depuis PC ou téléphone via navigateur, installable comme PWA sur l'écran d'accueil mobile. Les données restent locales à chaque appareil (`localStorage`), avec synchro Supabase optionnelle pour les retrouver sur un autre appareil.
 
 Contraintes de design :
-Non précisé. Priorité à la lisibilité plutôt qu'au design soigné, usage strictement personnel.
+Identité de marque ELEV définie et appliquée à tout le site (voir section 14) : palette navy/cloud + vert unique, typographies Raleway (titres) + Inter (texte), thème sombre par défaut. La charte source vit dans `design-system/` (voir section 6) — ne pas la modifier à la main, elle a déjà été importée et déclinée dans `assets/style.css`.
 
 Contraintes légales, données ou confidentialité :
 Aucune contrainte particulière (usage personnel, aucune donnée de tiers).
@@ -92,21 +97,23 @@ Claude doit proposer une solution simple et adaptée au besoin, en expliquant br
 ## 6. Structure du projet
 
 Dossiers ou fichiers importants :
-- `index.html` — page d'accueil (échéances de la saison + état de préparation)
-- `historique.html` — import des séances .fit, historique, graphiques, détail de séance + retour IA
-- `profil.html` — profil traileur (infos perso, santé, records)
+- `index.html` — page d'accueil (échéances de la saison, état de préparation vs plan, zones FC Karvonen, estimation IA du temps de course)
+- `historique.html` — import des séances .fit, historique, graphiques (dont allure par type de terrain), détail de séance + retour IA structuré
+- `profil.html` — profil traileur (infos perso, santé, records, objectifs de course)
 - `equipements.html` — suivi d'usure des chaussures
-- `parametres.html` — plan CSV, clé API Claude, export/import des données, réinitialisation
-- `assets/style.css` — styles partagés par toutes les pages (charte ELEV, mode clair/sombre)
-- `assets/app.js` — logique partagée : parsing des fichiers .fit, stockage (localStorage), formatage, calcul de l'état de préparation
+- `parametres.html` — plan CSV (import + vue détaillée dépliable par semaine), clé API Claude, export/import des données, synchro Supabase, thème, réinitialisation
+- `assets/style.css` — styles partagés par toutes les pages (identité ELEV : palette navy/cloud/vert, Raleway/Inter, sidebar de navigation, thème sombre par défaut)
+- `assets/app.js` — logique partagée : parsing des fichiers .fit, parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation
+- `assets/icon.svg`, `manifest.json` — icône et manifeste PWA (site installable sur écran d'accueil mobile)
+- `assets/logo-full.png` — logo officiel ELEV (affiché dans la sidebar)
 - `dashboard-trail.html` — ancienne page unique, conservée uniquement comme redirection vers `index.html` (compatibilité d'anciens liens)
-- Toutes les données (séances, plan, courses, profil, équipements, clé API) sont stockées dans le navigateur (`localStorage`), rien n'est envoyé sur un serveur sauf appel volontaire à l'API Claude
+- Toutes les données (séances, plan, courses, profil, équipements, clé API) sont stockées dans le navigateur (`localStorage`), rien n'est envoyé sur un serveur sauf appel volontaire à l'API Claude ou synchro Supabase explicitement configurée
 
 Fichiers à ne pas modifier sans me prévenir :
 - Aucun pour l'instant.
 
 Fichiers ou dossiers à ignorer :
-- `design-system/` — bundle de la charte graphique généré par un outil Claude, non destiné à être modifié à la main.
+- `design-system/` — bundle de la charte graphique ELEV (importé depuis un projet Claude Design System). Déjà décliné dans `assets/style.css` et le reste du site ; ne pas le modifier à la main, il sert de référence source.
 
 Si Claude ne comprend pas la structure :
 Claude doit commencer par explorer les fichiers principaux, identifier la structure, puis me faire un résumé simple avant toute modification importante.
@@ -114,13 +121,15 @@ Claude doit commencer par explorer les fichiers principaux, identifier la struct
 ## 7. Données, fichiers et contenus
 
 Sources utilisées :
-- [ ] À définir (voir hypothèse section 3 sur l'import .FIT)
+- Fichiers `.fit` exportés de la montre/appli (import en page Historique)
+- Plan d'entraînement au format CSV (deux formats supportés — voir page Paramètres)
 
 Emplacement des données :
-Non précisé — à définir selon la solution technique retenue.
+`localStorage` du navigateur (par appareil), avec synchro optionnelle vers Supabase si configurée (page Paramètres).
 
 Format d'entrée :
-Liste des courses de la saison avec date, distance, D+, statut (principal/secondaire) — à fournir ou saisir dans l'application.
+- Courses de la saison : date, distance, D+, statut (principal/secondaire/envisagé), technicité du terrain et chaleur attendue (optionnels, utilisés par l'estimation IA) — saisies dans l'application.
+- Plan d'entraînement CSV : format détaillé (séparateur `;`, zones FC par phase, D-, bloc, objectif) recommandé, ou format simple (séparateur `,`) toujours supporté pour compatibilité.
 
 Format de sortie attendu :
 Vue synthétique des échéances et de l'état de préparation par rapport à chacune.
@@ -138,28 +147,29 @@ Objectif de l'interface :
 Donner une vue d'ensemble claire de la saison de courses et de l'état de préparation par rapport à chaque échéance, en priorisant visuellement les objectifs principaux.
 
 Pages ou écrans nécessaires :
-- Accueil : vue d'ensemble de la saison (liste des courses avec statut, échéance, état de préparation), gestion des courses
-- Historique : import des séances, historique filtrable, graphiques de progression, détail de séance (comparaison au plan + retour IA)
-- Profil : infos perso, points de vigilance santé, records personnels
+- Accueil : vue d'ensemble de la saison (liste des courses avec statut, échéance, état de préparation vs plan en km et D+), gestion des courses, zones FC Karvonen, estimation IA du temps de course
+- Historique : import des séances, historique filtrable, graphiques de progression (dont allure par type de terrain), détail de séance (comparaison au plan + retour IA structuré + contexte du jour)
+- Profil : infos perso, points de vigilance santé, records personnels, objectifs de course
 - Équipements : suivi d'usure des chaussures
-- Paramètres : plan CSV, clé API, export/import des données, mode sombre
+- Paramètres : plan CSV (import + vue détaillée par semaine), clé API, export/import des données, synchro Supabase, thème
 
 Contenus importants :
-- Titre principal : à définir
-- Promesse : à définir
+- Titre / marque : ELEV
+- Signature courte : "SUIVEZ. ANALYSEZ. PROGRESSEZ."
+- Baseline : "Votre aventure, vos données, votre progression."
 - CTA principal : non applicable (usage personnel, pas de conversion)
 - Sections obligatoires : liste des courses, détail par course
 - Éléments de réassurance : non applicable
 
 Style visuel souhaité :
-Non précisé. Priorité à la clarté plutôt qu'à l'esthétique.
+Identité de marque ELEV (rebranding complet importé depuis un projet Claude Design System, voir section 14) : palette navy `#0F1720`/`#151E2B` + cloud `#E5E7EB` + vert unique `#6B8E4E` (accent), typographies Raleway (titres) + Inter (texte), thème sombre par défaut (le clair reste disponible via bascule). Sidebar de navigation sur desktop, barre de navigation en bas d'écran sur mobile.
 
 Références ou inspirations :
-- Non fourni.
+- Projet "ELEV Design System" sur claude.ai/design (palette, typographies, logo, composants) — voir `design-system/readme.md` pour le détail des choix de marque.
 
 Règles UX :
 - Doit rester lisible et rapide à consulter, y compris depuis un téléphone
-- Les échéances les plus proches et les objectifs principaux doivent ressortir immédiatement
+- Les échéances les plus proches et les objectifs principaux doivent ressortir immédiatement (objectif principal mis en avant en vert de marque)
 
 ## 9. Commandes utiles
 
@@ -239,7 +249,10 @@ Décisions importantes :
 - Site à plusieurs pages HTML (plutôt qu'un fichier unique à onglets), avec CSS/JS partagés dans `assets/` — choisi pour rester lisible et facile à faire évoluer sans outil de build
 - Publication sur GitHub Pages (dépôt `electron46/dashboard-trail`)
 - Suivi d'usure des chaussures limité aux chaussures (pas d'inventaire matériel complet ni de checklist de course, non demandés)
-- Synchronisation entre appareils traitée par export/import JSON manuel (pas de backend, pour rester gratuit et simple)
+- Synchronisation entre appareils : export/import JSON manuel par défaut, synchro automatique optionnelle via Supabase (compte + projet à configurer par l'utilisateur, reste gratuit sur le plan de base)
+- Rebranding complet ELEV importé depuis un projet Claude Design System (claude.ai/design) et appliqué à tout le site : palette navy/cloud/vert, typographies Raleway/Inter, logo officiel, sidebar de navigation desktop + barre de navigation mobile (remplace l'ancien menu du haut avec sous-menu "Plus")
+- Thème sombre choisi comme thème par défaut (c'est la surface réelle du produit selon la charte ELEV) ; le thème clair reste disponible via la bascule, utile en plein soleil
+- Site installable comme PWA (icône + manifeste) pour un accès en un tap depuis l'écran d'accueil du téléphone
 
 Choix refusés :
 - Aucun à ce jour.
@@ -250,7 +263,8 @@ Claude doit expliquer les options simplement, recommander une option, puis atten
 ## 15. Questions ouvertes
 
 Questions à clarifier :
-- Synchronisation entre appareils : traitée pour l'instant par export/import JSON manuel (voir page Paramètres). Si c'est trop contraignant à l'usage, une synchronisation plus automatique (fichier partagé type Drive, ou petit backend gratuit type Supabase/Firebase) pourra être envisagée plus tard.
+- Synchronisation Supabase : disponible et fonctionnelle, mais à confirmer à l'usage si elle reste pertinente une fois testée sur plusieurs appareils, ou si l'export/import JSON manuel suffit dans la pratique.
+- Logo `assets/logo-full.png` (800 Ko) : fonctionne bien en l'état (mis en cache après le premier chargement), mais pourrait être compressé si la taille devient gênante.
 
 Si une information manque :
 Claude doit faire une hypothèse raisonnable, l'indiquer clairement, puis avancer si le risque est faible. Si le risque est élevé, Claude doit demander validation avant d'agir.
