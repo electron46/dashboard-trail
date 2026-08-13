@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Équipements — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#2B2B2B">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -89,7 +93,11 @@
 function renderGear() {
   const list = getGear().slice().sort((a,b) => (b.actif?1:0) - (a.actif?1:0));
   const grid = document.getElementById('gearGrid');
-  if (!list.length) { grid.innerHTML = '<div class="empty">Aucune paire enregistrée pour l\'instant.</div>'; return; }
+  if (!list.length) {
+    grid.innerHTML = '<div class="empty">Aucune paire enregistrée pour l\'instant.<br><button class="btn small" id="emptyAddGearBtn" type="button" style="margin-top:8px;">+ Ajouter ta première paire</button></div>';
+    document.getElementById('emptyAddGearBtn').addEventListener('click', () => openGearModal(null));
+    return;
+  }
   grid.innerHTML = list.map(g => {
     const km = (g.kmInitial || 0) + gearKmFromSessions(g.id);
     const seuil = g.seuilKm || 700;

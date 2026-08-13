@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Paramètres — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#2B2B2B">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -45,7 +49,10 @@
   <div class="tab-panel active" data-panel="plan">
     <section class="card">
       <h2>Plan d'entraînement (CSV)</h2>
-      <p class="hint">Colonnes attendues : Semaine, Bloc, Jour (ex. "Ven 07/08"), Type de séance, Distance (km), D+ (m), Intensité (RPE), Notes. L'année est supposée être 2026 — modifiable dans <code>assets/app.js</code> (constante <code>PLAN_YEAR</code>) si le plan change de saison.</p>
+      <p class="hint">Colonnes attendues : Semaine, Bloc, Jour (ex. "Ven 07/08"), Type de séance, Distance (km), D+ (m), Intensité (RPE), Notes. La colonne "Jour" ne contient pas d'année : renseigne l'année de la saison ci-dessous.</p>
+      <label class="field" style="max-width:160px;">Année du plan
+        <input type="number" id="planYearInput" step="1" min="2020" max="2100">
+      </label>
       <div class="row">
         <label class="field" style="flex:1 1 100%;">
           Coller le CSV du plan, ou l'importer depuis un fichier
@@ -170,6 +177,11 @@ document.querySelectorAll('#paramTabs button').forEach(btn => btn.addEventListen
 })();
 
 /* --------------------------- PLAN CSV --------------------------- */
+document.getElementById('planYearInput').value = getPlanYear();
+document.getElementById('planYearInput').addEventListener('change', e => {
+  const year = parseInt(e.target.value, 10);
+  if (year) savePlanYear(year);
+});
 document.getElementById('pickPlanBtn').addEventListener('click', () => document.getElementById('planFileInput').click());
 document.getElementById('planFileInput').addEventListener('change', async e => {
   const file = e.target.files[0];
@@ -183,7 +195,7 @@ document.getElementById('savePlanBtn').addEventListener('click', () => {
     const parsed = parsePlanCsv(text);
     if (!parsed.length) { showMsg('planMsg', 'Aucune ligne exploitable trouvée dans ce CSV (colonnes attendues : Jour, Type de séance, Distance, D+...).', 'err'); return; }
     savePlan(parsed);
-    showMsg('planMsg', parsed.length + ' séances planifiées enregistrées (année supposée : ' + PLAN_YEAR + ').', 'ok');
+    showMsg('planMsg', parsed.length + ' séances planifiées enregistrées (année utilisée : ' + getPlanYear() + ').', 'ok');
   } catch (err) { showMsg('planMsg', 'Erreur lors de la lecture du CSV : ' + err.message, 'err'); }
 });
 document.getElementById('clearPlanBtn').addEventListener('click', () => {

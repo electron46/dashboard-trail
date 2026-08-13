@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Accueil — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#2B2B2B">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -97,6 +101,7 @@
       <label class="field">Temps visé (optionnel)
         <input type="text" id="raceTempsVise" placeholder="ex. 12h00">
       </label>
+      <h4 class="modal-section">Conditions de course (pour l'estimation IA)</h4>
       <label class="field">Technicité du terrain (optionnel)
         <textarea id="raceTechnicite" rows="2" placeholder="ex. sentiers techniques, pierriers, single tracks, portage"></textarea>
       </label>
@@ -120,6 +125,9 @@
         <span id="raceAiStatus"></span>
       </div>
       <div id="raceAiBox"></div>
+      <div class="row" id="raceAiUseRow" style="display:none;margin-top:8px;">
+        <button class="btn small" id="raceAiUseBtn" type="button">Utiliser comme temps visé</button>
+      </div>
     </div>
   </div>
 </div>
@@ -131,23 +139,35 @@ function renderRaces() {
   const today = new Date().toISOString().slice(0,10);
   const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
   const box = document.getElementById('racesBox');
-  if (!races.length) { box.innerHTML = '<div class="empty">Aucune course enregistrée pour l\'instant.</div>'; return; }
+  if (!races.length) {
+    box.innerHTML = '<div class="empty">Aucune course enregistrée pour l\'instant.<br><button class="btn small" id="emptyAddRaceBtn" type="button" style="margin-top:8px;">+ Ajouter ta première course</button></div>';
+    document.getElementById('emptyAddRaceBtn').addEventListener('click', () => openRaceModal(null));
+    return;
+  }
   box.innerHTML = races.map(r => {
     const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
     const prep = computePrepStatus(r.date);
     let prepHtml = '';
     if (days >= 0) {
-      prepHtml = prep
-        ? '<div class="prep">Volume 28 derniers jours vs plan : ' + prep.pct + '%' +
-          '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pct) + '%"></div></div></div>'
-        : '<div class="prep" style="opacity:.75;">Importe un plan (page Paramètres) pour suivre l\'état de préparation.</div>';
+      if (prep) {
+        const levelBadge = prep.level === 'low' ? '<span class="badge warn-badge">Sous le plan</span>'
+          : (prep.level === 'high' ? '<span class="badge danger-badge">Au-dessus du plan</span>' : '<span class="badge ok-badge">Dans le plan</span>');
+        prepHtml = '<div class="prep">Volume 28 derniers jours vs plan : ' + prep.pct + '% ' + levelBadge +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pct) + '%"></div></div>' +
+          (prep.pctDplus != null ? '<div style="margin-top:4px;">D+ cumulé vs plan : ' + prep.pctDplus + '%<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pctDplus) + '%"></div></div></div>' : '') +
+          '</div>';
+      } else {
+        prepHtml = '<div class="prep" style="opacity:.75;">Importe un plan (page Paramètres) pour suivre l\'état de préparation.</div>';
+      }
     }
     const ratio = ratioDplusKm(r.denivele, r.distanceKm);
     return '<div class="race-chip ' + r.statut + '" data-id="' + r.id + '">' +
       '<button class="edit-btn" data-edit="' + r.id + '" title="Modifier">✎</button>' +
       '<span class="tag">' + statutLabel(r.statut) + '</span>' +
       '<h3>' + escapeHtml(r.name) + '</h3>' +
-      '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+' + (ratio ? ' (' + ratio + ' m/km)' : '') + '</small><br>' +
+      '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small>' +
+      (ratio ? ' <span class="badge brand-badge" title="Ratio dénivelé / distance — plus le chiffre est élevé, plus le terrain est raide">' + ratio + ' m/km</span>' : '') +
+      '<br>' +
       '<strong>' + (days >= 0 ? ('J-' + days + ' jours') : 'passée') + '</strong>' +
       (r.tempsVise ? ' <small>— visé ' + escapeHtml(r.tempsVise) + '</small>' : '') +
       prepHtml +
@@ -273,6 +293,7 @@ function openRaceModal(id) {
   document.getElementById('raceAiBox').innerHTML = race && race.aiEstimation ? '<div class="ai-feedback">' + escapeHtml(race.aiEstimation) + '</div>' : '';
   document.getElementById('raceAiStatus').textContent = '';
   document.getElementById('raceAiBtn').textContent = race && race.aiEstimation ? 'Regénérer l\'estimation' : 'Estimer mon temps (IA)';
+  document.getElementById('raceAiUseRow').style.display = race && race.aiEstimation ? 'flex' : 'none';
   document.getElementById('raceModalBackdrop').classList.add('open');
 }
 function closeRaceModal() { document.getElementById('raceModalBackdrop').classList.remove('open'); editingRaceId = null; }
@@ -422,9 +443,28 @@ document.getElementById('raceAiBtn').addEventListener('click', async () => {
     boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>';
     statusEl.textContent = '';
     btn.textContent = 'Regénérer l\'estimation';
+    document.getElementById('raceAiUseRow').style.display = 'flex';
   } catch (err) {
     statusEl.innerHTML = '<span style="color:var(--danger)">Erreur lors de l\'appel à l\'API : ' + escapeHtml(err.message) + ' (vérifiez la clé API et votre connexion).</span>';
   } finally { btn.disabled = false; }
+});
+
+// Repère un temps plausible dans le texte de l'estimation IA (priorité à la fourchette "réaliste"),
+// pour pré-remplir le champ "temps visé" — l'utilisateur peut toujours ajuster avant de valider.
+function extractTimeGuess(text) {
+  const timePattern = /(\d{1,2}\s*h\s*\d{0,2}|\d{1,2}:\d{2})/i;
+  const realisteMatch = text.match(new RegExp('r[ée]aliste[^\\n]{0,60}?' + timePattern.source, 'i'));
+  const found = realisteMatch ? realisteMatch[1] : (text.match(timePattern) || [])[1];
+  return found ? found.replace(/\s+/g, '') : '';
+}
+document.getElementById('raceAiUseBtn').addEventListener('click', () => {
+  if (!editingRaceId) return;
+  const race = getRaces().find(r => r.id === editingRaceId);
+  if (!race || !race.aiEstimation) return;
+  const guess = extractTimeGuess(race.aiEstimation) || document.getElementById('raceTempsVise').value;
+  const val = window.prompt('Temps visé à enregistrer (modifie si besoin, puis clique sur "Enregistrer" pour valider) :', guess);
+  if (val === null) return;
+  document.getElementById('raceTempsVise').value = val.trim();
 });
 
 renderRaces();

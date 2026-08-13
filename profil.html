@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Profil — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#2B2B2B">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -52,6 +56,7 @@
     <div class="row" style="margin-top:10px;">
       <button class="btn small" id="addObjectifBtn" type="button">+ Ajouter un objectif</button>
     </div>
+    <p class="hint">Pour la technicité du terrain, la chaleur attendue et l'estimation IA du temps de course, va sur la fiche complète en page <a href="index.html">Accueil</a>.</p>
     <label class="field" style="margin-top:10px;">Notes libres sur d'autres pistes non encore formalisées
       <textarea id="profObjectifsAutres" placeholder="ex. envie d'un ultra en 2027, encore flou"></textarea>
     </label>
@@ -193,7 +198,10 @@ document.getElementById('saveObjBtn').addEventListener('click', () => {
     showMsg('objModalMsg', 'Merci de remplir tous les champs (nom, date, distance, dénivelé).', 'err');
     return;
   }
-  upsertRace({ id: editingObjId, name, date, distanceKm, denivele, statut, tempsVise });
+  // Fusionne avec la course existante pour ne pas perdre la technicité/chaleur/estimation IA
+  // renseignées depuis la fiche complète en page Accueil.
+  const existingObj = editingObjId ? getRaces().find(r => r.id === editingObjId) : null;
+  upsertRace(Object.assign({}, existingObj, { id: editingObjId, name, date, distanceKm, denivele, statut, tempsVise }));
   closeObjModal();
   renderObjectifsRaces();
 });

@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Historique — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#2B2B2B">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -68,7 +72,7 @@
       </thead>
       <tbody id="historyBody"></tbody>
     </table>
-    <div id="historyEmpty" class="empty" style="display:none;">Aucune séance importée pour l'instant.</div>
+    <div id="historyEmpty" class="empty" style="display:none;">Aucune séance importée pour l'instant. Glisse un fichier .fit dans la zone en haut de page pour commencer.</div>
   </section>
 
 
@@ -491,6 +495,26 @@ function renderDetailCharts(s) {
     const cats = s.laps.map(l => ({ shortLabel: 'Km ' + l.index, tooltipLabel: 'Km ' + l.index + (l.avgPaceSecPerKm ? ' (' + fmtPace(l.avgPaceSecPerKm) + ')' : '') }));
     const speedSeries = [{ name:'Vitesse', color:'var(--secondary)', values: s.laps.map(l => l.avgPaceSecPerKm ? +(3600/l.avgPaceSecPerKm).toFixed(2) : 0) }];
     charts.push(groupedBarChartSvg('Allure par kilomètre (splits, km/h — plus haut = plus rapide)', cats, speedSeries));
+
+    // Allure moyenne selon le terrain (approximatif : classe chaque split "roulant" ou "montée"
+    // à partir de son ratio D+/km, à partir des mêmes données de splits que le graphique ci-dessus).
+    const validLaps = s.laps.filter(l => l.distanceKm > 0);
+    const flatLaps = validLaps.filter(l => ((l.ascent||0)/l.distanceKm) < 20);
+    const climbLaps = validLaps.filter(l => ((l.ascent||0)/l.distanceKm) >= 20);
+    const avgPaceOf = arr => {
+      const valid = arr.filter(l => l.avgPaceSecPerKm);
+      if (!valid.length) return null;
+      const totalDist = valid.reduce((s,l) => s + l.distanceKm, 0);
+      const totalTime = valid.reduce((s,l) => s + l.avgPaceSecPerKm * l.distanceKm, 0);
+      return Math.round(totalTime / totalDist);
+    };
+    const flatPace = avgPaceOf(flatLaps), climbPace = avgPaceOf(climbLaps);
+    if (flatPace != null || climbPace != null) {
+      charts.push('<div class="chart-box"><h3>Allure moyenne par type de terrain <small style="font-weight:400;">(estimation à partir des splits)</small></h3><div class="metrics-grid">' +
+        '<div class="metric"><div class="lbl">Terrain roulant (' + flatLaps.length + ' km)</div><div class="val' + (flatPace==null?' na':'') + '">' + (flatPace!=null ? fmtPace(flatPace) : 'Non disponible') + '</div></div>' +
+        '<div class="metric"><div class="lbl">Montée ≥ 20 m/km (' + climbLaps.length + ' km)</div><div class="val' + (climbPace==null?' na':'') + '">' + (climbPace!=null ? fmtPace(climbPace) : 'Non disponible') + '</div></div>' +
+        '</div></div>');
+    }
   }
 
   if (!charts.length) {

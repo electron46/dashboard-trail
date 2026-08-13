@@ -409,7 +409,11 @@ function gearKmFromSessions(gearId) {
 }
 
 /* --------------------------- 4) PLAN CSV --------------------------- */
-const PLAN_YEAR = 2026; // le CSV du plan ne contient pas l'année dans la colonne "Jour" — à adapter si le plan change de saison
+// Le CSV du plan ne contient pas l'année dans la colonne "Jour" — configurable dans Paramètres
+// (onglet "Plan d'entraînement"), 2026 par défaut si rien n'est enregistré.
+const PLAN_YEAR_KEY = STORAGE_PREFIX + 'planYear';
+function getPlanYear() { try { return parseInt(localStorage.getItem(PLAN_YEAR_KEY), 10) || 2026; } catch (e) { return 2026; } }
+function savePlanYear(year) { try { localStorage.setItem(PLAN_YEAR_KEY, String(year)); scheduleSync(); return true; } catch (e) { return false; } }
 
 // Découpe une ligne CSV en respectant les champs entre guillemets (ex. notes contenant des virgules).
 function parseCsvLine(line) {
@@ -448,7 +452,7 @@ function parsePlanCsv(text) {
     const jourRaw = (cols[idx.jour] || '').trim();
     const m = jourRaw.match(/(\d{2})\/(\d{2})/);
     if (!m) continue;
-    const dateISO = PLAN_YEAR + '-' + m[2] + '-' + m[1];
+    const dateISO = getPlanYear() + '-' + m[2] + '-' + m[1];
     out.push({
       date: dateISO,
       bloc: (cols[idx.bloc] || '').trim(),
@@ -637,11 +641,19 @@ function computePrepStatus(raceDateISO) {
   if (!plan || !plan.length) return null;
   const today = new Date().toISOString().slice(0,10);
   const windowStart = new Date(new Date(today).getTime() - 28*86400000).toISOString().slice(0,10);
-  const plannedKm = plan.filter(p => p.date >= windowStart && p.date <= today).reduce((s,p) => s + (p.distanceKm||0), 0);
-  const doneKm = loadAllSessions().filter(s => s.date >= windowStart && s.date <= today).reduce((s,x) => s + (x.distanceKm||0), 0);
+  const plannedInWindow = plan.filter(p => p.date >= windowStart && p.date <= today);
+  const doneInWindow = loadAllSessions().filter(s => s.date >= windowStart && s.date <= today);
+  const plannedKm = plannedInWindow.reduce((s,p) => s + (p.distanceKm||0), 0);
+  const doneKm = doneInWindow.reduce((s,x) => s + (x.distanceKm||0), 0);
   if (plannedKm <= 0) return null;
   const pct = Math.round((doneKm / plannedKm) * 100);
-  return { pct, doneKm, plannedKm };
+  const plannedDplus = plannedInWindow.reduce((s,p) => s + (p.deniveleM||0), 0);
+  const doneDplus = doneInWindow.reduce((s,x) => s + (x.ascent||0), 0);
+  const pctDplus = plannedDplus > 0 ? Math.round((doneDplus / plannedDplus) * 100) : null;
+  // Repère d'alerte simple, sur le même principe que l'usure des chaussures : sous 60% = sous-préparation,
+  // au-dessus de 130% = possible surcharge (charge cumulée bien supérieure au plan). Indicatif, pas une science exacte.
+  const level = pct < 60 ? 'low' : (pct > 130 ? 'high' : 'ok');
+  return { pct, doneKm, plannedKm, pctDplus, doneDplus, plannedDplus, level };
 }
 
 // Info-bulle interactive au survol pour les graphiques SVG (remplace les <title> natifs, peu lisibles
@@ -665,6 +677,20 @@ function initChartTooltips(container) {
     tip.style.top = (e.clientY + 14) + 'px';
   });
   container.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  // Support tactile (mobile) : un appui affiche l'info-bulle au même endroit qu'au survol souris.
+  container.addEventListener('touchstart', e => {
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const target = el && el.closest('[data-tooltip]');
+    if (!target) { tip.style.display = 'none'; return; }
+    tip.textContent = target.getAttribute('data-tooltip');
+    tip.style.display = 'block';
+    tip.style.left = Math.min(touch.clientX + 14, window.innerWidth - 160) + 'px';
+    tip.style.top = (touch.clientY + 14) + 'px';
+  }, { passive: true });
+  document.addEventListener('touchstart', e => {
+    if (!container.contains(e.target)) tip.style.display = 'none';
+  }, { passive: true });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

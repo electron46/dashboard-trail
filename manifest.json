@@ -1,0 +1,14 @@
+{
+  "name": "ELEV — Dashboard Trail",
+  "short_name": "ELEV Trail",
+  "description": "Dashboard personnel de préparation trail — échéances, entraînement, équipement.",
+  "start_url": "index.html",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#F2F1EE",
+  "theme_color": "#2B2B2B",
+  "lang": "fr",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

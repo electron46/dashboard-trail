@@ -9,6 +9,7 @@
   --accent:#2B2B2B; --accent-hover:#454340; --secondary:#454340;
   --success:#2F7A3D; --success-soft:#E7F0E5; --danger:#B3402C; --danger-soft:#FBEAE5;
   --warn:#8A6D1B; --warn-soft:#F3EEDD; --shadow:0 1px 3px rgba(43,43,43,.08);
+  --brand:#2B5D8C; --brand-soft:#E4ECF3;
   --radius-sm:6px; --radius-md:8px; --radius-lg:10px; --radius-pill:999px;
   --font-sans:'IBM Plex Sans',-apple-system,'Segoe UI',Roboto,sans-serif;
   --font-mono:'IBM Plex Mono','JetBrains Mono',ui-monospace,Consolas,monospace;
@@ -17,7 +18,7 @@ html[data-theme="dark"]{
   --bg:#1C1B19; --panel:#242320; --border:#3A3834; --text:#EDEBE6; --muted:#9B9790; --muted-2:#57534D;
   --accent:#EDEBE6; --accent-hover:#FFFFFF; --secondary:#B8B4AC;
   --success:#6FCB7F; --success-soft:#1E3320; --danger:#E2836C; --danger-soft:#3A211C;
-  --warn:#D9B85B; --warn-soft:#3A3016; --shadow:0 1px 3px rgba(0,0,0,.35);
+  --warn:#D9B85B; --warn-soft:#3A3016; --brand:#7EB3E0; --brand-soft:#1C3247; --shadow:0 1px 3px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box;}
 body{margin:0;font-family:var(--font-sans);background:var(--bg);color:var(--text);line-height:1.45;}
@@ -107,6 +108,7 @@ tr.session-row:hover{background:var(--bg);}
 .badge.ok-badge{background:var(--success-soft);color:var(--success);border:1px solid transparent;}
 .badge.warn-badge{background:var(--warn-soft);color:var(--warn);border:1px solid transparent;}
 .badge.danger-badge{background:var(--danger-soft);color:var(--danger);border:1px solid transparent;}
+.badge.brand-badge{background:var(--brand-soft);color:var(--brand);border:1px solid transparent;}
 
 .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:18px;}
 .chart-box{border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;}
@@ -154,6 +156,7 @@ footer.app{max-width:1100px;margin:0 auto;padding:20px;color:var(--muted);font-s
 .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;max-width:480px;width:100%;box-shadow:var(--shadow);}
 .modal.wide{max-width:720px;position:relative;}
 .modal h3{margin:0 0 12px;}
+.modal-section{margin:6px 0 -4px;padding-top:12px;border-top:1px dashed var(--border);font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
 /* .field a flex:1 1 160px pensé pour une rangée horizontale : dans une rangée en colonne,
    ce flex-basis s'appliquerait à la hauteur et créerait un espacement énorme entre champs. */
 .modal-form .field{flex:none;}
