@@ -6,7 +6,9 @@
 
 /* --------------------------- 1) THÈME --------------------------- */
 const THEME_KEY = 'trail:theme';
-function getTheme() { try { return localStorage.getItem(THEME_KEY) || 'light'; } catch (e) { return 'light'; } }
+// Sombre par défaut : c'est la surface réelle du produit (identité ELEV) — le thème
+// clair reste disponible via la bascule, utile pour la lisibilité en plein soleil.
+function getTheme() { try { return localStorage.getItem(THEME_KEY) || 'dark'; } catch (e) { return 'dark'; } }
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   const btn = document.getElementById('themeToggle');
@@ -730,14 +732,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.storage-warning-target').forEach(el => {
       el.innerHTML = '<div class="msg err">Le stockage local du navigateur n\'est pas disponible (navigation privée ?) — les données ne seront pas conservées après fermeture de la page.</div>';
     });
-  }
-  const trigger = document.querySelector('.nav-dropdown-trigger');
-  const menu = document.querySelector('.nav-dropdown-menu');
-  if (trigger && menu) {
-    trigger.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('open'); });
-    menu.addEventListener('click', e => e.stopPropagation());
-    document.addEventListener('click', () => menu.classList.remove('open'));
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.classList.remove('open'); });
   }
   autoPullIfNewer();
 });

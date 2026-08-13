@@ -7,33 +7,31 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#2B2B2B">
+<meta name="theme-color" content="#151E2B">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
 
-<header class="app">
-  <div class="app-top">
-    <div>
-      <h1>ELEV — Dashboard Trail</h1>
-      <p>Historique des séances et progression</p>
-    </div>
-    <button id="themeToggle" type="button">● Sombre</button>
+<div class="app-shell">
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <img src="https://unpkg.com/lucide-static@latest/icons/mountain.svg" alt="">
+    <span>ELEV</span>
   </div>
-  <nav class="app-nav">
-    <a href="index.html">Accueil</a>
-    <a href="historique.html" class="active">Historique</a>
-    <div class="nav-dropdown">
-      <button type="button" class="nav-dropdown-trigger">Plus ▾</button>
-      <div class="nav-dropdown-menu">
-        <a href="parametres.html">Paramètres</a>
-        <a href="profil.html">Profil</a>
-        <a href="equipements.html">Équipements</a>
-      </div>
-    </div>
+  <nav class="sidebar-nav">
+    <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+    <a href="historique.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Historique</a>
+    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+    <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+    <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+</aside>
+<div class="app-main">
+<header class="app-topbar">
+  <h1>Historique des séances et progression</h1>
+  <button id="themeToggle" type="button">☀ Clair</button>
 </header>
 
 <main>
@@ -102,6 +100,16 @@
 </div>
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+</div>
+</div>
+
+<nav class="mobile-nav">
+  <a href="index.html"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+  <a href="historique.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Historique</a>
+  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+  <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+  <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
+</nav>
 
 <script>
 /* --------------------------- IMPORT .FIT --------------------------- */
