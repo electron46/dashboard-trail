@@ -88,17 +88,6 @@
       <label class="field" style="max-width:280px;">Paire de chaussures utilisée
         <select id="gearSelect"><option value="">Non renseignée</option></select>
       </label>
-      <div class="plan-compare" id="planCompare" style="display:none;"></div>
-      <label class="field">Contexte du jour / ressenti (optionnel — fatigue, météo, terrain, douleur, contrainte particulière…)
-        <textarea id="contexteInput" rows="2" placeholder="ex. fatigue de la semaine, forte chaleur, douleur au genou droit, sortie raccourcie par manque de temps…"></textarea>
-      </label>
-      <div class="ai-block">
-        <div class="row">
-          <button class="btn primary" id="aiGenBtn" type="button">Générer le retour IA</button>
-          <span id="aiStatus"></span>
-        </div>
-        <div id="aiFeedbackBox"></div>
-      </div>
     </div>
 
     <div class="tab-panel" data-panel="allure">
@@ -119,6 +108,23 @@
 
     <div class="tab-panel" data-panel="splits">
       <div id="splitsTabBox"></div>
+    </div>
+  </section>
+
+  <section class="card" id="coachElevSection">
+    <h2>Coach ELEV</h2>
+    <h3 class="resume-group-title" style="margin-top:0;">Prévu vs réalisé</h3>
+    <div id="planVsActualBox"></div>
+
+    <label class="field" style="margin-top:16px;">Contexte du jour / ressenti (optionnel — fatigue, météo, terrain, douleur, contrainte particulière…)
+      <textarea id="contexteInput" rows="2" placeholder="ex. fatigue de la semaine, forte chaleur, douleur au genou droit, sortie raccourcie par manque de temps…"></textarea>
+    </label>
+    <div class="ai-block">
+      <div class="row">
+        <button class="btn primary" id="aiGenBtn" type="button">Générer le retour Coach ELEV</button>
+        <span id="aiStatus"></span>
+      </div>
+      <div id="aiFeedbackBox"></div>
     </div>
   </section>
 
@@ -200,21 +206,10 @@ function initActivityPage(s) {
   });
 
   const planned = findPlannedSession(s.date);
-  const planBox = document.getElementById('planCompare');
-  planBox.style.display = 'block';
-  if (planned) {
-    const dplusDmoins = planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+' + (planned.descenteM ? ' / ' + planned.descenteM + ' m D-' : '');
-    planBox.innerHTML = '<h4>Séance prévue au plan ce jour-là' + (planned.bloc ? ' <small class="hint">(' + escapeHtml(planned.bloc) + ')</small>' : '') + '</h4>' +
-      '<div>' + escapeHtml(planned.type) + ' — ' + dplusDmoins + (planned.intensite ? ' (' + escapeHtml(planned.intensite) + ')' : '') + '</div>' +
-      (planned.fcCorpsSeance ? '<div class="hint">Zone FC cible (corps de séance) : ' + escapeHtml(planned.fcCorpsSeance) + '</div>' : '') +
-      (planned.dureeDetail ? '<div class="hint">' + escapeHtml(planned.dureeDetail) + '</div>' : '') +
-      (planned.notes ? '<div class="hint">Objectif : ' + escapeHtml(planned.notes) + '</div>' : '');
-  } else {
-    planBox.innerHTML = '<h4>Séance prévue au plan</h4><div class="hint">Aucune séance planifiée trouvée pour cette date (ou plan non importé — voir page Paramètres).</div>';
-  }
+  renderPlanVsActual(s, planned);
 
-  document.getElementById('aiFeedbackBox').innerHTML = s.aiFeedback ? '<div class="ai-feedback">' + escapeHtml(s.aiFeedback) + '</div>' : '';
-  document.getElementById('aiGenBtn').textContent = s.aiFeedback ? 'Regénérer le retour IA' : 'Générer le retour IA';
+  renderCoachCards(s.aiFeedback);
+  document.getElementById('aiGenBtn').textContent = s.aiFeedback ? 'Regénérer le retour Coach ELEV' : 'Générer le retour Coach ELEV';
   document.getElementById('aiGenBtn').addEventListener('click', () => generateAiFeedback(sessionId));
 }
 
@@ -580,6 +575,68 @@ document.getElementById('seeAllClimbsLink').addEventListener('click', (e) => {
   document.getElementById('detailTabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
+/* --------------------------- COACH ELEV : PRÉVU VS RÉALISÉ (déterministe, sans IA) --------------------------- */
+function pctDelta(actual, plannedVal) { return (plannedVal && actual != null) ? Math.round((actual - plannedVal) / plannedVal * 100) : null; }
+function renderPlanVsActual(s, planned) {
+  const box = document.getElementById('planVsActualBox');
+  if (!planned) {
+    box.innerHTML = '<div class="empty">Aucune séance planifiée trouvée pour cette date (ou plan non importé — voir page Paramètres).</div>';
+    return;
+  }
+  const rows = [];
+  if (planned.distanceKm != null && s.distanceKm != null) rows.push(['Distance', planned.distanceKm.toFixed(1) + ' km', fmtNum(s.distanceKm, ' km', 1), pctDelta(s.distanceKm, planned.distanceKm)]);
+  if (planned.deniveleM != null && s.ascent != null) rows.push(['D+', planned.deniveleM + ' m', fmtNum(s.ascent, ' m', 0), pctDelta(s.ascent, planned.deniveleM)]);
+  if (planned.descenteM != null && s.descent != null) rows.push(['D-', planned.descenteM + ' m', fmtNum(s.descent, ' m', 0), pctDelta(s.descent, planned.descenteM)]);
+
+  let html = rows.length ? '<div class="plan-actual-grid">' + rows.map(([label, before, after, pct]) =>
+    '<div class="plan-actual-card"><div class="pa-label">' + label + '</div><div class="pa-values"><span>' + before + '</span><span class="pa-arrow">→</span><span class="pa-after">' + after + '</span></div>' +
+    (pct != null ? '<div class="pa-delta ' + (pct >= 0 ? 'pos' : 'neg') + '">' + (pct > 0 ? '+' : '') + pct + '%</div>' : '') + '</div>'
+  ).join('') + '</div>' : '<div class="empty">Pas assez de valeurs chiffrées dans le plan pour cette séance pour comparer.</div>';
+
+  const extra = [
+    planned.type ? 'Type prévu : ' + planned.type + (planned.bloc ? ' (' + planned.bloc + ')' : '') : null,
+    planned.intensite ? 'Intensité prévue : ' + planned.intensite : null,
+    planned.fcCorpsSeance ? 'Zone FC cible (corps de séance) : ' + planned.fcCorpsSeance : null,
+    planned.dureeDetail || null,
+    planned.notes ? 'Objectif : ' + planned.notes : null,
+  ].filter(Boolean);
+  if (extra.length) html += '<p class="hint" style="margin-top:10px;">' + extra.map(escapeHtml).join(' · ') + '</p>';
+  box.innerHTML = html;
+}
+
+/* --------------------------- COACH ELEV : RETOUR STRUCTURÉ (parsing du texte IA) ---------------------------
+   Le modèle répond en texte brut avec 4 marqueurs (voir AI_COACH_SYSTEM_PROMPT ci-dessous) plutôt qu'en
+   JSON, pour rester robuste aux imperfections de formatage. On découpe ce texte en 4 cartes ; si les
+   marqueurs sont absents (ancien format, ou réponse inattendue), on retombe sur un bloc de texte simple
+   plutôt que de planter — mais jamais les balises/marqueurs bruts ne doivent apparaître à l'écran. */
+const COACH_SECTION_MARKERS = [['analyse','ANALYSE:'],['positif','POSITIF:'],['vigilance','VIGILANCE:'],['suite','SUITE:']];
+function parseCoachSections(text) {
+  const positions = COACH_SECTION_MARKERS.map(([, marker]) => text.indexOf(marker));
+  if (positions.some(p => p < 0)) return null;
+  const result = {};
+  COACH_SECTION_MARKERS.forEach(([key, marker], i) => {
+    const start = positions[i] + marker.length;
+    const end = i < COACH_SECTION_MARKERS.length - 1 ? positions[i + 1] : text.length;
+    result[key] = text.slice(start, end).trim();
+  });
+  return result;
+}
+function renderCoachCards(text) {
+  const box = document.getElementById('aiFeedbackBox');
+  if (!text) { box.innerHTML = ''; return; }
+  const parsed = parseCoachSections(text);
+  if (!parsed) { box.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>'; return; }
+  const cards = [
+    ['Analyse de la séance', parsed.analyse],
+    ['Ce qui est positif', parsed.positif],
+    ['Point de vigilance', parsed.vigilance],
+    ['Pour la suite', parsed.suite],
+  ];
+  box.innerHTML = '<div class="coach-cards-grid">' + cards.map(([title, txt]) =>
+    '<div class="coach-card"><h4>' + title + '</h4><p>' + escapeHtml(txt || 'Non communiqué.') + '</p></div>'
+  ).join('') + '</div>';
+}
+
 /* --------------------------- RETOUR IA (identique au coach post-séance existant) --------------------------- */
 const AI_COACH_SYSTEM_PROMPT = `<persona>
 Vous êtes un coach de course à pied et trail, spécialisé dans l'analyse post-séance et le suivi de plans d'entraînement. Vous maîtrisez la physiologie de l'effort (allure, FC, dénivelé, cadence), l'analyse de charge d'entraînement, et vous savez adapter vos recommandations aux contraintes réelles d'un coureur amateur qui s'entraîne seul, sans encadrement. Votre ton est direct, factuel et bienveillant, jamais culpabilisant.
@@ -593,9 +650,9 @@ Comparer une séance réalisée (données issues d'un fichier .FIT ou saisies ma
 L'utilisateur suit un plan d'entraînement en vue d'un ou plusieurs objectifs de course. Il doit savoir rapidement si une séance a rempli son rôle dans la progression, si un écart est ponctuel ou récurrent, et si le plan doit être ajusté.
 </pourquoi>
 <criteres_de_succes>
-- L'écart entre séance prévue et séance réalisée est quantifié (distance, D+, allure, FC, durée)
-- La qualification de l'écart s'appuie sur l'ensemble des métriques disponibles, pas sur une seule
+- L'écart entre séance prévue et séance réalisée (déjà affiché visuellement à l'utilisateur en chiffres, distance/D+/D-) est interprété, pas seulement répété : la qualification s'appuie sur l'ensemble des métriques disponibles, pas sur une seule
 - Si un historique est fourni, l'analyse précise si l'écart est ponctuel ou récurrent
+- Ce qui a été bien géré dans la séance est identifié explicitement, pas seulement ce qui a manqué
 - Tout signal d'alerte est classé par niveau de gravité, pas seulement signalé de façon binaire
 - Les contraintes réelles du jour sont prises en compte si elles expliquent un écart
 - En cas de donnée insuffisante pour trancher, l'incertitude est assumée plutôt que masquée
@@ -618,13 +675,14 @@ Données fournies à chaque usage :
 </situation>
 
 <instructions>
-1) Comparez chiffre par chiffre la séance prévue et la séance réalisée (distance, D+, durée, allure, FC).
+1) Comparez chiffre par chiffre la séance prévue et la séance réalisée (distance, D+, durée, allure, FC) — ces chiffres sont déjà affichés à l'utilisateur avant votre réponse, ne les listez pas de nouveau, appuyez-vous dessus pour votre analyse.
 2) Qualifiez l'écart (conforme / en dessous / au-dessus) en croisant au moins deux métriques (par exemple distance ET allure/FC) avant de conclure — ne tranchez pas sur un seul indicateur isolé.
 3) Si un historique est fourni, indiquez si l'écart observé est ponctuel ou s'il se répète sur les séances précédentes, et pondérez la recommandation en conséquence.
-4) Repérez tout signal d'alerte (FC anormalement haute pour l'allure, douleur ou gêne signalée, séance très écourtée) et classez-le sur 3 niveaux : Rien à signaler / À surveiller / Signal fort. Un signal fort se place en tête de la réponse.
-5) Si une contrainte réelle mentionnée par l'utilisateur explique un écart, dites-le explicitement plutôt que de le compter comme un manquement.
-6) Avant de conclure, vérifiez la cohérence de votre qualification de l'écart avec l'ensemble des métriques disponibles et avec l'historique le cas échéant.
-7) Terminez par une recommandation actionnable pour la prochaine séance ou pour la semaine.
+4) Identifiez ce qui a été bien géré (allure tenue, gestion du relief, régularité, respect d'une zone cible...) même si l'écart global est en dessous du prévu — une séance imparfaite a presque toujours un aspect positif réel, ne l'inventez pas s'il n'y en a vraiment aucun.
+5) Repérez tout signal d'alerte (FC anormalement haute pour l'allure, douleur ou gêne signalée, séance très écourtée) et classez-le sur 3 niveaux : Rien à signaler / À surveiller / Signal fort.
+6) Si une contrainte réelle mentionnée par l'utilisateur explique un écart, dites-le explicitement plutôt que de le compter comme un manquement.
+7) Avant de conclure, vérifiez la cohérence de votre qualification de l'écart avec l'ensemble des métriques disponibles et avec l'historique le cas échéant.
+8) Terminez par une recommandation actionnable pour la prochaine séance ou pour la semaine.
 </instructions>
 
 <exclusions>
@@ -640,10 +698,10 @@ Séance prévue : Samedi, sortie longue 18 km / 800 m D+, allure Z2.
 Séance réalisée : 16 km / 650 m D+, allure Z2, FC moyenne cohérente, ressenti "bonnes jambes".
 Historique : les 2 sorties longues précédentes étaient conformes au plan.
 
-Écart chiffré : Distance -11%, D+ -19%, allure et FC conformes à Z2.
-Analyse : Écart en dessous du prévu en volume, mais l'intensité est respectée. Comme les 2 séances précédentes étaient conformes, cet écart est ponctuel et non un signe de fatigue installée. Probablement lié à une contrainte de temps ou de terrain.
-Point de vigilance : Rien à signaler.
-Recommandation : Pas d'ajustement nécessaire cette semaine. Si l'écart de distance se répète sur les 2 prochaines sorties longues, allonger le parcours suivant pour rattraper le kilométrage prévu sur le cycle.
+ANALYSE: Écart en dessous du prévu en volume (-11% distance, -19% D+), mais l'intensité est respectée. Comme les 2 séances précédentes étaient conformes, cet écart est ponctuel et non un signe de fatigue installée. Probablement lié à une contrainte de temps ou de terrain.
+POSITIF: L'allure et la FC sont restées cohérentes avec la zone Z2 visée du début à la fin, malgré la distance raccourcie — l'intensité prévue a bien été respectée.
+VIGILANCE: Rien à signaler.
+SUITE: Pas d'ajustement nécessaire cette semaine. Si l'écart de distance se répète sur les 2 prochaines sorties longues, allonger le parcours suivant pour rattraper le kilométrage prévu sur le cycle.
 </exemple>
 
 <contre_exemple>
@@ -651,11 +709,12 @@ Recommandation : Pas d'ajustement nécessaire cette semaine. Si l'écart de dist
 </contre_exemple>
 
 <format_de_sortie>
-Répondez en 4 sections courtes, sans balises XML dans la réponse finale :
-1. Écart chiffré (tableau ou liste courte)
-2. Analyse de l'écart, avec mention ponctuel/récurrent si historique disponible (2-4 phrases)
-3. Point de vigilance santé/fatigue (niveau + une phrase, ou "Rien à signaler")
-4. Recommandation pour la suite (2-3 phrases maximum)
+Répondez UNIQUEMENT avec ces 4 sections, chacune introduite en tout début de ligne par son marqueur exact suivi de ":" (respectez l'orthographe et la casse exactes de ces 4 marqueurs, sans rien d'autre avant le premier) :
+ANALYSE: analyse de l'écart, avec mention ponctuel/récurrent si historique disponible (2-4 phrases)
+POSITIF: ce qui a été bien géré dans cette séance (1-3 phrases ; si vraiment rien ne se dégage, dites-le plutôt que d'inventer)
+VIGILANCE: point de vigilance santé/fatigue — niveau (Rien à signaler / À surveiller / Signal fort) + une phrase
+SUITE: recommandation actionnable pour la suite (2-3 phrases maximum)
+Aucun texte hors de ces 4 sections. Aucune balise XML, aucun markdown (pas de **gras**, pas de listes à puces, pas de tableau) dans la réponse finale.
 </format_de_sortie>`;
 
 async function generateAiFeedback(id) {
@@ -735,9 +794,9 @@ async function generateAiFeedback(id) {
     if (!text) throw new Error('Réponse vide de l\'API.');
     s.aiFeedback = text;
     saveSession(s.id, s);
-    boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>';
+    renderCoachCards(text);
     statusEl.textContent = '';
-    btn.textContent = 'Regénérer le retour IA';
+    btn.textContent = 'Regénérer le retour Coach ELEV';
   } catch (err) {
     statusEl.innerHTML = '<span style="color:var(--danger)">Erreur lors de l\'appel à l\'API : ' + escapeHtml(err.message) + ' (vérifiez la clé API et votre connexion).</span>';
   } finally { btn.disabled = false; }
