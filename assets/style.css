@@ -398,25 +398,55 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
   .activity-card-link{transition:none;}
 }
 
-/* Page Activités — liste dense et visuelle (remplace le tableau brut), une carte cliquable
-   par séance avec mini-profil altimétrique/GPS pour donner immédiatement une identité trail
-   à l'historique (voir sessionPreviewSvg, déjà utilisé pour la carte Accueil). */
-.activity-row-list{display:flex;flex-direction:column;gap:10px;}
-.activity-row{display:flex;align-items:center;gap:18px;padding:12px 16px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel);text-decoration:none;color:inherit;transition:background 150ms,border-color 150ms;}
+/* Page Activités — tableau dense sur desktop, cartes compactes sur mobile (une seule structure
+   HTML par ligne, réagencée en CSS Grid selon la largeur d'écran) avec mini-profil altimétrique/
+   GPS par séance pour garder une identité trail (voir sessionPreviewSvg). Page pensée pour
+   retrouver et ouvrir une sortie rapidement, pas pour l'analyse de tendance (voir analyse.html). */
+.activities-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 18px;}
+.filter-select{padding:8px 12px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--panel-raised);color:var(--text);font-family:var(--font-sans);font-size:.82rem;cursor:pointer;}
+.filter-search{flex:1 1 200px;min-width:160px;padding:8px 14px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:.82rem;}
+
+.activities-table-head{display:none;}
+.activity-row-list{display:flex;flex-direction:column;gap:8px;}
+.activity-row{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 140px 120px;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel);text-decoration:none;color:inherit;transition:background 150ms,border-color 150ms;}
 .activity-row:hover{background:var(--panel-raised);border-color:var(--muted-2);}
-.activity-row .row-visual{width:130px;height:60px;flex-shrink:0;border-radius:var(--radius-sm);overflow:hidden;background:radial-gradient(120% 100% at 30% 20%,#1E2A22,#0C100E 75%);display:flex;align-items:center;justify-content:center;}
-.activity-row .row-visual svg{width:100%;height:100%;display:block;}
-.activity-row .row-main{flex:1 1 auto;min-width:0;}
-.activity-row .row-date{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-family:var(--font-mono);}
-.activity-row .row-title{margin:2px 0 6px;font-family:var(--font-display);font-size:1rem;font-weight:700;}
-.activity-row .row-stats{display:flex;flex-wrap:wrap;gap:14px;font-size:.82rem;color:var(--muted);}
-.activity-row .row-stats strong{color:var(--text);font-variant-numeric:tabular-nums;font-weight:600;}
-.activity-row .row-arrow{flex-shrink:0;}
-@media (max-width:640px){
-  .activity-row{flex-direction:column;align-items:stretch;gap:10px;}
-  .activity-row .row-visual{width:100%;height:84px;}
-  .activity-row .row-arrow{display:none;}
+.activity-row:hover .link-arrow{color:var(--accent);}
+.activity-row .cell{min-width:0;}
+.activity-row .cell-date{font-family:var(--font-mono);color:var(--muted);line-height:1.15;}
+.activity-row .cell-date .cell-day{display:block;font-size:1.1rem;font-weight:700;color:var(--text);font-family:var(--font-display);}
+.activity-row .cell-date .cell-month,.activity-row .cell-date .cell-year{display:block;font-size:.6rem;letter-spacing:.04em;}
+.activity-row .cell-activity{overflow:hidden;}
+.activity-row .row-title{display:block;font-family:var(--font-display);font-size:.94rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.activity-row .row-sub{display:block;font-size:.7rem;color:var(--muted);margin-top:1px;}
+.activity-row .cell-stat{font-size:.86rem;font-variant-numeric:tabular-nums;color:var(--text);font-weight:600;}
+.activity-row .cell-visual{width:100%;height:44px;border-radius:var(--radius-sm);overflow:hidden;background:radial-gradient(120% 100% at 30% 20%,#1E2A22,#0C100E 75%);display:flex;align-items:center;justify-content:center;}
+.activity-row .cell-visual svg{width:100%;height:100%;display:block;}
+.activity-row .cell-arrow{justify-self:end;white-space:nowrap;}
+.activities-list-end{text-align:center;padding:14px 0 2px;color:var(--muted-2);font-size:.78rem;}
+
+@media (min-width:641px){
+  .activities-table-head{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 140px 120px;gap:14px;padding:0 14px 8px;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
 }
+@media (max-width:640px){
+  .activity-row{position:relative;grid-template-columns:1fr 1fr;grid-template-areas:"date activity" "d1 d2" "d3 d4" "d5 d5";row-gap:8px;padding-right:26px;}
+  .activity-row .cell-date{grid-area:date;display:flex;gap:4px;align-items:baseline;}
+  .activity-row .cell-date .cell-day{display:inline;font-size:.95rem;}
+  .activity-row .cell-date .cell-month,.activity-row .cell-date .cell-year{display:inline;}
+  .activity-row .cell-activity{grid-area:activity;text-align:right;}
+  .activity-row .cell-stat:nth-of-type(3){grid-area:d1;}
+  .activity-row .cell-stat:nth-of-type(4){grid-area:d2;}
+  .activity-row .cell-stat:nth-of-type(5){grid-area:d3;}
+  .activity-row .cell-stat:nth-of-type(6){grid-area:d4;}
+  .activity-row .cell-stat:nth-of-type(7){grid-area:d5;}
+  .activity-row .cell-visual,.activity-row .cell-arrow{display:none;}
+  /* Chevron discret indiquant que la ligne est cliquable (remplace le lien texte, masqué ci-dessus) */
+  .activity-row::after{content:'›';position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:1.3rem;font-weight:700;}
+}
+
+/* Repère plein écran affiché seulement pendant un glisser-déposer de fichier (page Activités) —
+   pas de zone de dépôt visible en permanence, pour laisser la page dense et centrée sur la liste. */
+.drop-overlay{display:none;position:fixed;inset:0;z-index:999;align-items:center;justify-content:center;background:rgba(11,15,14,.82);color:var(--text);font-family:var(--font-display);font-size:1.1rem;font-weight:700;border:3px dashed var(--accent);pointer-events:none;}
+.drop-overlay.show{display:flex;}
 
 /* Page Activité (détail) — carte GPS (conteneur Leaflet) */
 .altitude-profile-box{border:1px solid var(--border);border-radius:var(--radius-md);}

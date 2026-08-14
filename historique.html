@@ -37,55 +37,40 @@
     <div class="hint">Retrouve et analyse toutes tes sorties.</div>
   </div>
   <div class="app-topbar-actions">
-    <button class="btn primary" id="importCta" type="button">Importer une activité</button>
+    <button class="btn primary" id="importCta" type="button">+ Importer une activité</button>
     <button id="themeToggle" type="button">☀ Clair</button>
+    <input type="file" id="fileInput" accept=".fit" multiple style="display:none;">
   </div>
 </header>
 
 <main>
 
-  <section class="card">
-    <h2>Importer une ou plusieurs séances (.fit)</h2>
-    <div id="dropzone">
-      <strong>Glissez vos fichiers .fit ici</strong><br>
-      ou <button class="btn" id="pickFileBtn" type="button">choisir des fichiers</button>
-      <input type="file" id="fileInput" accept=".fit" multiple>
-    </div>
-    <div id="importMsg" class="storage-warning-target"></div>
-  </section>
+  <div id="importMsg" class="storage-warning-target"></div>
 
-  <section class="card">
-    <h2>Progression</h2>
-    <div class="charts-grid" id="chartsGrid"></div>
-  </section>
-
-  <section class="card">
-    <h2>Historique des séances</h2>
-    <div class="filters">
-      <label class="field">Recherche (type, sport)
-        <input type="text" id="searchInput" placeholder="ex. course, hiking...">
-      </label>
-      <label class="field">Du
-        <input type="date" id="dateFrom">
-      </label>
-      <label class="field">Au
-        <input type="date" id="dateTo">
-      </label>
-    </div>
-    <div class="chip-filters" id="sportFilterRow"></div>
+  <section class="card activities-toolbar">
     <div class="chip-filters" id="periodFilterRow">
-      <button type="button" class="chip-btn" data-period="7">7 jours</button>
+      <button type="button" class="chip-btn active" data-period="all">Toutes</button>
       <button type="button" class="chip-btn" data-period="30">30 jours</button>
       <button type="button" class="chip-btn" data-period="90">3 mois</button>
-      <button type="button" class="chip-btn" data-period="season" title="Depuis le 1er janvier de l'année en cours">Saison</button>
-      <button type="button" class="chip-btn active" data-period="all">Toutes</button>
+      <button type="button" class="chip-btn" data-period="365">1 an</button>
     </div>
-    <div class="activity-row-list" id="historyList"></div>
-    <div id="historyEmpty" class="empty" style="display:none;">Aucune séance importée pour l'instant. Glisse un fichier .fit dans la zone en haut de page pour commencer.</div>
+    <select id="sportFilterSelect" class="filter-select"></select>
+    <input type="text" id="searchInput" class="filter-search" placeholder="Rechercher une activité…">
   </section>
 
+  <section class="card">
+    <div class="activities-table-head">
+      <span>Date</span><span>Activité</span><span>Distance</span><span>D+</span>
+      <span>Durée</span><span>Allure</span><span>FC moy.</span><span>Mini profil</span><span></span>
+    </div>
+    <div class="activity-row-list" id="historyList"></div>
+    <div id="historyEmpty" class="empty" style="display:none;">Aucune séance importée pour l'instant. Glisse un fichier .fit n'importe où sur cette page, ou utilise le bouton « Importer une activité ».</div>
+    <div class="activities-list-end" id="historyEnd" style="display:none;">— Fin de la liste —</div>
+  </section>
 
 </main>
+
+<div id="dropOverlay" class="drop-overlay">Dépose ton fichier .fit ici pour l'importer</div>
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
 </div>
@@ -103,15 +88,22 @@
 </nav>
 
 <script>
-/* --------------------------- IMPORT .FIT --------------------------- */
-const dropzone = document.getElementById('dropzone');
+/* --------------------------- IMPORT .FIT ---------------------------
+   Pas de zone de dépôt visible en permanence (la page doit rester dense et centrée sur la
+   liste) : le glisser-déposer fonctionne sur toute la page, avec un simple repère plein écran
+   pendant le survol, et le bouton "+ Importer une activité" ouvre le sélecteur de fichiers. */
 const fileInput = document.getElementById('fileInput');
-document.getElementById('pickFileBtn').addEventListener('click', () => fileInput.click());
+const dropOverlay = document.getElementById('dropOverlay');
+document.getElementById('importCta').addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', e => handleFiles(e.target.files));
-['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
-['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
-dropzone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
-dropzone.addEventListener('click', e => { if (e.target === dropzone) fileInput.click(); });
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; dropOverlay.classList.add('show'); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) dropOverlay.classList.remove('show'); });
+window.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; dropOverlay.classList.remove('show');
+  if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
 
 async function handleFiles(fileList) {
   const files = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.fit'));
@@ -150,126 +142,65 @@ async function handleFiles(fileList) {
 
 /* --------------------------- HISTORIQUE + FILTRES --------------------------- */
 document.getElementById('searchInput').addEventListener('input', renderHistory);
-document.getElementById('dateFrom').addEventListener('change', renderHistory);
-document.getElementById('dateTo').addEventListener('change', renderHistory);
 
-// Filtre rapide par type de sport — les options sont construites à partir des types réellement
-// présents dans l'historique importé (pas une liste figée, pour coller aux vraies données .fit).
+// Filtre par type de sport — menu déroulant construit à partir des types réellement présents
+// dans l'historique importé (pas une liste figée, pour coller aux vraies données .fit).
 let sportFilterVal = 'all';
 function renderSportFilterChips() {
   const sessions = loadAllSessions();
   const sports = Array.from(new Set(sessions.map(s => s.sport).filter(Boolean))).sort();
-  const row = document.getElementById('sportFilterRow');
-  if (!sports.length) { row.innerHTML = ''; return; }
-  const chips = [{ key:'all', label:'Tous les types' }].concat(sports.map(s => ({ key:s, label:s })));
-  row.innerHTML = chips.map(c => '<button type="button" class="chip-btn' + (sportFilterVal===c.key?' active':'') + '" data-sport="' + escapeHtml(c.key) + '">' + escapeHtml(c.label) + '</button>').join('');
-  row.querySelectorAll('[data-sport]').forEach(btn => btn.addEventListener('click', () => {
-    sportFilterVal = btn.dataset.sport;
-    renderSportFilterChips();
-    renderHistory();
-  }));
+  const select = document.getElementById('sportFilterSelect');
+  select.innerHTML = '<option value="all">Tous sports</option>' + sports.map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>').join('');
+  select.value = sportFilterVal;
 }
+document.getElementById('sportFilterSelect').addEventListener('change', (e) => { sportFilterVal = e.target.value; renderHistory(); });
 
-// Filtre rapide par période — remplit simplement les champs "Du / Au" existants, qui restent
-// modifiables librement ensuite.
+// Filtre par période — chips simples (Toutes / 30 jours / 3 mois / 1 an), pas de sélecteur de
+// dates libre : couvre les usages courants sans imposer un gros formulaire.
+let periodFilterDays = null;
 document.querySelectorAll('#periodFilterRow [data-period]').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('#periodFilterRow [data-period]').forEach(b => b.classList.toggle('active', b === btn));
-  const period = btn.dataset.period;
-  if (period === 'all') {
-    document.getElementById('dateFrom').value = '';
-    document.getElementById('dateTo').value = '';
-  } else if (period === 'season') {
-    document.getElementById('dateFrom').value = new Date().getFullYear() + '-01-01';
-    document.getElementById('dateTo').value = '';
-  } else {
-    const d = new Date(); d.setDate(d.getDate() - parseInt(period, 10));
-    document.getElementById('dateFrom').value = d.toISOString().slice(0,10);
-    document.getElementById('dateTo').value = '';
-  }
+  periodFilterDays = btn.dataset.period === 'all' ? null : parseInt(btn.dataset.period, 10);
   renderHistory();
 }));
 
 function renderHistory() {
   const sessions = loadAllSessions();
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
-  const from = document.getElementById('dateFrom').value;
-  const to = document.getElementById('dateTo').value;
+  const fromDate = periodFilterDays != null ? (() => { const d = new Date(); d.setDate(d.getDate() - periodFilterDays); return d.toISOString().slice(0,10); })() : null;
   const filtered = sessions.filter(s => {
     if (search && !((s.sport||'').toLowerCase().includes(search) || (s.fileName||'').toLowerCase().includes(search))) return false;
-    if (from && s.date < from) return false;
-    if (to && s.date > to) return false;
+    if (fromDate && s.date < fromDate) return false;
     if (sportFilterVal !== 'all' && s.sport !== sportFilterVal) return false;
     return true;
   }).sort((a,b) => b.date.localeCompare(a.date));
 
   const list = document.getElementById('historyList');
   document.getElementById('historyEmpty').style.display = filtered.length ? 'none' : 'block';
+  document.getElementById('historyEnd').style.display = filtered.length ? 'block' : 'none';
   list.innerHTML = filtered.map(s => {
     const visual = sessionPreviewSvg(s);
-    const label = (s.sport || 'Séance') + ' — ' + fmtDayMonth(s.date);
-    const stats = [
-      fmtNum(s.distanceKm, ' km', 1),
-      fmtNum(s.ascent, ' m D+', 0),
-      fmtDuration(s.durationS),
-      s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : null,
-      s.avgHr != null ? s.avgHr + ' bpm' : null,
-    ].filter(Boolean);
+    const [, mo, da] = s.date.split('-');
+    const dateStack = '<span class="cell-day">' + parseInt(da,10) + '</span><span class="cell-month">' + FR_MONTHS_SHORT[parseInt(mo,10)-1].replace('.','').toUpperCase() + '</span><span class="cell-year">' + s.date.slice(0,4) + '</span>';
     return '<a class="activity-row" href="activite.html?id=' + encodeURIComponent(s.id) + '">' +
-      (visual ? '<div class="row-visual">' + visual + '</div>' : '') +
-      '<div class="row-main">' +
-        '<div class="row-date">' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + '</div>' +
-        '<div class="row-title">' + escapeHtml(label) + '</div>' +
-        '<div class="row-stats">' + stats.map(v => '<span><strong>' + v + '</strong></span>').join('') + '</div>' +
-      '</div>' +
-      '<span class="link-arrow row-arrow">Voir l\'analyse →</span>' +
+      '<span class="cell cell-date">' + dateStack + (s.dateApprox ? ' *' : '') + '</span>' +
+      '<span class="cell cell-activity"><span class="row-title">' + escapeHtml(s.sport || 'Séance') + '</span>' + (s.fileName ? '<span class="row-sub">' + escapeHtml(fmtDayMonth(s.date)) + '</span>' : '') + '</span>' +
+      '<span class="cell cell-stat">' + fmtNum(s.distanceKm, ' km', 1) + '</span>' +
+      '<span class="cell cell-stat">' + fmtNum(s.ascent, ' m', 0) + '</span>' +
+      '<span class="cell cell-stat">' + fmtDuration(s.durationS) + '</span>' +
+      '<span class="cell cell-stat">' + (s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') + '</span>' +
+      '<span class="cell cell-stat">' + (s.avgHr != null ? s.avgHr + ' bpm' : '—') + '</span>' +
+      '<span class="cell cell-visual">' + (visual || '') + '</span>' +
+      '<span class="cell cell-arrow link-arrow">Voir l\'analyse →</span>' +
     '</a>';
   }).join('');
 }
 
-document.getElementById('importCta').addEventListener('click', () => fileInput.click());
-
-function renderCharts() {
-  const sessions = loadAllSessions();
-  const plan = getPlan() || [];
-  const grid = document.getElementById('chartsGrid');
-  const paceSessions = sessions.filter(s => s.avgPaceSecPerKm != null);
-  const pacePoints = paceSessions.map((s,i) => ({ x:i, y:s.avgPaceSecPerKm, xLabel: fmtDate(s.date), label: fmtDate(s.date)+' : '+fmtPace(s.avgPaceSecPerKm) }));
-  const paceChart = lineChartSvg('Allure moyenne dans le temps (min/km, axe inversé = plus bas = plus rapide)', pacePoints, { decimals:0 });
-  const hrSessions = sessions.filter(s => s.avgHr != null);
-  const hrPoints = hrSessions.map((s,i) => ({ x:i, y:s.avgHr, xLabel: fmtDate(s.date), label: fmtDate(s.date)+' : '+s.avgHr+' bpm' }));
-  const hrChart = lineChartSvg('Fréquence cardiaque moyenne par séance (bpm)', hrPoints);
-
-  const doneMap = {};
-  sessions.forEach(s => {
-    const wk = isoWeek(s.date);
-    doneMap[wk] = doneMap[wk] || { km:0, dplus:0 };
-    if (s.distanceKm) doneMap[wk].km += s.distanceKm;
-    if (s.ascent) doneMap[wk].dplus += s.ascent;
-  });
-  const plannedMap = {};
-  plan.forEach(p => {
-    const wk = isoWeek(p.date);
-    plannedMap[wk] = plannedMap[wk] || { km:0, dplus:0 };
-    plannedMap[wk].km += p.distanceKm || 0;
-    plannedMap[wk].dplus += p.deniveleM || 0;
-  });
-  const weekKeys = Array.from(new Set([...Object.keys(doneMap), ...Object.keys(plannedMap)])).sort();
-  const weeks = weekKeys.map(w => ({ key:w, shortLabel: w.slice(5) }));
-  const kmSeries = [
-    { name:'Réalisé', color:'var(--accent)', values: weekKeys.map(w => doneMap[w]?.km || 0) },
-    { name:'Planifié', color:'var(--border)', values: weekKeys.map(w => plannedMap[w]?.km || 0) },
-  ];
-  const dplusSeries = [
-    { name:'Réalisé', color:'var(--accent)', values: weekKeys.map(w => doneMap[w]?.dplus || 0) },
-    { name:'Planifié', color:'var(--border)', values: weekKeys.map(w => plannedMap[w]?.dplus || 0) },
-  ];
-  const kmChart = groupedBarChartSvg('Volume hebdomadaire (km) — réalisé vs planifié', weeks, kmSeries);
-  const dplusChart = groupedBarChartSvg('Dénivelé positif hebdomadaire (m) — réalisé vs planifié', weeks, dplusSeries);
-  grid.innerHTML = paceChart + hrChart + kmChart + dplusChart;
-  initChartTooltips(grid);
-}
-
-function refreshAll() { renderSportFilterChips(); renderHistory(); renderCharts(); }
+// Graphiques de progression (allure/FC dans le temps, volume hebdo réalisé vs planifié) retirés
+// de cette page (2026-08-14) : ils dominaient l'espace alors que cette page doit surtout servir
+// à retrouver et ouvrir une sortie rapidement. Ce type d'analyse dans la durée a sa place dédiée
+// sur la page Analyse (analyse.html).
+function refreshAll() { renderSportFilterChips(); renderHistory(); }
 refreshAll(); // premier rendu depuis le cache local, avant même la vérification de connexion
 
 // Ancien lien direct vers une séance (#s=id, ex. carte "Dernière activité" de l'Accueil, non modifiée
