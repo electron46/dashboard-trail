@@ -64,58 +64,17 @@
     <section class="card" id="connectCard"></section>
   </div>
 
-  <!-- ============ ZONE PERSONNALISÉE (P2, non construite) ============ -->
+  <!-- ============ PROFIL SPORTIF ELEV (radar) ============ -->
   <section class="card" style="margin-top:14px;">
-    <h2>Zone d'entraînement personnalisée <small style="font-weight:400;color:var(--muted);">(bientôt disponible)</small></h2>
-    <p class="hint">Définissez vos propres zones d'entraînement basées sur la fréquence cardiaque ou l'allure.</p>
-    <button class="btn small" type="button" disabled title="Fonctionnalité à venir">+ Créer une zone personnalisée</button>
-  </section>
-
-  <!-- ============ POINTS DE VIGILANCE SANTÉ ============ -->
-  <section class="card" style="margin-top:14px;" id="healthCard"></section>
-
-  <!-- ============ SECTIONS AVANCÉES (accordéon) — profil traileur détaillé, réutilisé par le résumé IA ============ -->
-  <div id="advancedGroups" style="margin-top:14px;"></div>
-  <section class="card" style="margin-top:0;">
-    <div class="row">
-      <button class="btn primary" id="saveAdvancedBtn" type="button">Enregistrer ces informations</button>
-    </div>
-    <div id="advancedMsg"></div>
-  </section>
-
-  <!-- ============ RECORDS PERSONNELS ============ -->
-  <section class="card" style="margin-top:14px;">
-    <h2>Records personnels</h2>
-    <table class="records-table" id="recordsTable">
-      <thead><tr><th>Distance / type</th><th>Temps</th><th>Course</th><th>Date</th><th></th></tr></thead>
-      <tbody id="recordsBody"></tbody>
-    </table>
-    <div class="row" style="margin-top:10px;">
-      <button class="btn small" id="addRecordBtn" type="button">+ Ajouter un record</button>
-      <button class="btn small primary" id="saveRecordsBtn" type="button">Enregistrer les records</button>
-    </div>
-    <div id="recordsMsg"></div>
-  </section>
-
-  <!-- ============ PROFIL DE PERFORMANCE (radar, inchangé) ============ -->
-  <section class="card" style="margin-top:14px;">
-    <h2>Profil de performance <small>calculé à partir de tes séances importées</small></h2>
+    <h2>Profil sportif ELEV <small>calculé à partir de tes séances importées</small></h2>
     <div id="radarBox"></div>
     <p class="hint">Chaque axe est calculé à partir de repères fixes documentés (volume, dénivelé, allure sur terrain roulant, dérive cardiaque, régularité) — pas une comparaison à d'autres coureurs, juste une lecture de ton propre historique. Réimporte tes séances récentes en page <a href="historique.html">Activités</a> si un axe indique "n/d" (donnée insuffisante).</p>
     <div id="radarNotes" class="hint"></div>
   </section>
 
-  <!-- ============ RÉSUMÉ POUR L'IA (inchangé) ============ -->
-  <section class="card" style="margin-top:14px;">
-    <h2>Résumé pour l'IA <small>à coller dans une conversation Claude pour construire un plan d'entraînement complet</small></h2>
-    <p class="hint">Génère un texte structuré à partir de tout ce que tu as renseigné ci-dessus (les champs laissés vides apparaissent comme "non renseigné").</p>
-    <div class="row">
-      <button class="btn" id="genSummaryBtn" type="button">Générer le résumé</button>
-      <button class="btn" id="copySummaryBtn" type="button">Copier le texte</button>
-    </div>
-    <textarea id="summaryOutput" readonly style="min-height:260px;font-size:.75rem;margin-top:10px;"></textarea>
-    <div id="summaryMsg"></div>
-  </section>
+  <!-- ============ CONTEXTE D'ENTRAÎNEMENT (4 accordéons) ============ -->
+  <h2 style="margin:22px 0 10px;">Contexte d'entraînement</h2>
+  <div id="contextAccordions"></div>
 
 </main>
 
@@ -136,7 +95,6 @@
 
 <script>
 let records = [];
-function statutLabelText(s) { return s === 'principal' ? 'objectif principal' : (s === 'envisage' ? 'objectif envisagé' : 'objectif secondaire'); }
 function computeAge(naissanceISO) {
   if (!naissanceISO) return null;
   const b = new Date(naissanceISO), t = new Date();
@@ -144,6 +102,19 @@ function computeAge(naissanceISO) {
   const m = t.getMonth() - b.getMonth();
   if (m < 0 || (m === 0 && t.getDate() < b.getDate())) age--;
   return age >= 0 ? age : null;
+}
+function zoneRow(z, desc) {
+  return '<div class="profile-zone-row"><span class="z-label"><span class="zone-dot ' + z.key + '"></span>' + escapeHtml(z.label) + '</span><span class="z-range">' + z.low + '–' + z.high + ' bpm</span><span class="z-desc">' + (desc||'') + '</span></div>';
+}
+function humanizeTimezone(tz) {
+  if (!tz) return null;
+  const city = (tz.split('/').pop() || tz).replace(/_/g, ' ');
+  let offset = '';
+  try {
+    const part = new Intl.DateTimeFormat('fr', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName');
+    if (part) offset = part.value.replace('GMT', 'UTC');
+  } catch (e) {}
+  return city + (offset ? ' · ' + offset : '');
 }
 
 /* --------------------------- IDENTITÉ --------------------------- */
@@ -205,8 +176,12 @@ function renderAbout() {
         '<h2 style="margin:0;">À propos</h2>' +
         '<button class="btn small" id="aboutEditBtn" type="button">Modifier</button>' +
       '</div>' +
-      '<p class="hint" style="margin-top:10px;white-space:pre-line;">' + (p.apropos ? escapeHtml(p.apropos) : 'Non renseigné.') + '</p>';
+      (p.apropos
+        ? '<p class="hint" style="margin-top:10px;white-space:pre-line;">' + escapeHtml(p.apropos) + '</p>'
+        : '<p style="margin-top:10px;"><a class="link-arrow" href="#" id="addAboutLink">Ajouter une présentation →</a></p>');
     document.getElementById('aboutEditBtn').addEventListener('click', () => { aboutEditing = true; renderAbout(); });
+    const addLink = document.getElementById('addAboutLink');
+    if (addLink) addLink.addEventListener('click', e => { e.preventDefault(); aboutEditing = true; renderAbout(); });
   } else {
     card.innerHTML =
       '<h2 style="margin-bottom:10px;">À propos</h2>' +
@@ -224,63 +199,155 @@ function renderAbout() {
   }
 }
 
-/* --------------------------- INFORMATIONS PERSONNELLES (naissance/âge/poids) --------------------------- */
+/* --------------------------- INFORMATIONS PERSONNELLES --------------------------- */
+let persoEditing = false;
 function renderPerso() {
   const card = document.getElementById('persoCard');
   const p = getProfile();
   const age = computeAge(p.naissance);
-  card.innerHTML =
-    '<h2>Informations personnelles</h2>' +
-    '<div class="row" style="flex-direction:column;align-items:stretch;">' +
-      '<label class="field">Date de naissance<input type="date" id="persoNaissance" value="' + escapeHtml(p.naissance || '') + '"></label>' +
-      '<label class="field">Poids (kg)<input type="number" id="persoPoids" min="0" step="0.5" value="' + escapeHtml(p.poids || '') + '"></label>' +
-    '</div>' +
-    '<div class="profile-field-row"><span class="k">Âge</span><span class="v">' + (age != null ? age + ' ans' : 'Non renseigné') + '</span></div>' +
-    '<div class="row" style="margin-top:10px;">' +
-      '<button class="btn small primary" id="persoSaveBtn" type="button">Enregistrer</button>' +
-      '<span id="persoMsg"></span>' +
-    '</div>';
-  document.getElementById('persoSaveBtn').addEventListener('click', () => {
-    patchProfile({ naissance: document.getElementById('persoNaissance').value, poids: document.getElementById('persoPoids').value.trim() });
-    renderPerso();
-    showMsg('persoMsg', 'Enregistré.', 'ok');
-  });
+  if (!persoEditing) {
+    card.innerHTML =
+      '<div class="row" style="justify-content:space-between;align-items:flex-start;"><h2 style="margin:0;">Informations personnelles</h2><button class="btn small" id="persoEditBtn" type="button">Modifier</button></div>' +
+      '<div class="profile-field-view" style="margin-top:8px;">' +
+        '<div class="profile-field-row"><span class="k">Date de naissance</span><span class="v">' + (p.naissance ? fmtDate(p.naissance) : 'Non renseignée') + '</span></div>' +
+        '<div class="profile-field-row"><span class="k">Âge</span><span class="v">' + (age != null ? age + ' ans' : 'Non renseigné') + '</span></div>' +
+        '<div class="profile-field-row"><span class="k">Poids</span><span class="v">' + (p.poids ? p.poids + ' kg' : 'Non renseigné') + '</span></div>' +
+      '</div>';
+    document.getElementById('persoEditBtn').addEventListener('click', () => { persoEditing = true; renderPerso(); });
+  } else {
+    card.innerHTML =
+      '<h2 style="margin-bottom:10px;">Informations personnelles</h2>' +
+      '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+        '<label class="field">Date de naissance<input type="date" id="persoNaissance" value="' + escapeHtml(p.naissance || '') + '"></label>' +
+        '<label class="field">Poids (kg)<input type="number" id="persoPoids" min="0" step="0.5" value="' + escapeHtml(p.poids || '') + '"></label>' +
+      '</div>' +
+      '<div class="row" style="margin-top:10px;">' +
+        '<button class="btn small primary" id="persoSaveBtn" type="button">Enregistrer</button>' +
+        '<button class="btn small" id="persoCancelBtn" type="button">Annuler</button>' +
+      '</div>';
+    document.getElementById('persoSaveBtn').addEventListener('click', () => {
+      patchProfile({ naissance: document.getElementById('persoNaissance').value, poids: document.getElementById('persoPoids').value.trim() });
+      persoEditing = false;
+      renderPerso();
+    });
+    document.getElementById('persoCancelBtn').addEventListener('click', () => { persoEditing = false; renderPerso(); });
+  }
 }
 
-/* --------------------------- FRÉQUENCE CARDIAQUE --------------------------- */
+/* --------------------------- FRÉQUENCE CARDIAQUE + ZONES --------------------------- */
+let fcEditing = false;
+let fcDraft = null;
+
 function renderFc() {
   const card = document.getElementById('fcCard');
   const p = getProfile();
-  const zones = karvonenZones(parseFloat(p.fcMax), parseFloat(p.fcRepos));
+
+  if (!fcEditing) {
+    const zones = getActiveHrZones(p);
+    const methodLabel = (p.hrZoneMode === 'custom' && p.customHrZones) ? 'Personnalisé' : 'Karvonen';
+    card.innerHTML =
+      '<div class="row" style="justify-content:space-between;align-items:flex-start;"><h2 style="margin:0;">Fréquence cardiaque</h2><button class="btn small" id="fcEditBtn" type="button">Modifier</button></div>' +
+      '<div class="profile-field-view" style="margin-top:8px;">' +
+        '<div class="profile-field-row"><span class="k">FC max</span><span class="v">' + (p.fcMax ? p.fcMax + ' bpm' : 'Non renseignée') + '</span></div>' +
+        '<div class="profile-field-row"><span class="k">FC repos</span><span class="v">' + (p.fcRepos ? p.fcRepos + ' bpm' : 'Non renseignée') + '</span></div>' +
+        '<div class="profile-field-row"><span class="k">Méthode</span><span class="v"><span class="badge method-badge">' + methodLabel + '</span></span></div>' +
+      '</div>' +
+      (zones
+        ? '<p class="hint" style="margin:10px 0 2px;">Zones de fréquence cardiaque</p><div class="profile-zone-list">' + zones.map(z => zoneRow(z)).join('') + '</div>'
+        : '<p class="hint" style="margin-top:10px;">Renseigne FC max et FC repos pour calculer tes zones.</p>');
+    document.getElementById('fcEditBtn').addEventListener('click', () => {
+      fcDraft = { fcMax: p.fcMax || '', fcRepos: p.fcRepos || '', hrZoneMode: p.hrZoneMode || 'karvonen', customHrZones: p.customHrZones ? JSON.parse(JSON.stringify(p.customHrZones)) : null };
+      fcEditing = true;
+      renderFc();
+    });
+    return;
+  }
+
+  // --- Mode édition ---
+  const computedKarvonen = () => karvonenZones(parseFloat(fcDraft.fcMax), parseFloat(fcDraft.fcRepos));
+  let zonesHtml;
+  if (fcDraft.hrZoneMode === 'custom') {
+    const custom = fcDraft.customHrZones || {};
+    zonesHtml = '<div class="hr-zone-edit" style="margin-top:10px;">' + KARVONEN_ZONES.map(z => {
+      const c = custom[z.key] || {};
+      return '<div class="hr-zone-edit-row"><span class="z-label"><span class="zone-dot ' + z.key + '"></span>' + z.key.toUpperCase() + '</span>' +
+        '<input type="number" id="hz_' + z.key + '_min" value="' + (c.low != null ? c.low : '') + '" placeholder="min bpm">' +
+        '<input type="number" id="hz_' + z.key + '_max" value="' + (c.high != null ? c.high : '') + '" placeholder="max bpm"></div>';
+    }).join('') + '</div>';
+  } else {
+    const zones = computedKarvonen();
+    zonesHtml = zones
+      ? '<div class="profile-zone-list" style="margin-top:10px;">' + zones.map(z => zoneRow(z)).join('') + '</div>'
+      : '<p class="hint" style="margin-top:10px;">Renseigne FC max et FC repos pour calculer les zones.</p>';
+  }
+
   card.innerHTML =
-    '<h2>Fréquence cardiaque</h2>' +
+    '<h2 style="margin-bottom:10px;">Fréquence cardiaque</h2>' +
     '<div class="row" style="flex-direction:column;align-items:stretch;">' +
-      '<label class="field">FC max (bpm)<input type="number" id="fcMaxInput" min="0" value="' + escapeHtml(p.fcMax || '') + '"></label>' +
-      '<label class="field">FC repos (bpm)<input type="number" id="fcReposInput" min="0" value="' + escapeHtml(p.fcRepos || '') + '"></label>' +
+      '<label class="field">FC max (bpm)<input type="number" id="fcMaxInput" min="0" value="' + escapeHtml(fcDraft.fcMax) + '"></label>' +
+      '<label class="field">FC repos (bpm)<input type="number" id="fcReposInput" min="0" value="' + escapeHtml(fcDraft.fcRepos) + '"></label>' +
     '</div>' +
-    '<div class="row" style="margin-top:10px;">' +
+    '<p class="hint" style="margin:10px 0 2px;">Méthode des zones</p>' +
+    '<div class="hr-zone-mode-toggle">' +
+      '<button type="button" class="chip-btn' + (fcDraft.hrZoneMode !== 'custom' ? ' active' : '') + '" id="modeKarvonenBtn">Karvonen automatique</button>' +
+      '<button type="button" class="chip-btn' + (fcDraft.hrZoneMode === 'custom' ? ' active' : '') + '" id="modeCustomBtn">Personnalisées</button>' +
+    '</div>' +
+    zonesHtml +
+    '<div id="fcMsg"></div>' +
+    '<div class="row" style="margin-top:12px;">' +
       '<button class="btn small primary" id="fcSaveBtn" type="button">Enregistrer</button>' +
-      '<span id="fcMsg"></span>' +
-    '</div>' +
-    (zones ?
-      '<div class="profile-zone-list">' +
-        '<p class="hint" style="margin:10px 0 2px;">Méthode : Karvonen (% de réserve cardiaque) — repère indicatif, pas une prescription médicale.</p>' +
-        zones.map(z => '<div class="profile-zone-row"><span class="z-label"><span class="zone-dot ' + z.key + '"></span>' + escapeHtml(z.label) + '</span><span class="z-range">' + z.low + '–' + z.high + ' bpm</span><span class="z-desc"></span></div>').join('') +
-      '</div>'
-      : '<p class="hint" style="margin-top:10px;">Renseigne FC max et FC repos pour calculer tes zones.</p>');
-  document.getElementById('fcSaveBtn').addEventListener('click', () => {
-    patchProfile({ fcMax: document.getElementById('fcMaxInput').value.trim(), fcRepos: document.getElementById('fcReposInput').value.trim() });
+      '<button class="btn small" id="fcCancelBtn" type="button">Annuler</button>' +
+    '</div>';
+
+  document.getElementById('fcMaxInput').addEventListener('input', e => { fcDraft.fcMax = e.target.value; if (fcDraft.hrZoneMode !== 'custom') renderFc(); });
+  document.getElementById('fcReposInput').addEventListener('input', e => { fcDraft.fcRepos = e.target.value; if (fcDraft.hrZoneMode !== 'custom') renderFc(); });
+  document.getElementById('modeKarvonenBtn').addEventListener('click', () => {
+    if (fcDraft.hrZoneMode === 'karvonen') return;
+    if (!confirm('Revenir au calcul Karvonen ? Les limites personnalisées ne seront plus utilisées (elles restent enregistrées, tu pourras les réactiver plus tard).')) return;
+    fcDraft.hrZoneMode = 'karvonen';
     renderFc();
-    showMsg('fcMsg', 'Enregistré.', 'ok');
   });
+  document.getElementById('modeCustomBtn').addEventListener('click', () => {
+    if (fcDraft.hrZoneMode === 'custom') return;
+    if (!fcDraft.customHrZones) {
+      const computed = computedKarvonen();
+      if (computed) fcDraft.customHrZones = Object.fromEntries(computed.map(z => [z.key, { low: z.low, high: z.high }]));
+    }
+    fcDraft.hrZoneMode = 'custom';
+    renderFc();
+  });
+  document.getElementById('fcSaveBtn').addEventListener('click', () => {
+    const patch = { fcMax: String(fcDraft.fcMax).trim(), fcRepos: String(fcDraft.fcRepos).trim(), hrZoneMode: fcDraft.hrZoneMode };
+    if (fcDraft.hrZoneMode === 'custom') {
+      const zones = {};
+      for (const z of KARVONEN_ZONES) {
+        zones[z.key] = { low: parseFloat(document.getElementById('hz_' + z.key + '_min').value), high: parseFloat(document.getElementById('hz_' + z.key + '_max').value) };
+      }
+      const order = ['z1','z2','z3','z4','z5'];
+      let prevHigh = null, err = null;
+      for (const k of order) {
+        const z = zones[k];
+        if (isNaN(z.low) || isNaN(z.high)) { err = 'Toutes les zones doivent avoir des valeurs numériques.'; break; }
+        if (z.low >= z.high) { err = 'Chaque zone doit avoir un minimum inférieur à son maximum.'; break; }
+        if (prevHigh != null && z.low < prevHigh) { err = 'Les zones doivent être croissantes et sans chevauchement (Z1 < Z2 < ... < Z5).'; break; }
+        prevHigh = z.high;
+      }
+      if (err) { showMsg('fcMsg', err, 'err'); return; }
+      patch.customHrZones = zones;
+    }
+    patchProfile(patch);
+    fcEditing = false;
+    renderFc();
+  });
+  document.getElementById('fcCancelBtn').addEventListener('click', () => { fcEditing = false; renderFc(); });
 }
 
 /* --------------------------- ZONES D'INTENSITÉ (RPE) --------------------------- */
 function renderRpe() {
   const card = document.getElementById('rpeCard');
   card.innerHTML =
-    '<h2>Zones d\'intensité (effort perçu) <small style="font-weight:400;">RPE</small></h2>' +
-    '<p class="hint">Repère de perception d\'effort (échelle de Borg 1-10) — distinct de la fréquence cardiaque, qui est une mesure physiologique. Aucune séance n\'est notée en RPE dans ELEV aujourd\'hui : c\'est une échelle de lecture, pas un calcul.</p>' +
+    '<h2>Zones d\'intensité <small style="font-weight:400;">RPE</small></h2>' +
+    '<p class="hint">Repère de perception de l\'effort, distinct de la fréquence cardiaque.</p>' +
     '<div class="profile-zone-list">' +
       RPE_ZONES.map(z => '<div class="profile-zone-row"><span class="z-label"><span class="zone-dot ' + z.key + '"></span>' + escapeHtml(z.label) + '</span><span class="z-range">RPE ' + z.range + '</span><span class="z-desc">' + escapeHtml(z.desc) + '</span></div>').join('') +
     '</div>';
@@ -298,31 +365,42 @@ function renderPrefs() {
       '<div class="profile-field-row"><span class="k">Objectif par défaut</span><span class="v">' +
         (race ? escapeHtml(race.name) + ' <a class="link-arrow" href="objectifs.html">→</a>' : '<a href="objectifs.html">Ajouter un objectif →</a>') +
       '</span></div>' +
-      '<div class="profile-field-row"><span class="k">Premier jour de la semaine</span><span class="v">Lundi<span class="profile-source-tag" title="Fixe pour l\'instant, utilisé par Accueil/Analyse/Plan">fixe</span></span></div>' +
-      '<div class="profile-field-row"><span class="k">Fuseau horaire</span><span class="v">' + (tz ? escapeHtml(tz) : 'Non détecté') + '<span class="profile-source-tag">détecté</span></span></div>' +
+      '<div class="profile-field-row"><span class="k">Premier jour de la semaine</span><span class="v">Lundi<span class="profile-source-tag">fixe</span></span></div>' +
+      '<div class="profile-field-row"><span class="k">Fuseau horaire</span><span class="v">' + (tz ? escapeHtml(humanizeTimezone(tz)) : 'Non détecté') + '<span class="profile-source-tag">détecté</span></span></div>' +
     '</div>';
 }
 
 /* --------------------------- SEUILS ET PARAMÈTRES SPORT --------------------------- */
+let seuilsEditing = false;
 function renderSeuils() {
   const card = document.getElementById('seuilsCard');
   const p = getProfile();
-  card.innerHTML =
-    '<h2>Seuils et paramètres sport</h2>' +
-    '<div class="row" style="flex-direction:column;align-items:stretch;">' +
-      '<label class="field">Allure seuil / spécifique trail (min/km)<input type="text" id="seuilAllure" value="' + escapeHtml(p.allureSeuil || '') + '" placeholder="ex. 5:10"></label>' +
-      '<label class="field">VMA (km/h)<input type="number" id="seuilVma" min="0" step="0.1" value="' + escapeHtml(p.vma || '') + '"></label>' +
-    '</div>' +
-    '<p class="hint" style="margin-top:8px;">Valeurs renseignées manuellement — ELEV n\'estime pas de puissance seuil, VO2max ni FTP aujourd\'hui.</p>' +
-    '<div class="row" style="margin-top:6px;">' +
-      '<button class="btn small primary" id="seuilSaveBtn" type="button">Enregistrer</button>' +
-      '<span id="seuilMsg"></span>' +
-    '</div>';
-  document.getElementById('seuilSaveBtn').addEventListener('click', () => {
-    patchProfile({ allureSeuil: document.getElementById('seuilAllure').value.trim(), vma: document.getElementById('seuilVma').value.trim() });
-    renderSeuils();
-    showMsg('seuilMsg', 'Enregistré.', 'ok');
-  });
+  if (!seuilsEditing) {
+    card.innerHTML =
+      '<div class="row" style="justify-content:space-between;align-items:flex-start;"><h2 style="margin:0;">Seuils et paramètres sport</h2><button class="btn small" id="seuilsEditBtn" type="button">Modifier</button></div>' +
+      '<div class="profile-field-view" style="margin-top:8px;">' +
+        '<div class="profile-field-row"><span class="k">Allure seuil</span><span class="v">' + (p.allureSeuil ? escapeHtml(p.allureSeuil) : 'Non renseignée') + '</span></div>' +
+        '<div class="profile-field-row"><span class="k">VMA</span><span class="v">' + (p.vma ? p.vma + ' km/h' : 'Non renseignée') + '</span></div>' +
+      '</div>';
+    document.getElementById('seuilsEditBtn').addEventListener('click', () => { seuilsEditing = true; renderSeuils(); });
+  } else {
+    card.innerHTML =
+      '<h2 style="margin-bottom:10px;">Seuils et paramètres sport</h2>' +
+      '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+        '<label class="field">Allure seuil / spécifique trail (min/km)<input type="text" id="seuilAllure" value="' + escapeHtml(p.allureSeuil || '') + '" placeholder="ex. 5:10"></label>' +
+        '<label class="field">VMA (km/h)<input type="number" id="seuilVma" min="0" step="0.1" value="' + escapeHtml(p.vma || '') + '"></label>' +
+      '</div>' +
+      '<div class="row" style="margin-top:10px;">' +
+        '<button class="btn small primary" id="seuilSaveBtn" type="button">Enregistrer</button>' +
+        '<button class="btn small" id="seuilCancelBtn" type="button">Annuler</button>' +
+      '</div>';
+    document.getElementById('seuilSaveBtn').addEventListener('click', () => {
+      patchProfile({ allureSeuil: document.getElementById('seuilAllure').value.trim(), vma: document.getElementById('seuilVma').value.trim() });
+      seuilsEditing = false;
+      renderSeuils();
+    });
+    document.getElementById('seuilCancelBtn').addEventListener('click', () => { seuilsEditing = false; renderSeuils(); });
+  }
 }
 
 /* --------------------------- CONNECTIVITÉ --------------------------- */
@@ -339,81 +417,78 @@ async function renderConnect() {
     '<h2>Connectivité</h2>' +
     '<div class="profile-field-view">' +
       '<div class="profile-field-row"><span class="k">Import de séances</span><span class="v">Fichiers .fit (manuel)</span></div>' +
-      '<div class="profile-field-row"><span class="k">Synchro multi-appareils</span><span class="v">' + syncLine + '</span></div>' +
+      '<div class="profile-field-row"><span class="k">Synchronisation ELEV</span><span class="v">' + syncLine + '</span></div>' +
       '<div class="profile-field-row"><span class="k">Dernier appareil détecté</span><span class="v">' + (device ? escapeHtml(device.name) : 'Non disponible') + '</span></div>' +
     '</div>' +
     '<div class="row" style="margin-top:10px;"><a class="link-arrow" href="parametres.html">Gérer les connexions →</a></div>';
 }
 
-/* --------------------------- SANTÉ --------------------------- */
-function renderHealth() {
-  const card = document.getElementById('healthCard');
+/* --------------------------- CONTEXTE D'ENTRAÎNEMENT (4 accordéons) --------------------------- */
+function fieldsFromGroup(title) { return (PROFILE_FIELD_GROUPS.find(g => g.title === title) || { fields: [] }).fields; }
+function renderFieldInput(key, label, type, placeholder, options, profile) {
+  const val = escapeHtml(profile[key] || '');
+  if (type === 'textarea') return '<label class="field" style="flex:1 1 100%;">' + escapeHtml(label) + '<textarea data-key="' + key + '" placeholder="' + escapeHtml(placeholder) + '">' + val + '</textarea></label>';
+  if (type === 'checkboxset') {
+    const selected = (profile[key] || '').split(',').map(s => s.trim()).filter(Boolean);
+    return '<div class="field" style="flex:1 1 100%;"><span>' + escapeHtml(label) + '</span><div class="checkbox-row">' +
+      options.map(opt => '<label class="checkbox-pill"><input type="checkbox" data-key="' + key + '" value="' + escapeHtml(opt) + '"' + (selected.includes(opt) ? ' checked' : '') + '> ' + escapeHtml(opt) + '</label>').join('') +
+      '</div></div>';
+  }
+  return '<label class="field">' + escapeHtml(label) + '<input type="' + type + '" data-key="' + key + '" value="' + val + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
+}
+function recordsMiniList() {
+  if (!records.length) return '<p class="hint">Aucun record enregistré.</p>';
+  return '<div class="mini-list" id="recordsMiniList">' + records.map((r,i) => (
+    '<div class="mini-list-row"><span class="mini-list-lbl">' + escapeHtml(r.label||'Record') + (r.course ? ' — ' + escapeHtml(r.course) : '') + '</span>' +
+    '<span class="mini-list-val">' + escapeHtml(r.temps||'') + (r.date ? ' · ' + fmtDate(r.date) : '') + ' <button type="button" class="btn small danger" data-del-record="' + i + '" style="padding:2px 8px;">✕</button></span></div>'
+  )).join('') + '</div>';
+}
+function renderContextAccordions() {
   const p = getProfile();
-  card.innerHTML =
-    '<h2>Points de vigilance santé <small>utilisés automatiquement par le retour IA post-séance</small></h2>' +
-    '<p class="hint">Ex. blessures passées, fragilités à surveiller (entorses, tendinites...), consignes de renforcement/proprioception. Laisse vide si rien à signaler.</p>' +
-    '<label class="field"><textarea id="healthInput" placeholder="ex. Entorse de cheville fin 2025 : travail systématique de proprioception et renforcement excentrique des mollets à surveiller, en particulier sur les sorties techniques ou en descente.">' + escapeHtml(p.sante || '') + '</textarea></label>' +
-    '<div class="row" style="margin-top:8px;">' +
-      '<button class="btn small primary" id="healthSaveBtn" type="button">Enregistrer</button>' +
-      '<span id="healthMsg"></span>' +
-    '</div>';
-  document.getElementById('healthSaveBtn').addEventListener('click', () => {
-    patchProfile({ sante: document.getElementById('healthInput').value.trim() });
-    showMsg('healthMsg', 'Enregistré.', 'ok');
-  });
+  const container = document.getElementById('contextAccordions');
+  const blessureFields = fieldsFromGroup('Blessures et limitations (au-delà des points de vigilance ci-dessus)');
+  const groups = [
+    { key: 'sante', title: 'Santé & vigilance', desc: 'Utilisé par Coach ELEV pour contextualiser les analyses post-séance.', fields: [['sante','Points de vigilance santé','textarea','ex. Entorse de cheville fin 2025 : proprioception et renforcement excentrique à surveiller, en particulier sur les sorties techniques ou en descente.']].concat(blessureFields) },
+    { key: 'histoire', title: 'Historique sportif', fields: fieldsFromGroup('Historique sportif').concat([['objectifsAutres','Autres pistes non formalisées','textarea','ex. envie d\'un ultra en 2027, encore flou']]), withRecords: true },
+    { key: 'dispo', title: 'Disponibilités & contraintes', fields: fieldsFromGroup('Disponibilités').concat(fieldsFromGroup('Contraintes géographiques et matérielles')).concat(fieldsFromGroup('Contraintes de vie')) },
+    { key: 'nutrition', title: 'Nutrition & suivi', fields: fieldsFromGroup('Nutrition course').concat(fieldsFromGroup('Outils de suivi')) },
+  ];
+  container.innerHTML = groups.map(g => (
+    '<details class="profile-accordion" data-group="' + g.key + '">' +
+      '<summary>' + escapeHtml(g.title) + '</summary>' +
+      '<div class="accordion-body">' +
+        (g.desc ? '<p class="hint" style="margin-top:0;">' + escapeHtml(g.desc) + '</p>' : '') +
+        '<div class="row">' + g.fields.map(([key,label,type,placeholder,options]) => renderFieldInput(key,label,type,placeholder,options,p)).join('') + '</div>' +
+        (g.withRecords ? '<p class="hint" style="margin:14px 0 4px;">Records personnels</p>' + recordsMiniList() + '<button type="button" class="btn small" id="addRecordBtn" style="margin-top:6px;">+ Ajouter un record</button>' : '') +
+        '<div class="row" style="margin-top:14px;"><button type="button" class="btn small primary" data-save-group="' + g.key + '">Enregistrer</button><span id="msg-' + g.key + '"></span></div>' +
+      '</div>' +
+    '</details>'
+  )).join('');
+
+  container.querySelectorAll('[data-save-group]').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.saveGroup;
+    const scope = container.querySelector('[data-group="' + key + '"]');
+    const values = {};
+    scope.querySelectorAll('[data-key]').forEach(el => {
+      const k = el.dataset.key;
+      if (el.type === 'checkbox') { if (!(k in values)) values[k] = []; if (el.checked) values[k].push(el.value); }
+      else values[k] = el.value.trim();
+    });
+    Object.keys(values).forEach(k => { if (Array.isArray(values[k])) values[k] = values[k].join(', '); });
+    if (key === 'histoire') values.records = records.filter(r => r.label || r.temps || r.course || r.date);
+    patchProfile(values);
+    showMsg('msg-' + key, 'Enregistré.', 'ok');
+  }));
+  const addRecordBtn = document.getElementById('addRecordBtn');
+  if (addRecordBtn) addRecordBtn.addEventListener('click', () => { records.push({ label:'', temps:'', course:'', date:'' }); renderContextAccordions(); container.querySelector('[data-group="histoire"]').open = true; });
+  container.querySelectorAll('[data-del-record]').forEach(btn => btn.addEventListener('click', () => {
+    records.splice(+btn.dataset.delRecord, 1);
+    renderContextAccordions();
+    container.querySelector('[data-group="histoire"]').open = true;
+  }));
 }
 
-/* --------------------------- SECTIONS AVANCÉES (accordéon) --------------------------- */
-// Groupes détaillés existants (historique, disponibilités, contraintes, blessures, outils, vie,
-// nutrition) : repliés par défaut pour ne pas allonger la page, mais le contenu et le mode de
-// sauvegarde restent ceux d'origine (alimentent aussi le Résumé pour l'IA plus bas).
-function renderAdvancedGroups(profile) {
-  const container = document.getElementById('advancedGroups');
-  const groups = PROFILE_FIELD_GROUPS.filter(g => g.title !== 'Données physiologiques');
-  container.innerHTML = groups.map((group, gi) => (
-    '<details class="profile-accordion"' + (gi === 0 ? '' : '') + '>' +
-    '<summary>' + escapeHtml(group.title) + '</summary>' +
-    '<div class="accordion-body"><div class="row">' +
-    group.fields.map(([key, label, type, placeholder, options]) => {
-      const val = escapeHtml(profile[key] || '');
-      if (type === 'textarea') {
-        return '<label class="field" style="flex:1 1 100%;">' + escapeHtml(label) + '<textarea data-key="' + key + '" placeholder="' + escapeHtml(placeholder) + '">' + val + '</textarea></label>';
-      }
-      if (type === 'checkboxset') {
-        const selected = (profile[key] || '').split(',').map(s => s.trim()).filter(Boolean);
-        return '<div class="field" style="flex:1 1 100%;"><span>' + escapeHtml(label) + '</span><div class="checkbox-row">' +
-          options.map(opt => '<label class="checkbox-pill"><input type="checkbox" data-key="' + key + '" value="' + escapeHtml(opt) + '"' + (selected.includes(opt) ? ' checked' : '') + '> ' + escapeHtml(opt) + '</label>').join('') +
-          '</div></div>';
-      }
-      return '<label class="field">' + escapeHtml(label) + '<input type="' + type + '" data-key="' + key + '" value="' + val + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
-    }).join('') +
-    '</div></div></details>'
-  )).join('') +
-  '<details class="profile-accordion"><summary>Autres pistes non formalisées</summary><div class="accordion-body">' +
-    '<label class="field"><textarea id="profObjectifsAutres" placeholder="ex. envie d\'un ultra en 2027, encore flou">' + escapeHtml(profile.objectifsAutres || '') + '</textarea></label>' +
-  '</div></details>';
-}
-function collectAdvancedValues() {
-  const values = {};
-  document.querySelectorAll('#advancedGroups [data-key]').forEach(el => {
-    const key = el.dataset.key;
-    if (el.type === 'checkbox') {
-      if (!(key in values)) values[key] = [];
-      if (el.checked) values[key].push(el.value);
-    } else {
-      values[key] = el.value.trim();
-    }
-  });
-  Object.keys(values).forEach(k => { if (Array.isArray(values[k])) values[k] = values[k].join(', '); });
-  values.objectifsAutres = (document.getElementById('profObjectifsAutres') || {}).value ? document.getElementById('profObjectifsAutres').value.trim() : '';
-  return values;
-}
-document.getElementById('saveAdvancedBtn').addEventListener('click', () => {
-  patchProfile(collectAdvancedValues());
-  showMsg('advancedMsg', 'Enregistré.', 'ok');
-});
-
-/* --------------------------- PROFIL DE PERFORMANCE (radar, inchangé) --------------------------- */
+/* --------------------------- PROFIL SPORTIF ELEV (radar) --------------------------- */
 function renderRadar() {
   const box = document.getElementById('radarBox');
   const notesBox = document.getElementById('radarNotes');
@@ -429,94 +504,6 @@ function renderRadar() {
   notesBox.textContent = notes.length ? notes.join(' ') : '';
 }
 
-/* --------------------------- RECORDS PERSONNELS --------------------------- */
-function renderRecords() {
-  const body = document.getElementById('recordsBody');
-  if (!records.length) { body.innerHTML = '<tr><td colspan="5" class="sans" style="color:var(--muted);">Aucun record enregistré.</td></tr>'; return; }
-  body.innerHTML = records.map((r,i) => (
-    '<tr>' +
-    '<td><input type="text" data-i="'+i+'" data-f="label" value="'+escapeHtml(r.label||'')+'" placeholder="ex. 10 km"></td>' +
-    '<td><input type="text" data-i="'+i+'" data-f="temps" value="'+escapeHtml(r.temps||'')+'" placeholder="ex. 42:30"></td>' +
-    '<td><input type="text" data-i="'+i+'" data-f="course" value="'+escapeHtml(r.course||'')+'" placeholder="ex. Trail de..."></td>' +
-    '<td><input type="date" data-i="'+i+'" data-f="date" value="'+(r.date||'')+'"></td>' +
-    '<td><button class="btn small danger" data-del="'+i+'" type="button">✕</button></td>' +
-    '</tr>'
-  )).join('');
-  body.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
-    records[+inp.dataset.i][inp.dataset.f] = inp.value;
-  }));
-  body.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
-    records.splice(+btn.dataset.del, 1);
-    renderRecords();
-  }));
-}
-document.getElementById('addRecordBtn').addEventListener('click', () => {
-  records.push({ label:'', temps:'', course:'', date:'' });
-  renderRecords();
-});
-document.getElementById('saveRecordsBtn').addEventListener('click', () => {
-  patchProfile({ records: records.filter(r => r.label || r.temps || r.course || r.date) });
-  showMsg('recordsMsg', 'Records enregistrés.', 'ok');
-});
-
-/* --------------------------- RÉSUMÉ POUR L'IA --------------------------- */
-function buildAiSummary() {
-  const p = getProfile();
-  const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
-  const na = v => (v && String(v).trim()) ? v : 'non renseigné';
-  const age = computeAge(p.naissance);
-  const lines = [];
-  lines.push('PROFIL TRAILEUR — ' + (p.nom || 'Nico'));
-  lines.push('');
-  if (p.apropos) { lines.push('## À propos'); lines.push(p.apropos); lines.push(''); }
-  lines.push('## Objectifs de course');
-  races.forEach(r => {
-    lines.push('- ' + statutLabelText(r.statut).replace(/^./, c => c.toUpperCase()) + ' : ' + r.name + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+ — ' + fmtDate(r.date) + ' — Temps visé : ' + na(r.tempsVise));
-  });
-  lines.push('- Autres courses envisagées : ' + na(p.objectifsAutres));
-  lines.push('');
-  lines.push('## Informations personnelles et sportives');
-  lines.push('- Âge : ' + (age != null ? age + ' ans' : 'non renseigné'));
-  lines.push('- Poids (kg) : ' + na(p.poids));
-  lines.push('- FC max (bpm) : ' + na(p.fcMax));
-  lines.push('- FC repos (bpm) : ' + na(p.fcRepos));
-  lines.push('- VMA (km/h) : ' + na(p.vma));
-  lines.push('- Allure seuil : ' + na(p.allureSeuil));
-  lines.push('');
-  PROFILE_FIELD_GROUPS.filter(g => g.title !== 'Données physiologiques').forEach(group => {
-    lines.push('## ' + group.title);
-    group.fields.forEach(([key, label]) => { lines.push('- ' + label + ' : ' + na(p[key])); });
-    lines.push('');
-  });
-  const z = karvonenZ2(parseFloat(p.fcMax), parseFloat(p.fcRepos));
-  if (z) lines.push('- Zone Z2 estimée (Karvonen 60-70 %, indicatif) : ' + z.low + '–' + z.high + ' bpm');
-  lines.push('## Points de vigilance santé');
-  lines.push(na(p.sante));
-  lines.push('');
-  lines.push('## Records personnels');
-  if (p.records && p.records.length) {
-    p.records.forEach(r => lines.push('- ' + na(r.label) + ' : ' + na(r.temps) + (r.course ? (' (' + r.course + (r.date ? ', ' + fmtDate(r.date) : '') + ')') : '')));
-  } else {
-    lines.push('non renseigné');
-  }
-  return lines.join('\n');
-}
-document.getElementById('genSummaryBtn').addEventListener('click', () => {
-  document.getElementById('summaryOutput').value = buildAiSummary();
-  showMsg('summaryMsg', 'Résumé généré ci-dessous.', 'info');
-});
-document.getElementById('copySummaryBtn').addEventListener('click', async () => {
-  const text = document.getElementById('summaryOutput').value;
-  if (!text) { showMsg('summaryMsg', 'Génère d\'abord le résumé.', 'err'); return; }
-  try {
-    await navigator.clipboard.writeText(text);
-    showMsg('summaryMsg', 'Texte copié dans le presse-papiers.', 'ok');
-  } catch (e) {
-    document.getElementById('summaryOutput').select();
-    showMsg('summaryMsg', 'Copie automatique indisponible — le texte est sélectionné, utilise Ctrl+C (ou Cmd+C).', 'info');
-  }
-});
-
 /* --------------------------- INIT --------------------------- */
 (function init() {
   const p = getProfile();
@@ -529,9 +516,7 @@ document.getElementById('copySummaryBtn').addEventListener('click', async () => 
   renderPrefs();
   renderSeuils();
   renderConnect();
-  renderHealth();
-  renderAdvancedGroups(p);
-  renderRecords();
+  renderContextAccordions();
   renderRadar();
   renderSidebarUser();
 })();

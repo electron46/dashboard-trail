@@ -481,7 +481,7 @@ function renderPlanIntensity() {
   if (!range) { realBox.innerHTML = ''; return; }
   const sessions = loadAllSessions().filter(s => s.date >= range.fromISO && s.date <= range.toISO);
   const profile = getProfile();
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zones = getActiveHrZones(profile);
   if (!zones) { realBox.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a>.</div>'; return; }
   const dist = aggregateZones(sessions, zones);
   if (!dist) { realBox.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette période.</div>'; return; }

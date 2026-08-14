@@ -405,7 +405,7 @@ function renderNextPlanned() {
 function renderFcSummary() {
   const box = document.getElementById('fcSummaryBox');
   const profile = getProfile();
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zones = getActiveHrZones(profile);
   if (!zones) {
     box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>';
     return;

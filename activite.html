@@ -179,7 +179,7 @@ function initActivityPage(s) {
   altHost.innerHTML = altHtml || '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
   if (altHtml) initElevChart(altHost.firstElementChild, chartPoints, p => moveMapCursor(p.lat, p.lon));
 
-  const zones = karvonenZones(parseFloat(getProfile().fcMax), parseFloat(getProfile().fcRepos));
+  const zones = getActiveHrZones(getProfile());
   const zoneDist = computeSessionZoneDistribution(s, zones);
   const climbs = detectClimbs(s.series);
   renderZonesDonut(s, zoneDist);
@@ -519,7 +519,7 @@ function renderFcTab(s) {
 function renderZonesTab(s) {
   const box = document.getElementById('zonesTabBox');
   const profile = getProfile();
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zones = getActiveHrZones(profile);
   if (!zones) { box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos en page Profil pour calculer tes zones d\'entraînement.</div>'; return; }
   const dist = computeSessionZoneDistribution(s, zones);
   if (!dist) { box.innerHTML = '<div class="empty">Cette activité ne contient pas de données de fréquence cardiaque exploitables.</div>'; return; }

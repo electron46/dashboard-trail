@@ -467,7 +467,7 @@ function renderApercu() {
   }
 
   const profile = getProfile();
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zones = getActiveHrZones(profile);
   const zoneDist = zones ? aggregateZones(win.sessions, zones) : null;
   const zonesBox = document.getElementById('goalZonesBox');
   if (!zones) zonesBox.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a>.</div>';
@@ -614,7 +614,7 @@ function renderIntensite() {
   const win = goalWindow();
   document.getElementById('goalIntensiteWindowLabel').textContent = goalWindowLabel(win);
   const profile = getProfile();
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zones = getActiveHrZones(profile);
   if (!zones) { box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>'; return; }
   const dist = aggregateZones(win.sessions, zones);
   if (!dist) { box.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette fenêtre.</div>'; return; }

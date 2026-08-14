@@ -399,7 +399,7 @@ function renderAnalysis() {
   renderVamChart(weeks, curAgg ? curAgg.vamAvg : null);
 
   const profile = getProfile();
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zones = getActiveHrZones(profile);
   const zoneDist = zones ? aggregateZones(current, zones) : null;
   renderLocomotion(current);
   renderZones(zones, zoneDist);
