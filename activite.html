@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Activité — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#151E2B">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="assets/app.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+  </div>
+  <nav class="sidebar-nav">
+    <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+    <a href="historique.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+    <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
+    <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+    <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+    <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+    <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
+  </nav>
+</aside>
+<div class="app-main">
+<header class="app-topbar">
+  <div>
+    <a class="link-arrow" href="historique.html">← Activités</a>
+    <h1 id="pageTitle" style="margin-top:8px;">Chargement…</h1>
+    <div class="hint" id="pageSubtitle"></div>
+  </div>
+  <button id="themeToggle" type="button">☀ Clair</button>
+</header>
+
+<main id="pageMain">
+
+  <div class="week-stats-inline" id="kpiRow"></div>
+
+  <div class="dash-grid">
+    <div class="altitude-profile-box" id="mapCard" style="padding:0;overflow:hidden;height:340px;"></div>
+    <div class="card-compact" id="resumeCard">
+      <h2>Résumé</h2>
+      <div class="metrics-grid" id="quickMetrics"></div>
+    </div>
+  </div>
+
+  <section class="card" id="profileSection">
+    <h2>Profil altimétrique</h2>
+    <div id="altitudeProfileHost"></div>
+  </section>
+
+  <section class="card">
+    <div class="tabs" id="detailTabs">
+      <button type="button" data-tab="resume" class="active">Résumé</button>
+      <button type="button" data-tab="allure">Allure</button>
+      <button type="button" data-tab="fc">Fréquence cardiaque</button>
+      <button type="button" data-tab="zones">Zones</button>
+      <button type="button" data-tab="montees">Montées</button>
+      <button type="button" data-tab="splits">Splits</button>
+    </div>
+
+    <div class="tab-panel active" data-panel="resume">
+      <div id="resumeTabMetrics"></div>
+      <div id="resumeComparison"></div>
+      <label class="field" style="max-width:280px;">Paire de chaussures utilisée
+        <select id="gearSelect"><option value="">Non renseignée</option></select>
+      </label>
+      <div class="plan-compare" id="planCompare" style="display:none;"></div>
+      <label class="field">Contexte du jour / ressenti (optionnel — fatigue, météo, terrain, douleur, contrainte particulière…)
+        <textarea id="contexteInput" rows="2" placeholder="ex. fatigue de la semaine, forte chaleur, douleur au genou droit, sortie raccourcie par manque de temps…"></textarea>
+      </label>
+      <div class="ai-block">
+        <div class="row">
+          <button class="btn primary" id="aiGenBtn" type="button">Générer le retour IA</button>
+          <span id="aiStatus"></span>
+        </div>
+        <div id="aiFeedbackBox"></div>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-panel="allure">
+      <div id="allureTabBox"></div>
+    </div>
+
+    <div class="tab-panel" data-panel="fc">
+      <div id="fcTabBox"></div>
+    </div>
+
+    <div class="tab-panel" data-panel="zones">
+      <div id="zonesTabBox"></div>
+    </div>
+
+    <div class="tab-panel" data-panel="montees">
+      <div id="monteesTabBox"></div>
+    </div>
+
+    <div class="tab-panel" data-panel="splits">
+      <div id="splitsTabBox"></div>
+    </div>
+  </section>
+
+  <div class="insight-card" id="sessionInsightBox"></div>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres) et les fonds de carte OpenStreetMap (tracé GPS).</footer>
+</div>
+</div>
+
+<nav class="mobile-nav">
+  <a href="index.html"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+  <a href="historique.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+  <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
+  <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+  <a href="plan.html"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+  <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+  <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
+</nav>
+
+<script>
+const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+
+const sessionId = new URLSearchParams(location.search).get('id');
+const session = sessionId ? loadSession(sessionId) : null;
+
+function initActivityPage(s) {
+  const label = (s.sport || 'Séance') + ' — ' + fmtDayMonth(s.date);
+  document.title = label + ' — ELEV';
+  document.getElementById('pageTitle').textContent = label;
+  document.getElementById('pageSubtitle').textContent = fmtDayMonth(s.date) + ' ' + s.date.slice(0, 4) + (s.dateApprox ? ' (date approximative, non trouvée dans le fichier)' : '');
+
+  renderKpiRow(s);
+  renderQuickMetrics(s);
+  renderMap(s);
+
+  const withDist = (s.series || []).filter(p => p.distKm != null);
+  const altHtml = altitudeProfileHtml(withDist);
+  document.getElementById('altitudeProfileHost').innerHTML = altHtml ||
+    '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
+  if (altHtml) initAltitudeProfile(document.getElementById('altProfileWrap'), withDist);
+
+  const zones = karvonenZones(parseFloat(getProfile().fcMax), parseFloat(getProfile().fcRepos));
+  const zoneDist = computeSessionZoneDistribution(s, zones);
+  const climbs = detectClimbs(s.series);
+
+  renderResumeTab(s);
+  renderComparison(s, loadAllSessions());
+  renderAllureTab(s);
+  renderFcTab(s);
+  renderZonesTab(s);
+  renderMonteesTab(s, climbs);
+  renderSplitsTab(s);
+  renderInsight(s, zoneDist, climbs);
+
+  const gearSelect = document.getElementById('gearSelect');
+  const gear = getGear();
+  gearSelect.innerHTML = '<option value="">Non renseignée</option>' + gear.map(g => '<option value="'+g.id+'">'+escapeHtml(g.nom)+'</option>').join('');
+  gearSelect.value = s.gearId || '';
+  gearSelect.addEventListener('change', () => {
+    const cur = loadSession(sessionId); if (!cur) return;
+    cur.gearId = gearSelect.value || null;
+    saveSession(cur.id, cur);
+  });
+
+  document.getElementById('contexteInput').value = s.contexte || '';
+  document.getElementById('contexteInput').addEventListener('change', () => {
+    const cur = loadSession(sessionId); if (!cur) return;
+    cur.contexte = document.getElementById('contexteInput').value.trim() || null;
+    saveSession(cur.id, cur);
+  });
+
+  const planned = findPlannedSession(s.date);
+  const planBox = document.getElementById('planCompare');
+  planBox.style.display = 'block';
+  if (planned) {
+    const dplusDmoins = planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+' + (planned.descenteM ? ' / ' + planned.descenteM + ' m D-' : '');
+    planBox.innerHTML = '<h4>Séance prévue au plan ce jour-là' + (planned.bloc ? ' <small class="hint">(' + escapeHtml(planned.bloc) + ')</small>' : '') + '</h4>' +
+      '<div>' + escapeHtml(planned.type) + ' — ' + dplusDmoins + (planned.intensite ? ' (' + escapeHtml(planned.intensite) + ')' : '') + '</div>' +
+      (planned.fcCorpsSeance ? '<div class="hint">Zone FC cible (corps de séance) : ' + escapeHtml(planned.fcCorpsSeance) + '</div>' : '') +
+      (planned.dureeDetail ? '<div class="hint">' + escapeHtml(planned.dureeDetail) + '</div>' : '') +
+      (planned.notes ? '<div class="hint">Objectif : ' + escapeHtml(planned.notes) + '</div>' : '');
+  } else {
+    planBox.innerHTML = '<h4>Séance prévue au plan</h4><div class="hint">Aucune séance planifiée trouvée pour cette date (ou plan non importé — voir page Paramètres).</div>';
+  }
+
+  document.getElementById('aiFeedbackBox').innerHTML = s.aiFeedback ? '<div class="ai-feedback">' + escapeHtml(s.aiFeedback) + '</div>' : '';
+  document.getElementById('aiGenBtn').textContent = s.aiFeedback ? 'Regénérer le retour IA' : 'Générer le retour IA';
+  document.getElementById('aiGenBtn').addEventListener('click', () => generateAiFeedback(sessionId));
+}
+
+/* --------------------------- KPI + RÉSUMÉ RAPIDE --------------------------- */
+function renderKpiRow(s) {
+  const stats = [
+    ['route', fmtNum(s.distanceKm, ' km', 1), 'Distance'],
+    ['mountain-snow', fmtNum(s.ascent, ' m D+', 0), 'Dénivelé'],
+    ['clock', fmtDuration(s.durationS), 'Durée'],
+    s.avgPaceSecPerKm != null ? ['gauge', fmtPace(s.avgPaceSecPerKm), 'Allure'] : null,
+    s.avgHr != null ? ['heart-pulse', s.avgHr + ' bpm', 'FC moy.'] : null,
+  ].filter(Boolean);
+  document.getElementById('kpiRow').innerHTML = stats.map(([icon, v, l]) =>
+    '<div class="week-stat"><img src="' + ICON(icon) + '" alt=""><div><div class="l">' + l + '</div><div class="v">' + v + '</div></div></div>'
+  ).join('');
+}
+
+function renderQuickMetrics(s) {
+  const ratio = ratioDplusKm(s.ascent, s.distanceKm);
+  const metrics = [
+    ['Type', s.sport || 'Non disponible'],
+    ['D+ / D-', fmtNum(s.ascent, ' m', 0) + ' / ' + fmtNum(s.descent, ' m', 0)],
+    ['Ratio D+/km', ratio != null ? ratio + ' m/km' : 'Non disponible'],
+    ['FC max', s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible'],
+    ['Cadence', s.cadenceSpm != null ? s.cadenceSpm + ' pas/min' : 'Non disponible'],
+    ['Calories', s.calories != null ? s.calories + ' kcal' : 'Non disponible'],
+  ];
+  document.getElementById('quickMetrics').innerHTML = metrics.map(([lbl, val]) =>
+    '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>'
+  ).join('');
+}
+
+/* --------------------------- CARTE GPS --------------------------- */
+let detailMap = null, detailMapLine = null, detailMapCursor = null;
+function renderMap(s) {
+  const mapEl = document.getElementById('mapCard');
+  const pts = (s.series || []).filter(p => p.lat != null && p.lon != null).map(p => [p.lat, p.lon]);
+  if (pts.length < 2 || typeof L === 'undefined') {
+    mapEl.style.display = 'flex';
+    mapEl.style.alignItems = 'center';
+    mapEl.style.justifyContent = 'center';
+    mapEl.innerHTML = '<div class="empty">Pas de tracé GPS pour cette activité.</div>';
+    return;
+  }
+  detailMap = L.map(mapEl, { attributionControl: true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(detailMap);
+  detailMapLine = L.polyline(pts, { color: '#6B8E4E', weight: 4 }).addTo(detailMap);
+  L.circleMarker(pts[0], { radius: 5, color: '#fff', weight: 2, fillColor: '#6B8E4E', fillOpacity: 1 }).addTo(detailMap);
+  requestAnimationFrame(() => {
+    detailMap.invalidateSize();
+    detailMap.fitBounds(detailMapLine.getBounds(), { padding: [16, 16] });
+  });
+}
+function moveMapCursor(lat, lon) {
+  if (!detailMap || lat == null || lon == null) return;
+  if (!detailMapCursor) {
+    detailMapCursor = L.circleMarker([lat, lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#E2836C', fillOpacity: 1 }).addTo(detailMap);
+  } else {
+    detailMapCursor.setLatLng([lat, lon]);
+  }
+}
+
+/* --------------------------- PROFIL ALTIMÉTRIQUE (signature ELEV, synchronisé à la carte) ---------------------------
+   Grand graphique altitude/distance : au survol, un curseur commun affiche distance/altitude/allure/FC
+   (selon disponibilité) et déplace le repère sur la carte GPS (voir moveMapCursor ci-dessus). */
+function altitudeProfileHtml(withDist) {
+  const w = 1000, h = 220, padL = 46, padR = 14, padT = 14, padB = 26;
+  const pts = withDist.filter(p => p.alt != null).map(p => ({ x: p.distKm, y: p.alt }));
+  if (pts.length < 2) return '';
+  const minX = Math.min(...withDist.map(p => p.distKm)), maxX = Math.max(...withDist.map(p => p.distKm));
+  const spanX = (maxX - minX) || 1;
+  const minY = Math.min(...pts.map(p => p.y)), maxY = Math.max(...pts.map(p => p.y));
+  const spanY = (maxY - minY) || 1;
+  const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
+  const sy = y => (h - padB) - (y - minY) / spanY * (h - padT - padB);
+  const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
+  const areaPath = path + ' L' + sx(pts[pts.length - 1].x).toFixed(1) + ',' + (h - padB) + ' L' + sx(pts[0].x).toFixed(1) + ',' + (h - padB) + ' Z';
+  return '<div class="sync-charts-wrap" id="altProfileWrap" ' +
+    'data-min-x="' + minX + '" data-max-x="' + maxX + '" data-padl="' + padL + '" data-padr="' + padR + '" data-w="' + w + '" ' +
+    'data-min-y="' + minY + '" data-max-y="' + maxY + '" data-h="' + h + '" data-padt="' + padT + '" data-padb="' + padB + '">' +
+    '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<defs><linearGradient id="altProfileFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/></linearGradient></defs>' +
+      '<path d="' + areaPath + '" fill="url(#altProfileFill)" stroke="none"/>' +
+      '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
+      '<text x="4" y="' + (padT + 10) + '" font-size="13" fill="var(--muted)">' + Math.round(maxY) + ' m</text>' +
+      '<text x="4" y="' + (h - padB + 2) + '" font-size="13" fill="var(--muted)">' + Math.round(minY) + ' m</text>' +
+      '<text x="' + padL + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + minX.toFixed(1) + ' km</text>' +
+      '<text x="' + (w - padR - 50) + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + maxX.toFixed(1) + ' km</text>' +
+      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' +
+      '<line class="sync-cursor" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (h - padB) + '" stroke="var(--text)" stroke-dasharray="3,3" opacity="0"/>' +
+      '<circle class="sync-dot" r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>' +
+    '</svg>' +
+    '<div class="sync-tooltip" id="altProfileTooltip" style="display:none;"></div>' +
+  '</div>';
+}
+function initAltitudeProfile(wrapper, withDist) {
+  if (!wrapper) return;
+  const minX = parseFloat(wrapper.dataset.minX), maxX = parseFloat(wrapper.dataset.maxX);
+  const padL = parseFloat(wrapper.dataset.padl), padR = parseFloat(wrapper.dataset.padr), w = parseFloat(wrapper.dataset.w);
+  const minY = parseFloat(wrapper.dataset.minY), maxY = parseFloat(wrapper.dataset.maxY);
+  const h = parseFloat(wrapper.dataset.h), padT = parseFloat(wrapper.dataset.padt), padB = parseFloat(wrapper.dataset.padb);
+  const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+  const svg = wrapper.querySelector('svg');
+  const cursor = svg.querySelector('.sync-cursor'), dot = svg.querySelector('.sync-dot');
+  const tooltip = wrapper.querySelector('#altProfileTooltip');
+
+  function nearestIndex(distKm) {
+    let best = 0, bestDiff = Infinity;
+    withDist.forEach((p, i) => { const diff = Math.abs(p.distKm - distKm); if (diff < bestDiff) { bestDiff = diff; best = i; } });
+    return best;
+  }
+  function updateAt(clientX) {
+    const rect = wrapper.getBoundingClientRect();
+    const scale = w / rect.width;
+    let xVb = (clientX - rect.left) * scale;
+    xVb = Math.max(padL, Math.min(w - padR, xVb));
+    const distKm = minX + (xVb - padL) / (w - padL - padR) * spanX;
+    const p = withDist[nearestIndex(distKm)];
+    cursor.setAttribute('x1', xVb.toFixed(1)); cursor.setAttribute('x2', xVb.toFixed(1)); cursor.setAttribute('opacity', '1');
+    if (p.alt != null) {
+      const sy = (h - padB) - (p.alt - minY) / spanY * (h - padT - padB);
+      dot.setAttribute('cx', xVb.toFixed(1)); dot.setAttribute('cy', sy.toFixed(1)); dot.setAttribute('opacity', '1');
+    }
+    const parts = [p.distKm != null ? p.distKm.toFixed(2) + ' km' : ''];
+    if (p.alt != null) parts.push(Math.round(p.alt) + ' m');
+    if (p.paceSecKm != null) parts.push(fmtPace(p.paceSecKm));
+    if (p.hr != null) parts.push(p.hr + ' bpm');
+    tooltip.textContent = parts.filter(Boolean).join(' · ');
+    tooltip.style.display = 'block';
+    moveMapCursor(p.lat, p.lon);
+  }
+  wrapper.addEventListener('mousemove', e => updateAt(e.clientX));
+  wrapper.addEventListener('touchmove', e => { if (e.touches[0]) updateAt(e.touches[0].clientX); }, { passive: true });
+  wrapper.addEventListener('mouseleave', () => {
+    cursor.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); tooltip.style.display = 'none';
+  });
+}
+
+/* --------------------------- ONGLET RÉSUMÉ --------------------------- */
+function renderResumeTab(s) {
+  const altVals = (s.series || []).map(p => p.alt).filter(v => v != null);
+  const altMin = altVals.length ? Math.min(...altVals) : null;
+  const altMax = altVals.length ? Math.max(...altVals) : null;
+  const paceVals = (s.series || []).map(p => p.paceSecKm).filter(v => v != null);
+  const maxSpeedKmh = paceVals.length ? +(3600 / Math.min(...paceVals)).toFixed(1) : null;
+
+  const effort = [
+    ['Distance', fmtNum(s.distanceKm, ' km', 2)],
+    ['Durée', fmtDuration(s.durationS)],
+    ['Allure moyenne', fmtPace(s.avgPaceSecPerKm)],
+    ['FC moyenne', s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible'],
+    ['FC max', s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible'],
+  ];
+  const relief = [
+    ['D+', fmtNum(s.ascent, ' m', 0)],
+    ['D-', fmtNum(s.descent, ' m', 0)],
+    ['Altitude min', altMin != null ? Math.round(altMin) + ' m' : 'Non disponible'],
+    ['Altitude max', altMax != null ? Math.round(altMax) + ' m' : 'Non disponible'],
+  ];
+  const mouvement = [
+    ['Cadence moyenne', s.cadenceSpm != null ? s.cadenceSpm + ' pas/min' : 'Non disponible'],
+    ['Vitesse max', maxSpeedKmh != null ? maxSpeedKmh + ' km/h' : 'Non disponible'],
+  ];
+  if (s.avgPower != null) mouvement.push(['Puissance moy.', s.avgPower + ' W']);
+  if (s.avgTemp != null) mouvement.push(['Température moy.', s.avgTemp + ' °C']);
+
+  const group = (title, items) => '<h4 class="resume-group-title">' + title + '</h4><div class="metrics-grid">' +
+    items.map(([lbl, val]) => '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>').join('') + '</div>';
+
+  document.getElementById('resumeTabMetrics').innerHTML = group('Effort', effort) + group('Relief', relief) + group('Mouvement', mouvement);
+}
+
+function renderComparison(s, allSessions) {
+  const box = document.getElementById('resumeComparison');
+  const cmp = computeSessionComparison(s, allSessions, 5);
+  if (!cmp) { box.innerHTML = ''; return; }
+  const fmtPctDelta = pct => pct == null ? 'Non disponible' : (pct > 0 ? '+' : '') + pct + '%';
+  const rows = [
+    ['Distance', fmtPctDelta(cmp.distanceDeltaPct)],
+    ['D+', fmtPctDelta(cmp.ascentDeltaPct)],
+    ['Allure', cmp.paceDeltaPct != null ? (cmp.paceDeltaPct > 0 ? '+' : '') + cmp.paceDeltaPct + '% (' + (cmp.paceDeltaPct < 0 ? 'plus rapide' : 'plus lent') + ')' : 'Non disponible'],
+  ];
+  box.innerHTML = '<h4 class="resume-group-title">Comparaison aux ' + cmp.n + ' dernières sorties du même type</h4><div class="metrics-grid">' +
+    rows.map(([lbl, val]) => '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>').join('') + '</div>';
+}
+
+/* --------------------------- ONGLET ALLURE --------------------------- */
+function renderAllureTab(s) {
+  const box = document.getElementById('allureTabBox');
+  const withDist = (s.series || []).filter(p => p.distKm != null && p.paceSecKm != null);
+  if (withDist.length < 2) { box.innerHTML = '<div class="empty">Pas de donnée d\'allure disponible pour cette activité.</div>'; return; }
+  const points = withDist.map(p => ({ x: p.distKm, y: p.paceSecKm, label: p.distKm.toFixed(2) + ' km : ' + fmtPace(p.paceSecKm), xLabel: p.distKm.toFixed(1) + ' km' }));
+  box.innerHTML = '<p class="hint">Le profil altimétrique ci-dessus reste visible pendant la lecture de ce graphique, pour repérer l\'effet du relief sur l\'allure. Plus la courbe descend, plus l\'allure est rapide.</p>' +
+    lineChartSvg('Allure au fil de la sortie (min/km)', points, { decimals: 0 });
+  initChartTooltips(box);
+}
+
+/* --------------------------- ONGLET FRÉQUENCE CARDIAQUE --------------------------- */
+function renderFcTab(s) {
+  const box = document.getElementById('fcTabBox');
+  const withDist = (s.series || []).filter(p => p.distKm != null && p.hr != null);
+  if (withDist.length < 2) { box.innerHTML = '<div class="empty">Cette activité ne contient pas de données de fréquence cardiaque.</div>'; return; }
+  const points = withDist.map(p => ({ x: p.distKm, y: p.hr, label: p.distKm.toFixed(2) + ' km : ' + p.hr + ' bpm', xLabel: p.distKm.toFixed(1) + ' km' }));
+  let html = lineChartSvg('Fréquence cardiaque (bpm)', points);
+  html += '<div class="metrics-grid" style="margin-top:12px;">' +
+    '<div class="metric"><div class="lbl">FC moyenne</div><div class="val">' + (s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible') + '</div></div>' +
+    '<div class="metric"><div class="lbl">FC max</div><div class="val">' + (s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible') + '</div></div>' +
+  '</div>';
+  box.innerHTML = html;
+  initChartTooltips(box);
+}
+
+/* --------------------------- ONGLET ZONES --------------------------- */
+function renderZonesTab(s) {
+  const box = document.getElementById('zonesTabBox');
+  const profile = getProfile();
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  if (!zones) { box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos en page Profil pour calculer tes zones d\'entraînement.</div>'; return; }
+  const dist = computeSessionZoneDistribution(s, zones);
+  if (!dist) { box.innerHTML = '<div class="empty">Cette activité ne contient pas de données de fréquence cardiaque exploitables.</div>'; return; }
+  box.innerHTML = '<div class="zone-bars">' + dist.map(z =>
+    '<div class="zone-row"><span class="zone-label">' + z.label + '</span>' +
+    '<div class="zone-track"><div class="zone-fill ' + z.key + '" style="width:' + z.pct + '%"></div></div>' +
+    '<span class="zone-pct">' + z.pct + '%</span>' +
+    '<span class="zone-time">' + fmtDuration(z.sec) + '</span></div>'
+  ).join('') + '</div>';
+}
+
+/* --------------------------- ONGLET MONTÉES --------------------------- */
+function renderMonteesTab(s, climbs) {
+  const box = document.getElementById('monteesTabBox');
+  let html = '<p class="hint">Détection automatique et déterministe : segments d\'au moins 40 m de D+ avec une pente moyenne d\'au moins 3 %. Les 6 montées les plus significatives sont affichées, dans l\'ordre de la sortie.</p>';
+  if (!climbs.length) { html += '<div class="empty">Pas de montée significative détectée sur cette activité.</div>'; box.innerHTML = html; return; }
+  html += '<div class="item-grid">' + climbs.map((c, i) =>
+    '<div class="item-card"><h3>Montée ' + (i + 1) + '</h3><div class="metrics-grid">' +
+    '<div class="metric"><div class="lbl">Distance</div><div class="val">' + c.distanceKm.toFixed(2) + ' km</div></div>' +
+    '<div class="metric"><div class="lbl">D+</div><div class="val">' + c.gainM + ' m</div></div>' +
+    '<div class="metric"><div class="lbl">Pente moy.</div><div class="val">' + c.gradePct + ' %</div></div>' +
+    '<div class="metric"><div class="lbl">Durée</div><div class="val">' + fmtDuration(c.durationS) + '</div></div>' +
+    '<div class="metric"><div class="lbl">VAM</div><div class="val' + (c.vamMh == null ? ' na' : '') + '">' + (c.vamMh != null ? c.vamMh + ' m/h' : 'Non disponible') + '</div></div>' +
+    '<div class="metric"><div class="lbl">FC moyenne</div><div class="val' + (c.avgHr == null ? ' na' : '') + '">' + (c.avgHr != null ? c.avgHr + ' bpm' : 'Non disponible') + '</div></div>' +
+    '</div></div>'
+  ).join('') + '</div>';
+  box.innerHTML = html;
+}
+
+/* --------------------------- ONGLET SPLITS --------------------------- */
+function renderSplitsTab(s) {
+  const box = document.getElementById('splitsTabBox');
+  const laps = s.laps || [];
+  if (laps.length < 2) { box.innerHTML = '<div class="empty">Pas de splits disponibles pour cette activité (moins de 2 portions dans le fichier).</div>'; return; }
+  box.innerHTML = '<div style="overflow-x:auto;"><table><thead><tr><th>Km</th><th>Allure</th><th>D+</th><th>D-</th><th>FC moy.</th></tr></thead><tbody>' +
+    laps.map(l => '<tr><td>' + l.index + '</td><td>' + fmtPace(l.avgPaceSecPerKm) + '</td><td>' + fmtNum(l.ascent, ' m', 0) + '</td><td>' + fmtNum(l.descent, ' m', 0) + '</td><td>' + (l.avgHr != null ? l.avgHr + ' bpm' : 'Non disponible') + '</td></tr>').join('') +
+  '</tbody></table></div>';
+}
+
+/* --------------------------- INSIGHT ELEV DE LA SÉANCE --------------------------- */
+function renderInsight(s, zoneDist, climbs) {
+  const box = document.getElementById('sessionInsightBox');
+  const bullets = generateSessionInsight(s, zoneDist, climbs);
+  if (!bullets.length) {
+    box.innerHTML = '<p class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</p><p>Pas assez de données sur cette activité pour dégager une observation fiable.</p>';
+    return;
+  }
+  box.innerHTML = '<p class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</p>' + bullets.map(b => '<p>' + escapeHtml(b) + '</p>').join('');
+}
+
+/* --------------------------- ONGLETS --------------------------- */
+function activateTab(tab) {
+  document.querySelectorAll('#detailTabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+}
+document.querySelectorAll('#detailTabs button').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+
+/* --------------------------- RETOUR IA (identique au coach post-séance existant) --------------------------- */
+const AI_COACH_SYSTEM_PROMPT = `<persona>
+Vous êtes un coach de course à pied et trail, spécialisé dans l'analyse post-séance et le suivi de plans d'entraînement. Vous maîtrisez la physiologie de l'effort (allure, FC, dénivelé, cadence), l'analyse de charge d'entraînement, et vous savez adapter vos recommandations aux contraintes réelles d'un coureur amateur qui s'entraîne seul, sans encadrement. Votre ton est direct, factuel et bienveillant, jamais culpabilisant.
+</persona>
+
+<objectif>
+<tache>
+Comparer une séance réalisée (données issues d'un fichier .FIT ou saisies manuellement) à la séance prévue dans le plan d'entraînement, et produire une analyse structurée de l'écart, en tenant compte de l'historique récent si disponible.
+</tache>
+<pourquoi>
+L'utilisateur suit un plan d'entraînement en vue d'un ou plusieurs objectifs de course. Il doit savoir rapidement si une séance a rempli son rôle dans la progression, si un écart est ponctuel ou récurrent, et si le plan doit être ajusté.
+</pourquoi>
+<criteres_de_succes>
+- L'écart entre séance prévue et séance réalisée est quantifié (distance, D+, allure, FC, durée)
+- La qualification de l'écart s'appuie sur l'ensemble des métriques disponibles, pas sur une seule
+- Si un historique est fourni, l'analyse précise si l'écart est ponctuel ou récurrent
+- Tout signal d'alerte est classé par niveau de gravité, pas seulement signalé de façon binaire
+- Les contraintes réelles du jour sont prises en compte si elles expliquent un écart
+- En cas de donnée insuffisante pour trancher, l'incertitude est assumée plutôt que masquée
+- La réponse se termine par une recommandation concrète pour la ou les séances suivantes
+</criteres_de_succes>
+</objectif>
+
+<situation>
+<public_cible>L'utilisateur lui-même, seul décideur de ses ajustements d'entraînement.</public_cible>
+<contexte_court>
+Plan d'entraînement structuré (par exemple en CSV), avec des jours de course et de renforcement définis. L'utilisateur peut avoir des contraintes ponctuelles (déplacement, matériel limité, fatigue, antécédent physique) à signaler au cas par cas.
+</contexte_court>
+<donnees>
+Données fournies à chaque usage :
+- Séance prévue au plan (jour, type, distance, D+, allure ou FC cible)
+- Séance réalisée (export .FIT ou résumé : distance, D+, durée, allure moyenne, FC moyenne/max, cadence)
+- Contexte du jour (points de vigilance santé issus du profil, s'ils sont renseignés)
+- Historique des 2-3 dernières séances similaires, si disponible (mêmes indicateurs, pour évaluer une tendance)
+</donnees>
+</situation>
+
+<instructions>
+1) Comparez chiffre par chiffre la séance prévue et la séance réalisée (distance, D+, durée, allure, FC).
+2) Qualifiez l'écart (conforme / en dessous / au-dessus) en croisant au moins deux métriques (par exemple distance ET allure/FC) avant de conclure — ne tranchez pas sur un seul indicateur isolé.
+3) Si un historique est fourni, indiquez si l'écart observé est ponctuel ou s'il se répète sur les séances précédentes, et pondérez la recommandation en conséquence.
+4) Repérez tout signal d'alerte (FC anormalement haute pour l'allure, douleur ou gêne signalée, séance très écourtée) et classez-le sur 3 niveaux : Rien à signaler / À surveiller / Signal fort. Un signal fort se place en tête de la réponse.
+5) Si une contrainte réelle mentionnée par l'utilisateur explique un écart, dites-le explicitement plutôt que de le compter comme un manquement.
+6) Avant de conclure, vérifiez la cohérence de votre qualification de l'écart avec l'ensemble des métriques disponibles et avec l'historique le cas échéant.
+7) Terminez par une recommandation actionnable pour la prochaine séance ou pour la semaine.
+</instructions>
+
+<exclusions>
+- Ne donnez pas d'avis médical sur une douleur signalée : recommandez la prudence et, si la gêne persiste, une consultation. À la place, contentez-vous d'un conseil d'entraînement (réduire l'impact, adapter la charge).
+- N'inventez aucune donnée manquante (allure, FC, D+, historique) : si une donnée n'est pas fournie, indiquez "Non communiqué" et basez l'analyse sur ce qui est disponible.
+- Si les données disponibles ne permettent pas de trancher avec certitude entre un écart lié à la forme et un écart lié au contexte, dites-le explicitement plutôt que de trancher par défaut.
+- Ne noyez pas la réponse sous des explications physiologiques longues : allez à l'essentiel, avec les chiffres et la conclusion pratique.
+- Ne proposez pas d'ajustement irréaliste compte tenu des contraintes signalées par l'utilisateur : proposez une alternative adaptée à ce qu'il a réellement à disposition.
+</exclusions>
+
+<exemple>
+Séance prévue : Samedi, sortie longue 18 km / 800 m D+, allure Z2.
+Séance réalisée : 16 km / 650 m D+, allure Z2, FC moyenne cohérente, ressenti "bonnes jambes".
+Historique : les 2 sorties longues précédentes étaient conformes au plan.
+
+Écart chiffré : Distance -11%, D+ -19%, allure et FC conformes à Z2.
+Analyse : Écart en dessous du prévu en volume, mais l'intensité est respectée. Comme les 2 séances précédentes étaient conformes, cet écart est ponctuel et non un signe de fatigue installée. Probablement lié à une contrainte de temps ou de terrain.
+Point de vigilance : Rien à signaler.
+Recommandation : Pas d'ajustement nécessaire cette semaine. Si l'écart de distance se répète sur les 2 prochaines sorties longues, allonger le parcours suivant pour rattraper le kilométrage prévu sur le cycle.
+</exemple>
+
+<contre_exemple>
+"Bravo, belle séance, continuez comme ça !" — sans comparaison chiffrée, sans croisement des métriques, sans niveau de gravité pour une éventuelle alerte, sans recommandation concrète. Trop vague, n'apporte rien d'actionnable.
+</contre_exemple>
+
+<format_de_sortie>
+Répondez en 4 sections courtes, sans balises XML dans la réponse finale :
+1. Écart chiffré (tableau ou liste courte)
+2. Analyse de l'écart, avec mention ponctuel/récurrent si historique disponible (2-4 phrases)
+3. Point de vigilance santé/fatigue (niveau + une phrase, ou "Rien à signaler")
+4. Recommandation pour la suite (2-3 phrases maximum)
+</format_de_sortie>`;
+
+async function generateAiFeedback(id) {
+  const apiKey = getApiKey();
+  const statusEl = document.getElementById('aiStatus');
+  const boxEl = document.getElementById('aiFeedbackBox');
+  const btn = document.getElementById('aiGenBtn');
+
+  if (!apiKey) {
+    statusEl.innerHTML = '<span style="color:var(--danger)">Aucune clé API enregistrée — renseignez-la dans la page Paramètres.</span>';
+    return;
+  }
+
+  const s = loadSession(id);
+  const planned = findPlannedSession(s.date);
+  const profile = getProfile();
+
+  btn.disabled = true;
+  statusEl.innerHTML = '<span class="spinner"></span>Génération du retour en cours…';
+  boxEl.innerHTML = '';
+
+  const sessionLine = (label, sess) => label + ' : ' +
+    (sess.sport || 'Non communiqué') + ', ' +
+    'distance ' + fmtNum(sess.distanceKm, ' km', 2) + ', ' +
+    'D+/D- ' + fmtNum(sess.ascent, ' m', 0) + ' / ' + fmtNum(sess.descent, ' m', 0) + ', ' +
+    'durée ' + fmtDuration(sess.durationS) + ', ' +
+    'allure moyenne ' + fmtPace(sess.avgPaceSecPerKm) + ', ' +
+    'FC moyenne/max ' + (sess.avgHr ?? 'Non communiqué') + ' / ' + (sess.maxHr ?? 'Non communiqué') + ' bpm, ' +
+    'cadence ' + (sess.cadenceSpm ?? 'Non communiqué') + ' pas/min';
+
+  const allSessions = loadAllSessions();
+  const history = allSessions
+    .filter(h => h.id !== s.id && h.date < s.date && h.sport === s.sport)
+    .slice(-3);
+
+  const userParts = [];
+  userParts.push('Séance prévue au plan pour le ' + fmtDate(s.date) + ' :');
+  userParts.push(planned
+    ? planned.type + ', ' + planned.distanceKm + ' km / ' + planned.deniveleM + ' m D+' + (planned.descenteM ? ' / ' + planned.descenteM + ' m D-' : '') + ', intensité ' + planned.intensite +
+      (planned.fcCorpsSeance ? ' — zone FC cible (corps de séance) : ' + planned.fcCorpsSeance : '') +
+      (planned.notes ? (' — objectif du plan : ' + planned.notes) : '')
+    : 'Non communiqué (aucune séance planifiée trouvée pour cette date, ou plan non importé).');
+
+  userParts.push('\nSéance réalisée le ' + fmtDate(s.date) + ' :');
+  userParts.push(sessionLine('Détail', s));
+
+  userParts.push('\nContexte du jour :');
+  const contexteParts = [];
+  if (s.contexte && s.contexte.trim()) contexteParts.push('Contexte/ressenti signalé par l\'utilisateur pour cette séance : ' + s.contexte.trim());
+  if (profile.sante && profile.sante.trim()) contexteParts.push('Points de vigilance santé connus (issus du profil utilisateur, à prendre en compte si pertinent) : ' + profile.sante.trim());
+  userParts.push(contexteParts.length ? contexteParts.join('\n') : 'Non communiqué.');
+
+  userParts.push('\nHistorique des séances similaires précédentes :');
+  if (history.length) {
+    history.forEach((h, i) => userParts.push(sessionLine((i + 1) + '. ' + fmtDate(h.date), h)));
+  } else {
+    userParts.push('Non communiqué (pas de séance du même type disponible avant celle-ci).');
+  }
+
+  userParts.push('\nToute métrique indiquée "Non communiqué" ne doit pas être inventée : basez l\'analyse sur ce qui est disponible.');
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 2000,
+        thinking: { type: 'disabled' },
+        system: AI_COACH_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userParts.join('\n') }],
+      }),
+    });
+    if (!resp.ok) { const errBody = await resp.text(); throw new Error('HTTP ' + resp.status + ' — ' + errBody.slice(0,200)); }
+    const data = await resp.json();
+    const text = (data.content || []).map(c => c.text || '').join('\n').trim();
+    if (!text) throw new Error('Réponse vide de l\'API.');
+    s.aiFeedback = text;
+    saveSession(s.id, s);
+    boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>';
+    statusEl.textContent = '';
+    btn.textContent = 'Regénérer le retour IA';
+  } catch (err) {
+    statusEl.innerHTML = '<span style="color:var(--danger)">Erreur lors de l\'appel à l\'API : ' + escapeHtml(err.message) + ' (vérifiez la clé API et votre connexion).</span>';
+  } finally { btn.disabled = false; }
+}
+
+/* --------------------------- DÉMARRAGE ---------------------------
+   Appelé en tout dernier : les variables `let` déclarées plus haut (detailMap...) doivent être
+   passées leur ligne de déclaration avant d'être utilisées par initActivityPage → renderMap. */
+if (!session) {
+  document.getElementById('pageMain').innerHTML =
+    '<div class="empty-state"><div class="empty-title">Activité introuvable</div>' +
+    '<p>Cette activité n\'existe pas ou a été supprimée.</p>' +
+    '<a class="btn small accent" href="historique.html">Retour aux activités</a></div>';
+  document.getElementById('pageTitle').textContent = 'Activité introuvable';
+} else {
+  initActivityPage(session);
+}
+</script>
+</body>
+</html>

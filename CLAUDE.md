@@ -55,6 +55,7 @@ Fonctionnalités ajoutées après le MVP initial (à la demande de l'utilisateur
 - Site à plusieurs pages plutôt qu'un fichier unique (voir section 6)
 - Page Analyse : comparaison de séances de même distance dans le temps (progression), graphique allure/FC (efficacité)
 - Détail de séance enrichi : carte du parcours GPS (Leaflet + fond OpenStreetMap) et graphiques allure/FC/altitude synchronisés (un curseur commun aux trois courbes + repère sur la carte)
+- Refonte Activités + détail de séance (page dédiée `activite.html`, remplace l'ancienne modale) : profil altimétrique large en élément signature, onglets Résumé/Allure/FC/Zones/Montées/Splits, détection automatique des montées avec VAM (m/h), Insight ELEV déterministe propre à la séance, comparaison aux 5 dernières sorties du même type ; page Activités (`historique.html`) transformée en liste visuelle dense (mini-profil par séance) au lieu d'un tableau brut
 - Profil de performance (page Profil) : radar à 6 axes (endurance, montée, descente, vitesse, résistance, régularité) calculé depuis l'historique des séances, sur des repères fixes documentés
 - Indice de préparation détaillé par course (page Objectifs) : décomposé en 5 sous-scores (volume, dénivelé, sorties longues, intensité, régularité) avec point faible identifié automatiquement, remplace l'ancien pourcentage unique
 - Page Plan en calendrier hebdomadaire : séances planifiées et réalisées côte à côte, jour par jour, avec écart de volume
@@ -104,7 +105,8 @@ Claude doit proposer une solution simple et adaptée au besoin, en expliquant br
 
 Dossiers ou fichiers importants :
 - `index.html` — page d'accueil / cockpit de progression : 4 KPI (volume hebdo, dénivelé hebdo, tendance de charge, préparation objectif principal), Cette semaine + tendance 12 semaines, Insight ELEV + prochaine séance planifiée (colonne de droite), dernière activité, objectif principal, et en cartes secondaires plus discrètes : charge aiguë/chronique et répartition FC (lecture seule — édition FC max/repos en page Profil)
-- `historique.html` — import des séances .fit, historique, détail de séance (carte GPS, graphiques allure/FC/altitude synchronisés, comparaison au plan, retour IA structuré)
+- `historique.html` — page "Activités" : import des séances .fit, graphiques de progression, liste visuelle des séances (mini-profil altimétrique/GPS par ligne, cliquable vers `activite.html`). Ne contient plus de détail de séance (déplacé, voir ci-dessous).
+- `activite.html` — détail d'une séance (`?id=...`) : header + KPI, carte GPS (Leaflet) et résumé rapide côte à côte, profil altimétrique large synchronisé au curseur de la carte, onglets Résumé/Allure/Fréquence cardiaque/Zones/Montées/Splits, comparaison aux 5 dernières sorties du même type, chaussure utilisée, comparaison au plan, contexte du jour et retour IA structuré, Insight ELEV de la séance (déterministe)
 - `analyse.html` — comparaison de séances de même distance dans le temps, graphique d'efficacité allure/FC
 - `objectifs.html` — gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (5 sous-scores), estimation IA du temps de course
 - `plan.html` — plan d'entraînement en calendrier hebdomadaire (séances planifiées vs réalisées, jour par jour)
@@ -112,7 +114,7 @@ Dossiers ou fichiers importants :
 - `equipements.html` — suivi d'usure des chaussures
 - `parametres.html` — plan CSV (import + vue détaillée dépliable par semaine), clé API Claude, export/import des données, synchro Supabase, thème, réinitialisation
 - `assets/style.css` — styles partagés par toutes les pages (identité ELEV : palette sombre par défaut + vert de marque, Raleway/Inter, sidebar de navigation compacte, grille 2 colonnes du cockpit Accueil sur desktop)
-- `assets/app.js` — logique partagée : parsing des fichiers .fit (dont position GPS), parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation / indice de préparation / profil de performance / tendance de charge (qualitative, ratio aiguë/chronique) / Insight ELEV (règles déterministes), rendu SVG partagé (courbes, barres, sparklines, aperçu de tracé GPS/altitude)
+- `assets/app.js` — logique partagée : parsing des fichiers .fit (dont position GPS), parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation / indice de préparation / profil de performance / tendance de charge (qualitative, ratio aiguë/chronique) / Insight ELEV de tendance (règles déterministes), rendu SVG partagé (courbes, barres, sparklines, aperçu de tracé GPS/altitude). Depuis la refonte Activités : détection de montées (`detectClimbs`, seuils documentés dans le code), répartition du temps par zone FC sur une séance (`computeSessionZoneDistribution`), comparaison aux séances précédentes (`computeSessionComparison`), Insight ELEV propre à une séance (`generateSessionInsight`, déterministe, distinct de l'Insight de tendance de l'Accueil)
 - `assets/icon.svg`, `manifest.json` — icône et manifeste PWA (site installable sur écran d'accueil mobile)
 - `assets/logo-full.png` — logo officiel ELEV, affiché dans la sidebar des 7 pages hors Accueil (sur `index.html`, la sidebar utilise une icône montagne + le mot « ELEV » en texte — voir question ouverte section 15)
 - `dashboard-trail.html` — ancienne page unique, conservée uniquement comme redirection vers `index.html` (compatibilité d'anciens liens)
@@ -157,7 +159,7 @@ Donner une vue d'ensemble claire de la saison de courses et de l'état de prépa
 
 Pages ou écrans nécessaires :
 - Accueil : cockpit de progression — KPI (volume/D+ hebdo, tendance de charge, préparation objectif principal), tendance de volume 12 semaines, Insight ELEV + prochaine séance, dernière activité, objectif principal avec sous-scores, plus en secondaire : charge aiguë/chronique et répartition FC en lecture seule
-- Activités (historique) : import des séances, historique filtrable, graphiques de progression (dont allure par type de terrain), détail de séance (carte GPS, courbes allure/FC/altitude synchronisées, comparaison au plan, retour IA structuré, contexte du jour)
+- Activités : import des séances, graphiques de progression, liste visuelle filtrable (recherche, période, type) avec mini-profil par séance ; chaque séance ouvre sa page de détail dédiée (`activite.html`) : carte GPS + profil altimétrique synchronisés, KPI, onglets Résumé/Allure/FC/Zones/Montées/Splits, comparaison aux sorties précédentes, comparaison au plan, retour IA structuré, contexte du jour, Insight ELEV de la séance
 - Analyse : comparaison de séances de même distance dans le temps, graphique d'efficacité allure vs FC
 - Objectifs : gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (volume, dénivelé, sorties longues, intensité, régularité), estimation IA du temps de course
 - Plan : calendrier hebdomadaire du plan d'entraînement, séances planifiées vs réalisées jour par jour
@@ -274,11 +276,17 @@ Décisions importantes :
 - Palette resserrée vers un thème plus sombre et plus contrasté (« Mountain Performance Intelligence », voir section 8) en gardant le vert de marque existant `#6B8E4E`
 - Aperçu visuel de la dernière activité basé sur les données réelles de la séance (tracé GPS simplifié ou profil altimétrique en SVG, en bandeau horizontal pleine largeur), jamais une photo générique de montagne
 - `design-system/readme.md` documente la charte réellement appliquée (palette, typographies, décisions de couleur) plutôt que la proposition initiale, qui divergeait sur plusieurs points (accent, police) — le reste de `design-system/` sert uniquement de référence historique
+- Détail de séance transformé en page dédiée (`activite.html?id=...`) plutôt que la modale précédente : le volume de contenu voulu (carte + profil large, 6 onglets, splits, analyse des montées) dépassait ce qu'une fenêtre modale peut raisonnablement porter ; cohérent avec l'architecture multi-pages déjà en place
+- Détection des montées par segmentation simple et documentée (seuil de D+ minimum 40 m, pente moyenne minimum 3 %, tolérance de repli 8 m avant de clore un segment) — pas d'algorithme de lissage/filtrage avancé, volontairement simple et vérifiable
+- VAM calculée uniquement sur les segments de montée détectés (jamais sur l'ensemble de la sortie), affichée en m/h
+- Le tracé GPS ↔ profil altimétrique est synchronisé (survol du profil = repère déplacé sur la carte + tooltip distance/altitude/allure/FC) ; les courbes des onglets Allure et Fréquence cardiaque restent volontairement indépendantes (pas synchronisées à la carte), pour limiter la complexité de cette phase
+- Puissance et température ne sont disponibles qu'en moyenne de séance dans les fichiers .fit traités (pas point par point) : pas de courbe dédiée à ces deux métriques, seulement une valeur moyenne si présente
 
 Choix refusés :
 - Métriques génériques « état de forme », « récupération », « charge sur 100 » vues sur des maquettes de référence : non implémentées telles quelles, faute de données réelles pour les calculer honnêtement (voir décisions ci-dessus)
 - Vert d'accent plus fluorescent vu sur certaines maquettes de référence : jugé moins cohérent avec l'identité déjà en place, le vert de marque existant a été conservé
 - Sélecteur de période décoratif dans le header ("7 derniers jours") et lien "Comprendre pourquoi" sur l'Insight : proposés par une maquette mais sans fonction réelle derrière, donc non ajoutés
+- Analyse détaillée des descentes (distance, D-, allure, FC par segment de descente) : non implémentée dans cette phase — priorité plus basse indiquée dans la demande, et les segments de descente sont plus bruités que les montées sur des données GPS/baro grand public
 - Égaliser la hauteur des cartes via des hacks (`margin-top`, hauteurs fixes, `position:absolute`) : l'alignement de grille sur l'Accueil utilise `CSS Grid` + `align-items: stretch` natif
 
 Si une décision technique importante doit être prise :

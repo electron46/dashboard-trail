@@ -257,6 +257,7 @@ function summarizeFit(messages, fileMeta) {
     avgPower: avgPower != null ? Math.round(avgPower) : null,
     maxPower: maxPower != null ? Math.round(maxPower) : null,
     avgTemp: avgTemp,
+    calories: session.total_calories != null ? Math.round(session.total_calories) : null,
     series: series,
     laps: laps,
   };
@@ -643,6 +644,139 @@ async function autoPullIfNewer() {
   if (sessionStorage.getItem(guardKey) === data.updated_at) return; // évite une boucle de rechargement
   const res = await syncPull();
   if (res.ok) { sessionStorage.setItem(guardKey, data.updated_at); location.reload(); }
+}
+
+/* --------------------------- ANALYSE D'UNE SÉANCE (page Activité) --------------------------- */
+
+// Détection des montées d'une séance à partir de la série altitude/distance déjà stockée.
+// Logique volontairement simple et déterministe : on suit un segment tant que l'altitude
+// progresse globalement, et on le clôt dès que l'altitude redescend de plus de `reversalM`
+// depuis son point le plus haut (évite de couper une montée sur un simple faux plat ou du
+// bruit GPS/baro). Un segment n'est retenu comme "montée" que s'il dépasse un gain minimum
+// ET une pente moyenne minimum (sinon un faux plat vallonné ressortirait comme montée).
+// Retourne au plus les 6 montées les plus significatives (par D+), triées par ordre chronologique.
+function detectClimbs(series, opts) {
+  opts = opts || {};
+  const minGainM = opts.minGainM ?? 40;
+  const minGradePct = opts.minGradePct ?? 3;
+  const reversalM = opts.reversalM ?? 8;
+  const pts = (series || []).filter(p => p.alt != null && p.distKm != null && p.t != null);
+  if (pts.length < 3) return [];
+
+  const raw = [];
+  let start = null, peakAlt = -Infinity, peakIdx = null;
+  const flush = (s, e) => {
+    if (s == null || e == null || e <= s) return;
+    const a = pts[s], b = pts[e];
+    const gainM = b.alt - a.alt;
+    const distKm = b.distKm - a.distKm;
+    if (gainM < minGainM || distKm <= 0) return;
+    const gradePct = (gainM / (distKm * 1000)) * 100;
+    if (gradePct < minGradePct) return;
+    const durationS = b.t - a.t;
+    const seg = pts.slice(s, e + 1).filter(p => p.hr != null);
+    const avgHr = seg.length ? Math.round(seg.reduce((sum, p) => sum + p.hr, 0) / seg.length) : null;
+    raw.push({
+      startDistKm: a.distKm, endDistKm: b.distKm,
+      distanceKm: +distKm.toFixed(2), gainM: Math.round(gainM), gradePct: +gradePct.toFixed(1),
+      durationS: Math.round(durationS), vamMh: durationS > 0 ? Math.round(gainM / (durationS / 3600)) : null,
+      avgHr,
+    });
+  };
+  for (let i = 1; i < pts.length; i++) {
+    if (start === null) {
+      if (pts[i].alt > pts[i - 1].alt) { start = i - 1; peakAlt = pts[i].alt; peakIdx = i; }
+      continue;
+    }
+    if (pts[i].alt >= peakAlt) { peakAlt = pts[i].alt; peakIdx = i; continue; }
+    if (peakAlt - pts[i].alt >= reversalM) { flush(start, peakIdx); start = null; peakAlt = -Infinity; peakIdx = null; }
+  }
+  if (start !== null) flush(start, peakIdx);
+
+  return raw.sort((a, b) => b.gainM - a.gainM).slice(0, 6).sort((a, b) => a.startDistKm - b.startDistKm);
+}
+
+// Répartition du temps passé dans chaque zone FC (Karvonen) sur UNE séance, à partir de sa série
+// détaillée. Même logique que le calcul déjà utilisé pour le sous-score "Intensité" de l'indice de
+// préparation (computeRaceReadiness) — centralisée ici pour être réutilisée par page Activité.
+// Retourne null si les zones ne sont pas calculables (FC max/repos non renseignées) ou sans FC.
+function computeSessionZoneDistribution(session, zones) {
+  const series = (session && session.series) || [];
+  if (!zones || series.length < 2) return null;
+  const secByZone = zones.map(() => 0);
+  let totalSec = 0;
+  for (let i = 1; i < series.length; i++) {
+    const hr = series[i].hr; if (hr == null) continue;
+    const dt = series[i].t - series[i - 1].t; if (!dt || dt <= 0 || dt > 120) continue;
+    totalSec += dt;
+    let zi = zones.findIndex(z => hr >= z.low && hr <= z.high);
+    if (zi < 0) zi = hr < zones[0].low ? 0 : zones.length - 1;
+    secByZone[zi] += dt;
+  }
+  if (totalSec <= 0) return null;
+  return zones.map((z, i) => ({ key: z.key, label: z.label, sec: secByZone[i], pct: Math.round(secByZone[i] / totalSec * 100) }));
+}
+
+// Compare une séance aux N séances précédentes du même type (sport), pour donner un repère rapide
+// ("+18% de distance vs moyenne des 5 dernières sorties"). Retourne null s'il n'y a pas assez
+// d'historique du même type pour que la comparaison soit honnête (minimum 2 séances antérieures).
+function computeSessionComparison(session, allSessions, n) {
+  n = n || 5;
+  const prior = (allSessions || []).filter(s => s.id !== session.id && s.date < session.date && s.sport === session.sport).slice(-n);
+  if (prior.length < 2) return null;
+  const avg = key => { const vals = prior.map(s => s[key]).filter(v => v != null); return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null; };
+  const pctDelta = (cur, ref) => (ref && ref > 0) ? Math.round((cur - ref) / ref * 100) : null;
+  const avgDist = avg('distanceKm'), avgAscent = avg('ascent'), avgPace = avg('avgPaceSecPerKm');
+  return {
+    n: prior.length,
+    distanceDeltaPct: session.distanceKm != null ? pctDelta(session.distanceKm, avgDist) : null,
+    ascentDeltaPct: session.ascent != null ? pctDelta(session.ascent, avgAscent) : null,
+    // Allure : delta négatif = plus rapide que la moyenne (moins de secondes/km), on l'affiche tel quel côté rendu.
+    paceDeltaPct: session.avgPaceSecPerKm != null ? pctDelta(session.avgPaceSecPerKm, avgPace) : null,
+  };
+}
+
+// Insight ELEV d'UNE séance (contrairement à generateElevInsight() qui porte sur la tendance globale).
+// Règles explicites et déterministes, aucun appel réseau/IA — à ne jamais confondre avec le retour IA
+// post-séance. On ne produit que des observations que les données permettent réellement d'établir
+// (voir CLAUDE.md / consignes de rédaction : pas de diagnostic physiologique, pas d'affirmation non
+// vérifiable). Retourne un tableau de 0 à 3 phrases courtes.
+function generateSessionInsight(session, zoneDist, climbs) {
+  const bullets = [];
+
+  if (zoneDist) {
+    const z1z2 = zoneDist.slice(0, 2).reduce((a, z) => a + z.pct, 0);
+    const z3plus = zoneDist.slice(2).reduce((a, z) => a + z.pct, 0);
+    if (z3plus >= 55) bullets.push(z3plus + '% du temps a été passé en zones Z3, Z4 et Z5 : intensité soutenue.');
+    else if (z1z2 >= 65) bullets.push(z1z2 + '% du temps a été passé en zones Z1 et Z2 : sortie principalement axée endurance.');
+  }
+
+  if (climbs && climbs.length) {
+    const withHr = climbs.filter(c => c.avgHr != null);
+    if (withHr.length && session.avgHr != null) {
+      const avgClimbHr = Math.round(withHr.reduce((a, c) => a + c.avgHr, 0) / withHr.length);
+      if (avgClimbHr - session.avgHr >= 8) bullets.push('La fréquence cardiaque est nettement plus élevée dans les montées (' + avgClimbHr + ' bpm en moyenne) que sur l\'ensemble de la séance (' + session.avgHr + ' bpm).');
+    }
+    const withVam = climbs.filter(c => c.vamMh != null && c.gainM != null);
+    if (withVam.length) {
+      const totalGain = withVam.reduce((a, c) => a + c.gainM, 0);
+      const avgVam = Math.round(withVam.reduce((a, c) => a + c.vamMh * c.gainM, 0) / totalGain);
+      bullets.push('VAM moyenne en montée : ' + avgVam + ' m/h sur ' + withVam.length + ' montée' + (withVam.length > 1 ? 's' : '') + ' détectée' + (withVam.length > 1 ? 's' : '') + '.');
+    }
+  }
+
+  // Régularité de l'allure sur les portions "roulantes" (même seuil que la classification déjà
+  // utilisée pour les splits) — coefficient de variation faible = allure stable.
+  const flatLaps = (session.laps || []).filter(l => l.distanceKm > 0 && l.avgPaceSecPerKm && ((l.ascent || 0) / l.distanceKm) < 20);
+  if (flatLaps.length >= 3) {
+    const paces = flatLaps.map(l => l.avgPaceSecPerKm);
+    const mean = paces.reduce((a, b) => a + b, 0) / paces.length;
+    const variance = paces.reduce((a, p) => a + Math.pow(p - mean, 2), 0) / paces.length;
+    const cv = Math.sqrt(variance) / mean;
+    if (cv < 0.06) bullets.push('Ton allure est restée relativement stable sur les portions de terrain comparables.');
+  }
+
+  return bullets.slice(0, 3);
 }
 
 /* --------------------------- 6) UTILITAIRES DOM --------------------------- */

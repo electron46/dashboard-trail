@@ -391,6 +391,53 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
   .activity-card-link{transition:none;}
 }
 
+/* Page Activités — liste dense et visuelle (remplace le tableau brut), une carte cliquable
+   par séance avec mini-profil altimétrique/GPS pour donner immédiatement une identité trail
+   à l'historique (voir sessionPreviewSvg, déjà utilisé pour la carte Accueil). */
+.activity-row-list{display:flex;flex-direction:column;gap:10px;}
+.activity-row{display:flex;align-items:center;gap:18px;padding:12px 16px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel);text-decoration:none;color:inherit;transition:background 150ms,border-color 150ms;}
+.activity-row:hover{background:var(--panel-raised);border-color:var(--muted-2);}
+.activity-row .row-visual{width:130px;height:60px;flex-shrink:0;border-radius:var(--radius-sm);overflow:hidden;background:radial-gradient(120% 100% at 30% 20%,#1E2A22,#0C100E 75%);display:flex;align-items:center;justify-content:center;}
+.activity-row .row-visual svg{width:100%;height:100%;display:block;}
+.activity-row .row-main{flex:1 1 auto;min-width:0;}
+.activity-row .row-date{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-family:var(--font-mono);}
+.activity-row .row-title{margin:2px 0 6px;font-family:var(--font-display);font-size:1rem;font-weight:700;}
+.activity-row .row-stats{display:flex;flex-wrap:wrap;gap:14px;font-size:.82rem;color:var(--muted);}
+.activity-row .row-stats strong{color:var(--text);font-variant-numeric:tabular-nums;font-weight:600;}
+.activity-row .row-arrow{flex-shrink:0;}
+@media (max-width:640px){
+  .activity-row{flex-direction:column;align-items:stretch;gap:10px;}
+  .activity-row .row-visual{width:100%;height:84px;}
+  .activity-row .row-arrow{display:none;}
+}
+
+/* Page Activité (détail) — carte GPS (conteneur Leaflet) */
+.altitude-profile-box{border:1px solid var(--border);border-radius:var(--radius-md);}
+.altitude-profile-box svg{width:100%;height:auto;display:block;}
+.resume-group-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px;font-weight:700;}
+.resume-group-title:first-child{margin-top:0;}
+
+/* Zones FC — barres compactes avec pourcentage + durée (page Activité, onglet Zones) */
+.zone-bars{display:flex;flex-direction:column;gap:9px;}
+.zone-row{display:grid;grid-template-columns:minmax(0,150px) 1fr 40px 56px;align-items:center;gap:10px;font-size:.8rem;}
+.zone-row .zone-label{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.zone-track{height:8px;border-radius:var(--radius-pill);background:rgba(244,247,245,.08);overflow:hidden;}
+.zone-fill{height:100%;border-radius:var(--radius-pill);}
+.zone-fill.z1{background:var(--muted-2);}
+.zone-fill.z2{background:var(--accent-light);}
+.zone-fill.z3{background:var(--accent);}
+.zone-fill.z4{background:var(--warn);}
+.zone-fill.z5{background:var(--danger);}
+.zone-pct{text-align:right;font-variant-numeric:tabular-nums;color:var(--text);font-weight:600;}
+.zone-time{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.74rem;}
+@media (max-width:640px){
+  .zone-row{grid-template-columns:minmax(0,1fr) 34px 50px;grid-template-areas:"label pct time" "track track track";row-gap:4px;}
+  .zone-row .zone-label{grid-area:label;}
+  .zone-row .zone-pct{grid-area:pct;}
+  .zone-row .zone-time{grid-area:time;}
+  .zone-row .zone-track{grid-area:track;}
+}
+
 /* Légende de graphique groupé */
 .chart-legend{display:flex;gap:14px;font-size:.75rem;color:var(--muted);margin-bottom:6px;}
 .chart-legend span{display:inline-flex;align-items:center;gap:5px;}
