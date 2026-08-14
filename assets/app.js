@@ -526,6 +526,7 @@ function buildFitInspectorReport(buffer, fileMeta) {
 const STORAGE_PREFIX = 'trail:';
 const IDX_KEY = STORAGE_PREFIX + 'index';
 const PLAN_KEY = STORAGE_PREFIX + 'plan';
+const PLAN_NOTES_KEY = STORAGE_PREFIX + 'planNotes';
 const KEY_KEY = STORAGE_PREFIX + 'apikey';
 const RACES_KEY = STORAGE_PREFIX + 'races';
 const PROFILE_KEY = STORAGE_PREFIX + 'profile';
@@ -543,6 +544,9 @@ function getPlan() { try { const raw = localStorage.getItem(PLAN_KEY); return ra
 function savePlan(plan) { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); scheduleSync(); return true; } catch (e) { return false; } }
 function clearPlan() { try { localStorage.removeItem(PLAN_KEY); scheduleSync(); } catch (e) {} }
 function findPlannedSession(dateISO) { const plan = getPlan(); if (!plan) return null; return plan.find(p => p.date === dateISO) || null; }
+// Note libre sur le plan (page Plan, onglet Ajustements) — texte manuel de l'utilisateur, jamais généré.
+function getPlanNotes() { try { return localStorage.getItem(PLAN_NOTES_KEY) || ''; } catch (e) { return ''; } }
+function savePlanNotes(text) { try { localStorage.setItem(PLAN_NOTES_KEY, text || ''); scheduleSync(); return true; } catch (e) { return false; } }
 function getApiKey() { try { return localStorage.getItem(KEY_KEY); } catch (e) { return null; } }
 
 // --- Courses (échéances) ---
@@ -786,6 +790,8 @@ function ratioDplusKm(ascentM, distanceKm) {
 
 /* --------------------------- 5) FORMATAGE --------------------------- */
 function fmtDate(iso) { const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; }
+// Décale une date ISO (YYYY-MM-DD) de n jours — utilitaire partagé (Plan, Objectifs).
+function addDaysIso(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
 function fmtDuration(s) {
   if (s == null) return 'Non disponible';
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.round(s%60);
@@ -834,7 +840,7 @@ async function supaGetUser() {
 }
 
 function buildSyncPayload() {
-  return { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear() };
+  return { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes() };
 }
 // Pendant l'application des données reçues du cloud, on désactive scheduleSync() pour ne pas
 // renvoyer immédiatement vers Supabase ce qu'on vient d'en recevoir.
@@ -852,6 +858,7 @@ function applySyncPayload(payload) {
     if (Array.isArray(payload.races) && payload.races.length) saveRaces(payload.races);
     if (payload.profile) saveProfile(payload.profile);
     if (Array.isArray(payload.gear)) saveGear(payload.gear);
+    if (typeof payload.planNotes === 'string') savePlanNotes(payload.planNotes);
   } finally { _applyingRemote = false; }
 }
 
@@ -1709,6 +1716,239 @@ function generateGoalInsight(readiness, race) {
     bullets.push({ title: 'Sorties longues', text: 'Ta plus longue sortie récente représente ' + Math.min(999, longuesSub.score) + '% du repère actuel (' + target.toFixed(0) + ' km).' });
   }
   return bullets.slice(0, 2);
+}
+
+/* --------------------------- PAGE PLAN — cockpit d'exécution de la préparation ---------------------------
+   Toutes les fonctions ci-dessous lisent le plan importé (getPlan(), une seule liste de séances planifiées,
+   voir parsePlanCsv) et les séances réelles (loadAllSessions()). Aucune ne fabrique de donnée : une valeur
+   absente du CSV (phase, séance clé...) reste absente ici plutôt que d'être inventée pour remplir l'UI. */
+
+// Bornes réelles du plan importé (première et dernière date planifiée). null si aucun plan.
+function getPlanDateRange(plan) {
+  if (!plan || !plan.length) return null;
+  const dates = plan.map(p => p.date).sort();
+  return { fromISO: dates[0], toISO: dates[dates.length - 1] };
+}
+
+// Progression du plan = semaines ISO écoulées / semaines ISO totales couvertes par le plan (jamais une
+// pondération de séances inventée). status distingue "pas encore commencé" / "en cours" / "terminé".
+function getPlanProgress(plan) {
+  const range = getPlanDateRange(plan);
+  if (!range) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const totalWeeks = countIsoWeeksBetween(range.fromISO, range.toISO);
+  let weeksElapsed, status;
+  if (today < range.fromISO) { weeksElapsed = 0; status = 'not_started'; }
+  else if (today > range.toISO) { weeksElapsed = totalWeeks; status = 'finished'; }
+  else { weeksElapsed = countIsoWeeksBetween(range.fromISO, today); status = 'in_progress'; }
+  return {
+    fromISO: range.fromISO, toISO: range.toISO, totalWeeks, weeksElapsed,
+    weeksRemaining: Math.max(0, totalWeeks - weeksElapsed),
+    pct: Math.round(Math.min(100, weeksElapsed / totalWeeks * 100)),
+    status,
+  };
+}
+
+// Phases du plan = suites contiguës de séances partageant le même "bloc" (colonne texte libre du CSV,
+// ex. "Général"/"Spécifique"...). Aucune liste fixe de phases n'est codée en dur : si le CSV de
+// l'utilisateur ne renseigne pas au moins 2 blocs distincts, on ne trace pas de timeline (voir CLAUDE.md
+// — ne pas inventer une segmentation qui n'existe pas dans les données).
+function getPlanPhases(plan) {
+  if (!plan || !plan.length) return null;
+  const sorted = plan.slice().sort((a,b) => a.date.localeCompare(b.date));
+  const runs = [];
+  sorted.forEach(p => {
+    if (!p.bloc) return;
+    const last = runs[runs.length - 1];
+    if (last && last.label === p.bloc) last.toDate = p.date;
+    else runs.push({ label: p.bloc, fromDate: p.date, toDate: p.date });
+  });
+  if (runs.length < 2) return null;
+  const range = getPlanDateRange(plan);
+  return runs.map(r => ({
+    label: r.label, fromDate: r.fromDate, toDate: r.toDate,
+    fromWeek: countIsoWeeksBetween(range.fromISO, r.fromDate),
+    toWeek: countIsoWeeksBetween(range.fromISO, r.toDate),
+  }));
+}
+function getCurrentPlanPhase(phases) {
+  if (!phases) return null;
+  const today = new Date().toISOString().slice(0,10);
+  return phases.find(ph => today >= ph.fromDate && today <= ph.toDate) || null;
+}
+
+// Séances planifiées de la semaine ISO courante, avec le numéro de semaine dérivé du début réel du plan
+// (pas d'un "semaine 1" arbitraire). null si aucun plan importé.
+function getCurrentPlanWeek(plan) {
+  if (!plan || !plan.length) return null;
+  const range = getPlanDateRange(plan);
+  const today = new Date().toISOString().slice(0,10);
+  const startISO = isoWeek(today);
+  const endISO = addDaysIso(startISO, 6);
+  const items = plan.filter(p => p.date >= startISO && p.date <= endISO);
+  return {
+    startISO, endISO, items,
+    weekNum: countIsoWeeksBetween(range.fromISO, startISO),
+    totalWeeks: countIsoWeeksBetween(range.fromISO, range.toISO),
+    semaineLabel: (items.find(p => p.semaine) || {}).semaine || '',
+    bloc: (items.find(p => p.bloc) || {}).bloc || '',
+    inRange: today >= range.fromISO && today <= range.toISO,
+  };
+}
+
+// Volume/D+/séances réalisé vs prévu sur une semaine du plan (matching strict par date, seule logique de
+// correspondance plan↔activité disponible aujourd'hui — voir CLAUDE.md, pas de matching flou inventé).
+// Statut "Dans les clous"/"En retard"/"En avance" : mêmes seuils que computePrepStatus (60%/130%), pour
+// rester cohérent avec le reste du site plutôt que d'introduire une nouvelle règle.
+function calculateWeekProgress(week, sessions) {
+  if (!week) return null;
+  const doneItems = sessions.filter(s => s.date >= week.startISO && s.date <= week.endISO);
+  const plannedKm = week.items.reduce((s,p) => s + (p.distanceKm||0), 0);
+  const doneKm = doneItems.reduce((s,x) => s + (x.distanceKm||0), 0);
+  const plannedDplus = week.items.reduce((s,p) => s + (p.deniveleM||0), 0);
+  const doneDplus = doneItems.reduce((s,x) => s + (x.ascent||0), 0);
+  const today = new Date().toISOString().slice(0,10);
+  const missedCount = week.items.filter(p => p.date < today && !sessions.some(s => s.date === p.date)).length;
+  const pctKm = plannedKm > 0 ? Math.round(doneKm/plannedKm*100) : null;
+  const pctDplus = plannedDplus > 0 ? Math.round(doneDplus/plannedDplus*100) : null;
+  let statusLabel = null;
+  if (pctKm != null) statusLabel = pctKm < 60 ? 'En retard' : (pctKm > 130 ? 'En avance' : 'Dans les clous');
+  return {
+    doneItems, plannedKm, doneKm, plannedDplus, doneDplus, missedCount,
+    plannedCount: week.items.length, doneCount: doneItems.length,
+    pctSessions: week.items.length ? Math.round(doneItems.length/week.items.length*100) : null,
+    pctKm, pctDplus, statusLabel,
+  };
+}
+
+// Associe chaque séance planifiée aux séances réelles de la même date (0, 1 ou plusieurs) — même
+// convention que findPlannedSession, généralisée à une liste. Pas de tolérance de date : une séance
+// réalisée un autre jour que prévu n'est pas rattachée (aucune logique de rattrapage dans les données).
+function matchActivitiesToPlannedSessions(plannedItems, sessions) {
+  return plannedItems.map(p => ({ planned: p, done: sessions.filter(s => s.date === p.date) }));
+}
+
+// Prochaine séance planifiée non encore réalisée (date >= aujourd'hui, aucune séance réelle à cette
+// date). Pas de notion de "séance clé" dans le modèle de données — voir getKeyPlannedSessions pour une
+// liste de séances importantes, distincte de "la prochaine".
+function getNextPlanSession(plan, sessions) {
+  if (!plan || !plan.length) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = plan.filter(p => p.date >= today && !sessions.some(s => s.date === p.date)).sort((a,b) => a.date.localeCompare(b.date));
+  return upcoming[0] || null;
+}
+
+// Repères hebdomadaires du plan : moyenne du volume/D+ planifiés par semaine sur l'ensemble du plan, et
+// la plus longue séance planifiée. Une moyenne globale plutôt qu'une fourchette min/max : le CSV ne
+// porte qu'une seule valeur cible par semaine, jamais une plage (voir CLAUDE.md).
+function getPlanTargets(plan) {
+  if (!plan || !plan.length) return null;
+  const weeksMap = new Map();
+  plan.forEach(p => {
+    const ws = isoWeek(p.date);
+    if (!weeksMap.has(ws)) weeksMap.set(ws, { km: 0, dplus: 0 });
+    const w = weeksMap.get(ws);
+    w.km += p.distanceKm || 0; w.dplus += p.deniveleM || 0;
+  });
+  const weeks = [...weeksMap.values()];
+  const longest = plan.reduce((max,p) => (p.distanceKm||0) > (max ? max.distanceKm||0 : 0) ? p : max, null);
+  return {
+    avgWeeklyKm: weeks.reduce((a,w) => a+w.km, 0) / weeks.length,
+    avgWeeklyDplus: weeks.reduce((a,w) => a+w.dplus, 0) / weeks.length,
+    longestPlannedKm: longest ? longest.distanceKm : null,
+  };
+}
+
+// Séances "importantes" du plan (onglet Sorties clés) : détection déterministe par mot-clé du type de
+// séance (sortie longue, seuil/tempo, côtes, VMA, fractionné) ou par volume nettement au-dessus de la
+// moyenne hebdomadaire — jamais un flag arbitraire, la règle est documentée ici et nulle part ailleurs.
+const KEY_SESSION_TYPE_RE = /(longue|seuil|tempo|c[oô]te|vma|fractionn)/i;
+function getKeyPlannedSessions(plan) {
+  if (!plan || !plan.length) return [];
+  const targets = getPlanTargets(plan);
+  return plan.filter(p => {
+    if (KEY_SESSION_TYPE_RE.test(p.type || '')) return true;
+    if (targets && targets.avgWeeklyKm && (p.distanceKm||0) >= 0.5 * targets.avgWeeklyKm) return true;
+    return false;
+  }).sort((a,b) => a.date.localeCompare(b.date));
+}
+
+// Vue d'ensemble par semaine (onglet Semaines) : une ligne par semaine du plan, prévu + réalisé si
+// connu. Semaines futures : uniquement le prévu (voir rendu, pas de "réalisé 0" affiché comme un échec).
+function getPlanWeeksOverview(plan) {
+  if (!plan || !plan.length) return [];
+  const sessions = loadAllSessions();
+  const today = new Date().toISOString().slice(0,10);
+  const todayWeek = isoWeek(today);
+  const weeksMap = new Map();
+  plan.forEach(p => {
+    const ws = isoWeek(p.date);
+    if (!weeksMap.has(ws)) weeksMap.set(ws, []);
+    weeksMap.get(ws).push(p);
+  });
+  const sortedWeeks = [...weeksMap.entries()].sort((a,b) => a[0].localeCompare(b[0]));
+  return sortedWeeks.map(([startISO, items], i) => {
+    const endISO = addDaysIso(startISO, 6);
+    const doneInWeek = sessions.filter(s => s.date >= startISO && s.date <= endISO);
+    return {
+      startISO, endISO, weekNum: i + 1, totalWeeks: sortedWeeks.length,
+      semaineLabel: (items.find(p => p.semaine) || {}).semaine || '',
+      bloc: (items.find(p => p.bloc) || {}).bloc || '',
+      plannedKm: items.reduce((s,p) => s+(p.distanceKm||0), 0),
+      plannedDplus: items.reduce((s,p) => s+(p.deniveleM||0), 0),
+      plannedCount: items.length,
+      doneKm: doneInWeek.reduce((s,x) => s+(x.distanceKm||0), 0),
+      doneDplus: doneInWeek.reduce((s,x) => s+(x.ascent||0), 0),
+      doneCount: doneInWeek.length,
+      isPast: startISO < todayWeek, isCurrent: startISO === todayWeek, isFuture: startISO > todayWeek,
+    };
+  });
+}
+
+// Insight ELEV du plan (1 à 3 puces max) — priorité : séance manquée cette semaine > volume hors cible
+// (28 derniers jours, computePrepStatus déjà utilisé par Objectifs/Accueil) > dynamique de charge
+// (getTrainingTrend, déjà utilisé par l'Accueil). Aucun nouveau calcul : uniquement du texte dérivé de
+// fonctions déjà existantes et validées ailleurs sur le site.
+function getPlanInsights(plan, sessions) {
+  const bullets = [];
+  const today = new Date().toISOString().slice(0,10);
+  if (plan && plan.length) {
+    const week = getCurrentPlanWeek(plan);
+    if (week) {
+      const missed = week.items.filter(p => p.date < today && !sessions.some(s => s.date === p.date));
+      if (missed.length) {
+        bullets.push({ title: 'Séance manquée', text: missed.length + ' séance' + (missed.length>1?'s':'') + ' prévue' + (missed.length>1?'s':'') + ' cette semaine n\'' + (missed.length>1?'ont':'a') + ' pas été réalisée' + (missed.length>1?'s':'') + '.' });
+      }
+    }
+    if (bullets.length < 3) {
+      const prep = computePrepStatus();
+      if (prep) {
+        if (prep.level === 'low') bullets.push({ title: 'Volume', text: 'Le volume réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pct + '%).' });
+        else if (prep.level === 'high') bullets.push({ title: 'Volume', text: 'Le volume réalisé dépasse nettement la cible du plan sur les 4 dernières semaines (' + prep.pct + '%).' });
+        else if (prep.pctDplus != null && prep.pctDplus < 60) bullets.push({ title: 'Dénivelé', text: 'Le D+ réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pctDplus + '%).' });
+      }
+    }
+  }
+  if (bullets.length < 3) {
+    const trend = getTrainingTrend();
+    if (trend) {
+      const texts = {
+        rising: 'Le volume hebdomadaire réalisé suit une progression régulière.',
+        rising_fast: 'La charge récente augmente rapidement — pense à surveiller la récupération.',
+        stable: 'Le volume hebdomadaire réalisé reste stable par rapport aux dernières semaines.',
+        falling: 'Le volume récent est en retrait par rapport aux semaines précédentes.',
+      };
+      bullets.push({ title: 'Dynamique', text: texts[trend.level] });
+    }
+  }
+  return bullets.slice(0, 3);
+}
+
+// Objectif lié au plan : seulement s'il existe un unique objectif "principal" non archivé — jamais un
+// lien deviné entre plusieurs candidats ambigus (le plan n'a pas de champ de liaison stocké).
+function getLinkedPlanGoal() {
+  const principals = getRaces().filter(r => !r.archived && r.statut === 'principal');
+  return principals.length === 1 ? principals[0] : null;
 }
 
 // Statistiques de la semaine en cours (depuis lundi), comparées à la semaine précédente complète.

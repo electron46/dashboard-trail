@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -25,39 +26,123 @@
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
-  <h1>Plan d'entraînement</h1>
-  <button id="themeToggle" type="button">☀ Clair</button>
+  <div>
+    <h1>Mon plan</h1>
+    <p class="hint" style="margin-top:2px;">Votre plan actuel et vos prochaines semaines d'entraînement.</p>
+  </div>
+  <div class="app-topbar-actions">
+    <a class="btn primary" href="parametres.html#plan">Importer / mettre à jour le plan →</a>
+    <button id="themeToggle" type="button">☀ Clair</button>
+  </div>
 </header>
 
 <main>
 
   <section class="card" id="noPlanCard" style="display:none;">
-    <h2>Aucun plan importé</h2>
-    <p class="hint">Importe ton plan d'entraînement (CSV) en page <a href="parametres.html#plan">Paramètres</a> pour voir tes semaines en calendrier ici. En attendant, tu peux quand même voir tes séances réalisées ci-dessous.</p>
-  </section>
-
-  <section class="card">
-    <div class="row" style="justify-content:space-between;align-items:center;">
-      <div class="row">
-        <button class="btn small" id="prevWeekBtn" type="button">← Semaine précédente</button>
-        <button class="btn small" id="todayWeekBtn" type="button">Aujourd'hui</button>
-        <button class="btn small" id="nextWeekBtn" type="button">Semaine suivante →</button>
-      </div>
+    <div class="empty-state">
+      <div class="empty-title">Aucun plan importé</div>
+      <p>Importe ton plan d'entraînement (CSV) en page <a href="parametres.html#plan">Paramètres</a> pour voir ton cockpit d'exécution ici.</p>
     </div>
-    <h2 id="weekTitle" style="margin-top:12px;"></h2>
-    <div id="weekSummaryBox"></div>
   </section>
 
-  <section class="card">
-    <div class="plan-grid" id="planGrid"></div>
-  </section>
+  <section class="card" id="planHeroCard" style="display:none;"></section>
+
+  <div id="planInsightRow"></div>
+
+  <div class="tabs" id="planTabs">
+    <button type="button" data-tab="apercu" class="active">Aperçu</button>
+    <button type="button" data-tab="semaines">Semaines</button>
+    <button type="button" data-tab="charge">Charge &amp; Volume</button>
+    <button type="button" data-tab="cles">Sorties clés</button>
+    <button type="button" data-tab="intensite">Intensité</button>
+    <button type="button" data-tab="dplus">D+ &amp; Altitude</button>
+    <button type="button" data-tab="ajustements">Ajustements</button>
+  </div>
+
+  <div class="tab-panel active" data-panel="apercu" id="panelApercu">
+    <div class="analysis-charts-row">
+      <section class="card"><h2>Semaine en cours</h2><div id="planWeekBox"></div></section>
+      <section class="card"><h2>Aperçu de la semaine</h2><div id="planWeekSessionsBox"></div></section>
+      <section class="card"><h2>Prochaine séance</h2><div id="planNextSessionBox"></div></section>
+    </div>
+    <div class="analysis-charts-row" style="margin-top:14px;">
+      <section class="card"><h2>Évolution du volume</h2><div id="planVolumeChartBox"></div></section>
+      <section class="card"><h2>Évolution du D+</h2><div id="planDplusChartBox"></div></section>
+      <section class="card card-compact"><h2>Charge d'entraînement</h2><div id="planChargeBox"></div></section>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="semaines">
+    <section class="card">
+      <h2>Toutes les semaines du plan</h2>
+      <div id="planWeeksOverviewBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="charge">
+    <section class="card">
+      <h2>Volume &amp; charge de la préparation</h2>
+      <div class="metrics-grid" id="planChargeKpiBox"></div>
+    </section>
+    <div class="analysis-charts-row" style="margin-top:14px;">
+      <section class="card"><h2>Volume — réalisé vs planifié</h2><div id="planVolumeChart2Box"></div></section>
+      <section class="card"><h2>Durée totale</h2><div id="planDurationBox"></div></section>
+      <section class="card"><h2>Charge (aiguë vs chronique)</h2><div id="planChargeChart2Box"></div></section>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="cles">
+    <section class="card">
+      <h2>Sorties clés du plan</h2>
+      <p class="hint">Séances identifiées par leur type (sortie longue, seuil/tempo, côtes, VMA...) ou par un volume nettement au-dessus de la moyenne hebdomadaire du plan.</p>
+      <div id="planKeySessionsBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="intensite">
+    <section class="card">
+      <h2>Séances qualitatives prévues au plan</h2>
+      <p class="hint">Répartition des types de séances renseignés dans le plan (sur l'ensemble des semaines importées).</p>
+      <div id="planIntensityPlannedBox"></div>
+    </section>
+    <section class="card" style="margin-top:14px;">
+      <h2>Répartition réelle des zones FC</h2>
+      <p class="hint">Séances réalisées sur la période couverte par le plan.</p>
+      <div id="planIntensityRealBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="dplus">
+    <section class="card">
+      <h2>D+ — réalisé vs planifié</h2>
+      <div id="planDplusChart2Box"></div>
+    </section>
+    <section class="card" style="margin-top:14px;">
+      <h2>Séances de côte / D+ notable</h2>
+      <div id="planClimbSessionsBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="ajustements">
+    <section class="card">
+      <h2>Notes sur le plan</h2>
+      <p class="hint">Ajustements manuels, séances déplacées, remarques — notes libres, propres à cet appareil (synchronisées si Supabase est configuré).</p>
+      <textarea id="planNotesInput" rows="6" placeholder="ex. Semaine 12 allégée suite à une gêne au genou, sortie longue décalée au dimanche..."></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn primary small" id="planNotesSaveBtn" type="button">Enregistrer</button>
+        <span id="planNotesMsg"></span>
+      </div>
+    </section>
+  </div>
 
 </main>
 
@@ -77,39 +162,90 @@
 </nav>
 
 <script>
-const WEEKDAY_LABELS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
-function addDaysIso(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
-function fmtDayShort(iso) { const [,m,d] = iso.split('-'); return d + '/' + m; }
+const ICON_P = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+const FR_MONTHS_SHORT_P = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
 
-let currentWeekStart = isoWeek(new Date().toISOString().slice(0,10));
+/* --------------------------- HERO : plan actif --------------------------- */
+function renderPlanHero() {
+  const plan = getPlan();
+  const heroCard = document.getElementById('planHeroCard');
+  const noPlanCard = document.getElementById('noPlanCard');
+  if (!plan || !plan.length) {
+    heroCard.style.display = 'none';
+    noPlanCard.style.display = 'block';
+    return;
+  }
+  noPlanCard.style.display = 'none';
+  heroCard.style.display = 'block';
 
-function renderWeekSummary(days, plan, sessions) {
-  const weekEnd = addDaysIso(currentWeekStart, 6);
-  const plannedInWeek = plan.filter(p => p.date >= currentWeekStart && p.date <= weekEnd);
-  const doneInWeek = sessions.filter(s => s.date >= currentWeekStart && s.date <= weekEnd);
-  const plannedKm = plannedInWeek.reduce((s,p) => s + (p.distanceKm||0), 0);
-  const doneKm = doneInWeek.reduce((s,x) => s + (x.distanceKm||0), 0);
-  const plannedDplus = plannedInWeek.reduce((s,p) => s + (p.deniveleM||0), 0);
-  const doneDplus = doneInWeek.reduce((s,x) => s + (x.ascent||0), 0);
-  const box = document.getElementById('weekSummaryBox');
-  if (!plannedInWeek.length && !doneInWeek.length) { box.innerHTML = '<p class="hint">Aucune séance prévue ni réalisée cette semaine.</p>'; return; }
-  const pctKm = plannedKm > 0 ? Math.round((doneKm/plannedKm)*100) : null;
-  const pctDplus = plannedDplus > 0 ? Math.round((doneDplus/plannedDplus)*100) : null;
-  const rows = [
-    ['Distance', doneKm.toFixed(1)+' km', plannedKm > 0 ? plannedKm.toFixed(1)+' km' : 'Non planifié', pctKm],
-    ['D+', Math.round(doneDplus)+' m', plannedDplus > 0 ? Math.round(plannedDplus)+' m' : 'Non planifié', pctDplus],
-  ];
-  box.innerHTML = '<div class="metrics-grid">' + rows.map(([lbl, done, planned, pct]) =>
-    '<div class="metric"><div class="lbl">' + lbl + ' — réalisé / prévu</div><div class="val">' + done + ' / ' + planned +
-    (pct != null ? ' <small class="hint">(' + pct + '%)</small>' : '') + '</div></div>'
-  ).join('') + '</div>';
+  const progress = getPlanProgress(plan);
+  const phases = getPlanPhases(plan);
+  const currentPhase = getCurrentPlanPhase(phases);
+  const targets = getPlanTargets(plan);
+  const goal = getLinkedPlanGoal();
+
+  const statusLabel = { not_started: "Pas encore commencé", in_progress: "En cours", finished: "Terminé" }[progress.status];
+  const timeLabel = progress.status === 'finished' ? 'Plan terminé' :
+    (progress.status === 'not_started' ? (progress.weeksRemaining + ' semaines avant le début') : (progress.weeksRemaining + ' semaine' + (progress.weeksRemaining>1?'s':'') + ' restante' + (progress.weeksRemaining>1?'s':'')));
+
+  const pills = [
+    ['Début', fmtDate(progress.fromISO)],
+    ['Fin', fmtDate(progress.toISO)],
+    ['Semaines', progress.totalWeeks],
+    currentPhase ? ['Phase actuelle', currentPhase.label] : null,
+  ].filter(Boolean).map(([l,v]) => '<div class="goal-hero-pill"><span class="l">' + escapeHtml(l) + '</span><span class="v">' + escapeHtml(String(v)) + '</span></div>').join('');
+
+  heroCard.innerHTML =
+    '<div class="goal-hero-top">' +
+      '<div class="goal-hero-identity">' +
+        '<div class="goal-hero-eyebrow"><span class="badge principal">Plan actif</span></div>' +
+        '<h2>' + (goal ? 'Préparation ' + escapeHtml(goal.name) : 'Plan d\'entraînement') + '</h2>' +
+        (goal ? '<p class="hint" style="margin-top:6px;">Objectif : ' + escapeHtml(goal.name) + ' — ' + fmtNum(goal.distanceKm,' km',0) + ' / ' + fmtNum(goal.denivele,' m D+',0) + ' — ' + fmtDate(goal.date) + ' · <a class="link-arrow" href="objectifs.html">Voir l\'objectif →</a></p>' :
+          '<p class="hint" style="margin-top:6px;">Plan général — pas d\'objectif principal unique associé.</p>') +
+      '</div>' +
+      '<div class="goal-hero-pills">' + pills + '</div>' +
+    '</div>' +
+    '<div class="metrics-grid" style="grid-template-columns:auto repeat(3,minmax(140px,1fr));margin-top:18px;">' +
+      '<div class="goal-hero-score">' +
+        '<div class="goal-ring-big">' + ringSvg(progress.pct, 96, progress.pct + '%') + '</div>' +
+        '<div class="goal-score-meta">' +
+          '<div class="goal-score-eyebrow">Plan complété</div>' +
+          '<div class="lbl">' + escapeHtml(statusLabel) + '</div>' +
+          '<div class="countdown">' + escapeHtml(timeLabel) + '<small>Semaine ' + Math.max(1, Math.min(progress.totalWeeks, progress.weeksElapsed || 1)) + ' / ' + progress.totalWeeks + '</small></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="metric"><div class="lbl">Volume hebdo moyen (plan)</div><div class="val">' + (targets ? fmtNum(targets.avgWeeklyKm,' km',1) : 'Non disponible') + '</div></div>' +
+      '<div class="metric"><div class="lbl">D+ hebdo moyen (plan)</div><div class="val">' + (targets ? fmtNum(targets.avgWeeklyDplus,' m',0) : 'Non disponible') + '</div></div>' +
+      '<div class="metric"><div class="lbl">Sortie la plus longue prévue</div><div class="val">' + (targets && targets.longestPlannedKm ? fmtNum(targets.longestPlannedKm,' km',1) : 'Non disponible') + '</div></div>' +
+    '</div>' +
+    (phases ? '<div class="plan-phase-track">' + phases.map(ph => {
+      const isCurrent = currentPhase && ph.label === currentPhase.label && ph.fromDate === currentPhase.fromDate;
+      const isDone = !isCurrent && ph.toDate < new Date().toISOString().slice(0,10);
+      return '<div class="plan-phase-step' + (isCurrent?' current':'') + (isDone?' done':'') + '">' +
+        '<span class="lbl">' + escapeHtml(ph.label) + '</span><span class="sub">Sem. ' + ph.fromWeek + (ph.toWeek!==ph.fromWeek?'–'+ph.toWeek:'') + '</span>' +
+      '</div>';
+    }).join('') + '</div>' : '');
 }
 
+/* --------------------------- INSIGHT ELEV (plan) --------------------------- */
+function renderPlanInsight() {
+  const row = document.getElementById('planInsightRow');
+  const plan = getPlan();
+  const sessions = loadAllSessions();
+  const bullets = getPlanInsights(plan, sessions);
+  if (!bullets.length) { row.innerHTML = ''; return; }
+  row.innerHTML = '<div class="insight-card">' +
+    '<p class="insight-eyebrow"><img src="'+ICON_P('zap')+'" alt="">Insight ELEV</p>' +
+    bullets.map(b => '<div class="insight-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+  '</div>';
+}
+
+/* --------------------------- APERÇU : semaine en cours --------------------------- */
 function planSessionCard(p) {
-  const dplusDmoins = (p.deniveleM ? p.deniveleM+' m D+' : '') + (p.descenteM ? ' / '+p.descenteM+' m D-' : '');
+  const dplus = p.deniveleM ? p.deniveleM+' m D+' : '';
   return '<div class="plan-session planned">' +
     '<span class="type">' + escapeHtml(p.type || 'Séance') + '</span>' +
-    (p.distanceKm ? p.distanceKm+' km' : '') + (dplusDmoins ? ' — '+dplusDmoins : '') +
+    (p.distanceKm ? p.distanceKm+' km' : '') + (dplus ? ' — '+dplus : '') +
     (p.fcCorpsSeance ? '<div class="hint">Zone FC : '+escapeHtml(p.fcCorpsSeance)+'</div>' : (p.intensite ? '<div class="hint">Intensité : '+escapeHtml(p.intensite)+'</div>' : '')) +
     (p.dureeDetail ? '<div class="hint">'+escapeHtml(p.dureeDetail)+'</div>' : '') +
     (p.notes ? '<div class="hint">Objectif : '+escapeHtml(p.notes)+'</div>' : '') +
@@ -121,54 +257,288 @@ function doneSessionCard(s, planned) {
     const diffPct = Math.round(((s.distanceKm||0) - planned.distanceKm) / planned.distanceKm * 100);
     if (isFinite(diffPct)) diffHtml = '<div class="plan-compare-diff">' + (diffPct >= 0 ? '+' : '') + diffPct + '% de volume vs prévu</div>';
   }
-  return '<div class="plan-session done">' +
+  return '<a class="plan-session done" href="activite.html?id=' + encodeURIComponent(s.id) + '" style="display:block;text-decoration:none;">' +
     '<span class="type">' + escapeHtml(s.sport || 'Séance réalisée') + '</span>' +
     fmtNum(s.distanceKm,' km',1) + (s.ascent ? ' — '+Math.round(s.ascent)+' m D+' : '') +
     '<div class="hint">' + fmtDuration(s.durationS) + (s.avgPaceSecPerKm ? ' — '+fmtPace(s.avgPaceSecPerKm) : '') + (s.avgHr ? ' — '+s.avgHr+' bpm' : '') + '</div>' +
     diffHtml +
+    '<span class="link-arrow" style="margin-top:4px;display:inline-block;">Voir l\'activité →</span>' +
+  '</a>';
+}
+
+function renderPlanWeekBox() {
+  const box = document.getElementById('planWeekBox');
+  const plan = getPlan();
+  if (!plan || !plan.length) { box.innerHTML = ''; return; }
+  const week = getCurrentPlanWeek(plan);
+  const sessions = loadAllSessions();
+  if (!week.inRange) { box.innerHTML = '<div class="empty">Cette semaine n\'est pas couverte par le plan importé.</div>'; return; }
+  const wp = calculateWeekProgress(week, sessions);
+  const statusClass = { 'Dans les clous':'status-ok', 'En retard':'status-late', 'En avance':'status-ahead' }[wp.statusLabel] || '';
+  box.innerHTML =
+    '<p class="hint">' + fmtDate(week.startISO) + ' – ' + fmtDate(week.endISO) + ' · Semaine ' + week.weekNum + ' / ' + week.totalWeeks + (week.bloc ? ' — ' + escapeHtml(week.bloc) : '') + '</p>' +
+    '<div class="goal-hero-score" style="gap:16px;margin-top:6px;">' +
+      '<div class="goal-ring-big" style="width:76px;height:76px;">' + ringSvg(wp.pctSessions || 0, 76, (wp.pctSessions!=null?wp.pctSessions+'%':'—')) + '</div>' +
+      '<div class="goal-score-meta">' +
+        '<div class="lbl">' + wp.doneCount + ' / ' + wp.plannedCount + ' séances</div>' +
+        (wp.statusLabel ? '<span class="badge ' + statusClass + '" style="margin-top:6px;display:inline-block;">' + escapeHtml(wp.statusLabel) + '</span>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="metrics-grid" style="grid-template-columns:1fr 1fr;margin-top:14px;">' +
+      '<div class="metric"><div class="lbl">Volume — réalisé / prévu</div><div class="val">' + wp.doneKm.toFixed(1) + ' / ' + (wp.plannedKm>0?wp.plannedKm.toFixed(1):'—') + ' km</div></div>' +
+      '<div class="metric"><div class="lbl">D+ — réalisé / prévu</div><div class="val">' + Math.round(wp.doneDplus) + ' / ' + (wp.plannedDplus>0?Math.round(wp.plannedDplus):'—') + ' m</div></div>' +
+    '</div>' +
+    (wp.missedCount ? '<p class="hint" style="margin-top:8px;color:var(--danger);">' + wp.missedCount + ' séance' + (wp.missedCount>1?'s':'') + ' manquée' + (wp.missedCount>1?'s':'') + ' cette semaine.</p>' : '');
+}
+
+function renderPlanWeekSessions() {
+  const box = document.getElementById('planWeekSessionsBox');
+  const plan = getPlan();
+  if (!plan || !plan.length) { box.innerHTML = ''; return; }
+  const week = getCurrentPlanWeek(plan);
+  const sessions = loadAllSessions();
+  if (!week.inRange) { box.innerHTML = '<div class="empty">Aucune séance à afficher.</div>'; return; }
+  const WEEKDAY_LABELS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+  const todayISO = new Date().toISOString().slice(0,10);
+  const days = [];
+  for (let i = 0; i < 7; i++) days.push(addDaysIso(week.startISO, i));
+  box.innerHTML = '<div class="mini-list">' + days.map((date, i) => {
+    const plannedItems = week.items.filter(p => p.date === date);
+    const doneItems = sessions.filter(s => s.date === date);
+    const isToday = date === todayISO;
+    let statusBadge = '';
+    if (!plannedItems.length && !doneItems.length) statusBadge = '<span class="badge status-rest">Repos</span>';
+    else if (doneItems.length) statusBadge = '<span class="badge status-done">Terminé</span>';
+    else if (plannedItems.length && date < todayISO) statusBadge = '<span class="badge status-missed">Manqué</span>';
+    else if (plannedItems.length) statusBadge = '<span class="badge status-todo">À faire</span>';
+    const label = plannedItems.length ? plannedItems.map(p => escapeHtml(p.type||'Séance') + (p.distanceKm?' · '+p.distanceKm+' km':'')).join(', ') :
+      (doneItems.length ? doneItems.map(s => escapeHtml(s.sport||'Séance')).join(', ') : 'Repos');
+    return '<div class="mini-list-row"' + (isToday?' style="color:var(--text);font-weight:600;"':'') + '>' +
+      '<span class="mini-list-lbl">' + WEEKDAY_LABELS[i] + ' ' + date.slice(8,10)+'/'+date.slice(5,7) + (isToday?' (aujourd\'hui)':'') + '</span>' +
+      '<span class="mini-list-val">' + label + ' ' + statusBadge + '</span>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+function renderPlanNextSession() {
+  const box = document.getElementById('planNextSessionBox');
+  const plan = getPlan();
+  const sessions = loadAllSessions();
+  const next = getNextPlanSession(plan, sessions);
+  if (!next) { box.innerHTML = '<div class="empty">Aucune séance à venir dans le plan.</div>'; return; }
+  const d = new Date(next.date + 'T00:00:00Z');
+  const dayLabel = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'][d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + FR_MONTHS_SHORT_P[d.getUTCMonth()];
+  box.innerHTML = '<div class="plan-next-card">' +
+    '<span class="pnc-date">' + escapeHtml(dayLabel) + '</span>' +
+    '<span class="pnc-title">' + escapeHtml(next.type || 'Séance') + '</span>' +
+    '<div class="metrics-grid" style="grid-template-columns:1fr 1fr;">' +
+      (next.dureeDetail ? '<div class="metric"><div class="lbl">Durée</div><div class="val">' + escapeHtml(next.dureeDetail) + '</div></div>' : '') +
+      '<div class="metric"><div class="lbl">Distance</div><div class="val">' + fmtNum(next.distanceKm,' km',1) + '</div></div>' +
+      '<div class="metric"><div class="lbl">D+</div><div class="val">' + fmtNum(next.deniveleM,' m',0) + '</div></div>' +
+      (next.intensite || next.fcCorpsSeance ? '<div class="metric"><div class="lbl">Intensité</div><div class="val" style="font-size:.82rem;">' + escapeHtml(next.intensite || next.fcCorpsSeance) + '</div></div>' : '') +
+    '</div>' +
+    (next.notes ? '<p class="hint">Objectif : ' + escapeHtml(next.notes) + '</p>' : '') +
   '</div>';
 }
 
-function renderWeek() {
-  const plan = getPlan() || [];
+/* --------------------------- APERÇU : graphiques volume/D+/charge --------------------------- */
+function planWeeksAndMap() {
+  const plan = getPlan();
+  const range = getPlanDateRange(plan);
+  if (!range) return null;
   const sessions = loadAllSessions();
-  document.getElementById('noPlanCard').style.display = plan.length ? 'none' : 'block';
-
-  const weekEnd = addDaysIso(currentWeekStart, 6);
-  const todayISO = new Date().toISOString().slice(0,10);
-  const firstItem = plan.find(p => p.date >= currentWeekStart && p.date <= weekEnd);
-  const weekLabel = 'Semaine du ' + fmtDayShort(currentWeekStart) + ' au ' + fmtDayShort(weekEnd) +
-    (firstItem && firstItem.semaine ? ' — Semaine ' + firstItem.semaine : '') +
-    (firstItem && firstItem.bloc ? ' — ' + escapeHtml(firstItem.bloc) : '');
-  document.getElementById('weekTitle').textContent = weekLabel;
-
-  const days = [];
-  for (let i = 0; i < 7; i++) days.push(addDaysIso(currentWeekStart, i));
-  renderWeekSummary(days, plan, sessions);
-
-  document.getElementById('planGrid').innerHTML = days.map((date, i) => {
-    const plannedItems = plan.filter(p => p.date === date);
-    const doneItems = sessions.filter(s => s.date === date);
-    const isToday = date === todayISO;
-    let body = '';
-    if (!plannedItems.length && !doneItems.length) {
-      body = '<div class="hint" style="opacity:.6;">Repos / rien de prévu</div>';
-    } else {
-      plannedItems.forEach(p => { body += planSessionCard(p); });
-      doneItems.forEach(s => { body += doneSessionCard(s, plannedItems[0]); });
-    }
-    return '<div class="plan-day' + (isToday ? ' today' : '') + '">' +
-      '<div class="day-label">' + WEEKDAY_LABELS[i] + ' ' + fmtDayShort(date) + (isToday ? ' <span class="hint">(aujourd\'hui)</span>' : '') + '</div>' +
-      body +
-    '</div>';
-  }).join('');
+  const fromISO = floorToKnownHistory(range.fromISO, sessions);
+  const toISO = range.toISO;
+  const weeks = groupByWeek(sessions.filter(s => s.date >= fromISO && s.date <= toISO), fromISO, toISO);
+  const planMap = groupPlanByWeek(plan, fromISO, toISO);
+  return { weeks, planMap, fromISO, toISO };
 }
 
-document.getElementById('prevWeekBtn').addEventListener('click', () => { currentWeekStart = addDaysIso(currentWeekStart, -7); renderWeek(); });
-document.getElementById('nextWeekBtn').addEventListener('click', () => { currentWeekStart = addDaysIso(currentWeekStart, 7); renderWeek(); });
-document.getElementById('todayWeekBtn').addEventListener('click', () => { currentWeekStart = isoWeek(new Date().toISOString().slice(0,10)); renderWeek(); });
+function renderPlanCharts() {
+  const data = planWeeksAndMap();
+  const volBox = document.getElementById('planVolumeChartBox');
+  const dplusBox = document.getElementById('planDplusChartBox');
+  const chargeBox = document.getElementById('planChargeBox');
+  if (!data || data.weeks.length < 2) {
+    const msg = '<div class="empty">Pas assez de semaines couvertes par le plan pour ce graphique.</div>';
+    volBox.innerHTML = msg; dplusBox.innerHTML = msg; chargeBox.innerHTML = msg;
+    return;
+  }
+  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, fmt: v=>v.toFixed(0)+' km' });
+  dplusBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, fmt: v=>Math.round(v)+' m' });
+  initChartTooltips(volBox); initChartTooltips(dplusBox);
 
-renderWeek();
+  const trend = getTrainingTrend();
+  if (!trend) chargeBox.innerHTML = '<div class="empty">Pas assez d\'historique pour calculer une tendance de charge.</div>';
+  else {
+    chargeBox.innerHTML = '<div class="metric" style="border:none;padding:0;"><div class="lbl">Tendance de charge (volume)</div><div class="val">' + escapeHtml(trend.label) + '</div>' +
+      '<div class="kpi-spark" style="width:100px;height:28px;margin-top:6px;">' + sparklineSvg(trend.weeks) + '</div>' +
+      '<p class="hint" style="margin-top:6px;">' + trend.acute.toFixed(1) + ' km cette semaine vs ' + trend.chronic.toFixed(1) + ' km en moyenne (4 dernières semaines). Repère qualitatif basé sur le volume, pas une mesure physiologique.</p>' +
+    '</div>';
+  }
+}
+
+/* --------------------------- ONGLET SEMAINES --------------------------- */
+function renderPlanWeeksOverview() {
+  const box = document.getElementById('planWeeksOverviewBox');
+  const plan = getPlan();
+  const overview = getPlanWeeksOverview(plan);
+  if (!overview.length) { box.innerHTML = '<div class="empty">Aucun plan importé.</div>'; return; }
+  box.innerHTML = '<div class="plan-weeks-grid">' + overview.map(w => {
+    const statusHtml = w.isFuture ? '<span class="badge status-todo">Prévu</span>' :
+      (w.plannedCount ? '<span class="badge ' + (w.doneCount>=w.plannedCount?'status-done':'status-todo') + '">' + w.doneCount + '/' + w.plannedCount + '</span>' : '');
+    return '<div class="plan-week-card' + (w.isCurrent?' current':'') + '">' +
+      '<div class="pwc-head"><span class="pwc-title">Semaine ' + w.weekNum + (w.semaineLabel?' — '+escapeHtml(w.semaineLabel):'') + '</span>' + statusHtml + '</div>' +
+      '<div class="pwc-dates">' + fmtDate(w.startISO) + ' – ' + fmtDate(w.endISO) + (w.bloc?' · '+escapeHtml(w.bloc):'') + '</div>' +
+      '<div class="pwc-row"><span>Volume</span><strong>' + (w.isFuture ? w.plannedKm.toFixed(0)+' km (prévu)' : w.doneKm.toFixed(0)+' / '+w.plannedKm.toFixed(0)+' km') + '</strong></div>' +
+      '<div class="pwc-row"><span>D+</span><strong>' + (w.isFuture ? Math.round(w.plannedDplus)+' m (prévu)' : Math.round(w.doneDplus)+' / '+Math.round(w.plannedDplus)+' m') + '</strong></div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+/* --------------------------- ONGLET CHARGE & VOLUME --------------------------- */
+function renderPlanChargeVolume() {
+  const plan = getPlan();
+  const data = planWeeksAndMap();
+  const sessions = loadAllSessions();
+  if (!data) { document.getElementById('planChargeKpiBox').innerHTML = ''; return; }
+  const inRange = sessions.filter(s => s.date >= data.fromISO && s.date <= data.toISO);
+  const agg = aggregatePeriod(inRange);
+  const weeksWithSession = new Set(inRange.map(s => isoWeek(s.date))).size;
+  document.getElementById('planChargeKpiBox').innerHTML = [
+    ['Volume hebdomadaire moyen', agg ? fmtNum(agg.distanceKm / Math.max(1,data.weeks.length), ' km', 1) : 'Non disponible'],
+    ['Durée totale réalisée', agg ? fmtDuration(agg.durationS) : 'Non disponible'],
+    ['D+ total réalisé', agg ? fmtNum(agg.ascent, ' m', 0) : 'Non disponible'],
+    ['Régularité', weeksWithSession + '/' + data.weeks.length + ' semaines actives'],
+  ].map(([l,v]) => '<div class="metric"><div class="lbl">' + l + '</div><div class="val' + (v==='Non disponible'?' na':'') + '">' + v + '</div></div>').join('');
+
+  const volBox = document.getElementById('planVolumeChart2Box');
+  const durBox = document.getElementById('planDurationBox');
+  const chargeBox = document.getElementById('planChargeChart2Box');
+  if (data.weeks.length < 2) {
+    const msg = '<div class="empty">Pas assez de semaines pour ce graphique.</div>';
+    volBox.innerHTML = msg; durBox.innerHTML = msg; chargeBox.innerHTML = msg;
+    return;
+  }
+  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, height:220, fmt: v=>v.toFixed(0)+' km' });
+  initChartTooltips(volBox);
+  durBox.innerHTML = agg ? ('<div class="metric" style="border:none;padding:0;"><div class="val" style="font-size:1.6rem;">' + fmtDuration(agg.durationS) + '</div><p class="hint">Cumulé sur les semaines couvertes par le plan.</p></div>') : '<div class="empty">Non disponible.</div>';
+
+  data.weeks.forEach((w,i) => { const win4 = data.weeks.slice(Math.max(0,i-3), i+1).map(x=>x.km); w.chronic = +(win4.reduce((a,b)=>a+b,0)/win4.length).toFixed(1); });
+  const series = [{ name:'Aiguë (semaine)', color:'var(--accent)', values: data.weeks.map(w=>+w.km.toFixed(1)) }, { name:'Chronique (moy. 4 sem.)', color:'var(--secondary)', values: data.weeks.map(w=>w.chronic) }];
+  chargeBox.innerHTML = groupedBarChartSvg('', data.weeks, series, { height:220, hideTitle:true });
+  initChartTooltips(chargeBox);
+}
+
+/* --------------------------- ONGLET SORTIES CLÉS --------------------------- */
+function keyPlanSessionRow(p) {
+  const sessions = loadAllSessions();
+  const done = sessions.find(s => s.date === p.date);
+  const today = new Date().toISOString().slice(0,10);
+  const statusBadge = done ? '<span class="badge status-done">Terminé</span>' : (p.date < today ? '<span class="badge status-missed">Manqué</span>' : '<span class="badge status-todo">À faire</span>');
+  return '<div class="mini-list-row">' +
+    '<span class="mini-list-lbl">' + fmtDate(p.date) + ' — ' + escapeHtml(p.type || 'Séance') + '</span>' +
+    '<span class="mini-list-val">' + fmtNum(p.distanceKm,' km',1) + ' · ' + fmtNum(p.deniveleM,' m D+',0) + ' ' + statusBadge +
+      (done ? ' <a class="link-arrow" href="activite.html?id=' + encodeURIComponent(done.id) + '">Voir →</a>' : '') +
+    '</span>' +
+  '</div>';
+}
+function renderPlanKeySessions() {
+  const box = document.getElementById('planKeySessionsBox');
+  const plan = getPlan();
+  const keys = getKeyPlannedSessions(plan);
+  if (!keys.length) { box.innerHTML = '<div class="empty">Aucune séance clé identifiable dans ce plan.</div>'; return; }
+  box.innerHTML = '<div class="mini-list">' + keys.map(keyPlanSessionRow).join('') + '</div>';
+}
+
+/* --------------------------- ONGLET INTENSITÉ --------------------------- */
+function renderPlanIntensity() {
+  const plan = getPlan();
+  const plannedBox = document.getElementById('planIntensityPlannedBox');
+  if (!plan || !plan.length) { plannedBox.innerHTML = '<div class="empty">Aucun plan importé.</div>'; }
+  else {
+    const counts = {};
+    plan.forEach(p => { const key = (p.type || 'Non renseigné').trim() || 'Non renseigné'; counts[key] = (counts[key]||0) + 1; });
+    const entries = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+    const max = Math.max(...entries.map(e=>e[1]));
+    plannedBox.innerHTML = '<div class="zone-bars">' + entries.map(([label,count]) =>
+      '<div class="zone-row"><span class="zone-label">' + escapeHtml(label) + '</span>' +
+      '<div class="zone-track"><div class="zone-fill" style="width:' + Math.round(count/max*100) + '%;background:var(--accent);"></div></div>' +
+      '<span class="zone-pct">' + count + '</span><span class="zone-time">séance' + (count>1?'s':'') + '</span></div>'
+    ).join('') + '</div>';
+  }
+
+  const realBox = document.getElementById('planIntensityRealBox');
+  const range = getPlanDateRange(plan);
+  if (!range) { realBox.innerHTML = ''; return; }
+  const sessions = loadAllSessions().filter(s => s.date >= range.fromISO && s.date <= range.toISO);
+  const profile = getProfile();
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  if (!zones) { realBox.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a>.</div>'; return; }
+  const dist = aggregateZones(sessions, zones);
+  if (!dist) { realBox.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette période.</div>'; return; }
+  realBox.innerHTML = '<div class="zone-bars">' + dist.map(z =>
+    '<div class="zone-row"><span class="zone-label">' + escapeHtml(z.label) + '</span>' +
+    '<div class="zone-track"><div class="zone-fill ' + z.key + '" style="width:' + z.pct + '%"></div></div>' +
+    '<span class="zone-pct">' + z.pct + '%</span><span class="zone-time">' + fmtDuration(z.sec) + '</span></div>'
+  ).join('') + '</div>';
+}
+
+/* --------------------------- ONGLET D+ & ALTITUDE --------------------------- */
+function renderPlanDplusTab() {
+  const data = planWeeksAndMap();
+  const box = document.getElementById('planDplusChart2Box');
+  if (!data || data.weeks.length < 2) box.innerHTML = '<div class="empty">Pas assez de semaines pour ce graphique.</div>';
+  else { box.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, height:240, fmt: v=>Math.round(v)+' m' }); initChartTooltips(box); }
+
+  const plan = getPlan();
+  const climbBox = document.getElementById('planClimbSessionsBox');
+  const climbRe = /(c[oô]te|d\+|vertical|montagn)/i;
+  const targets = getPlanTargets(plan);
+  const climbSessions = (plan||[]).filter(p => climbRe.test(p.type||'') || (targets && targets.avgWeeklyDplus && (p.deniveleM||0) >= 0.5*targets.avgWeeklyDplus)).sort((a,b)=>a.date.localeCompare(b.date));
+  if (!climbSessions.length) { climbBox.innerHTML = '<div class="empty">Aucune séance à D+ notable identifiée dans ce plan.</div>'; return; }
+  climbBox.innerHTML = '<div class="mini-list">' + climbSessions.map(keyPlanSessionRow).join('') + '</div>';
+}
+
+/* --------------------------- ONGLET AJUSTEMENTS --------------------------- */
+function renderPlanNotes() {
+  document.getElementById('planNotesInput').value = getPlanNotes();
+}
+document.getElementById('planNotesSaveBtn').addEventListener('click', () => {
+  savePlanNotes(document.getElementById('planNotesInput').value);
+  const msg = document.getElementById('planNotesMsg');
+  msg.textContent = 'Enregistré.';
+  setTimeout(() => { msg.textContent = ''; }, 2000);
+});
+
+/* --------------------------- TABS --------------------------- */
+document.querySelectorAll('#planTabs button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('#planTabs button').forEach(b => b.classList.toggle('active', b === btn));
+  const tab = btn.dataset.tab;
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+}));
+
+/* --------------------------- ORCHESTRATION --------------------------- */
+function renderPlanPage() {
+  renderPlanHero();
+  renderPlanInsight();
+  const plan = getPlan();
+  if (plan && plan.length) {
+    renderPlanWeekBox();
+    renderPlanWeekSessions();
+    renderPlanNextSession();
+    renderPlanCharts();
+    renderPlanWeeksOverview();
+    renderPlanChargeVolume();
+    renderPlanKeySessions();
+    renderPlanIntensity();
+    renderPlanDplusTab();
+  }
+  renderPlanNotes();
+}
+
+renderPlanPage();
+renderSidebarUser();
 </script>
 </body>
 </html>
