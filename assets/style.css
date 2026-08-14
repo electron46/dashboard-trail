@@ -38,6 +38,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 /* Sidebar de navigation (desktop) — surface sombre fixe, indépendante du thème
    clair/sombre choisi pour le contenu (le rail de marque reste toujours sombre). */
 .app-shell{display:flex;min-height:100vh;align-items:stretch;}
+/* Garde d'accès (assets/authgate.js) : masque le contenu tant que la session Supabase n'est pas
+   vérifiée, pour éviter un flash de données avant la redirection vers connexion.html. */
+html.auth-pending .app-shell{display:none;}
+html.auth-pending body::before{content:'Connexion…';position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--font-sans);background:var(--bg);z-index:9999;}
 .sidebar{width:220px;flex-shrink:0;background:#0A0E0C;border-right:1px solid rgba(244,247,245,.06);display:flex;flex-direction:column;padding:20px 14px;position:sticky;top:0;align-self:flex-start;height:100vh;box-sizing:border-box;}
 /* Bloc de marque : icône montagne (même bibliothèque d'icônes que le reste du site, pas un
    logo inventé) + wordmark texte — remplace l'ancien pavé blanc du PNG source, qui reste

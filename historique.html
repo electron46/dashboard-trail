@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="auth-pending">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -270,11 +270,16 @@ function renderCharts() {
 }
 
 function refreshAll() { renderSportFilterChips(); renderHistory(); renderCharts(); }
-refreshAll();
+refreshAll(); // premier rendu depuis le cache local, avant même la vérification de connexion
 
 // Ancien lien direct vers une séance (#s=id, ex. carte "Dernière activité" de l'Accueil, non modifiée
 // dans cette phase) : redirige vers la nouvelle page de détail dédiée.
 if (location.hash.startsWith('#s=')) location.replace('activite.html?id=' + encodeURIComponent(location.hash.slice(3)));
+
+// Rappelé par assets/authgate.js une fois la session confirmée, après resynchro des séances
+// depuis Supabase (source de vérité) — voir syncActivitiesWithSupabase() dans app.js.
+async function onAuthReady() { await syncActivitiesWithSupabase(); refreshAll(); }
 </script>
+<script src="assets/authgate.js"></script>
 </body>
 </html>

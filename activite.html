@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="auth-pending">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -647,6 +647,15 @@ if (!session) {
 } else {
   initActivityPage(session);
 }
+
+// Rappelé par assets/authgate.js une fois la session confirmée. Si l'activité n'était pas encore
+// dans le cache local (nouvel appareil, lien ouvert directement), on resynchronise depuis Supabase
+// puis on recharge une fois la page pour tenter de la retrouver.
+async function onAuthReady() {
+  await syncActivitiesWithSupabase();
+  if (!session) location.reload();
+}
 </script>
+<script src="assets/authgate.js"></script>
 </body>
 </html>

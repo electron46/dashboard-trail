@@ -901,6 +901,68 @@ async function pushActivityRow(session, fitArrayBuffer) {
   return { ok:true };
 }
 
+// Reconstruit un objet "séance" (même forme que summarizeFit()) à partir d'une ligne Supabase —
+// l'inverse de la construction faite dans pushActivityRow.
+function activityRowToSession(row) {
+  return {
+    id: row.client_id,
+    date: row.date,
+    sport: row.sport,
+    distanceKm: row.distance_km,
+    durationS: row.duration_s,
+    ascent: row.ascent_m,
+    descent: row.descent_m,
+    avgHr: row.avg_hr,
+    maxHr: row.max_hr,
+    avgPaceSecPerKm: row.avg_pace_sec_km,
+    avgPower: row.avg_power,
+    maxPower: row.max_power,
+    avgTemp: row.avg_temp,
+    calories: row.calories,
+    cadenceSpm: row.cadence_spm,
+    gearId: row.gear_id || undefined,
+    context: row.context || undefined,
+    aiFeedback: row.ai_feedback || undefined,
+    series: row.series || [],
+    laps: row.laps || [],
+    events: (row.raw && row.raw.events) || [],
+    devices: (row.raw && row.raw.devices) || [],
+    raw: row.raw || {},
+  };
+}
+// Supabase = source de vérité pour les séances (table `activities`), localStorage = cache local.
+// 1) pousse les séances locales pas encore connues côté Supabase (cas des séances importées avant
+//    la mise en place de cette synchro, ou importées hors-ligne) ; 2) recharge la liste complète
+//    depuis Supabase pour reconstruire le cache local — garantit la cohérence entre appareils.
+// Silencieux si Supabase n'est pas configuré / pas connecté (ne devrait pas arriver sur les pages
+// protégées par la garde d'accès, mais reste sûr si appelé ailleurs).
+async function syncActivitiesWithSupabase() {
+  const client = getSupabaseClient();
+  if (!client) return { ok:false, reason:'not-configured' };
+  const user = await supaGetUser();
+  if (!user) return { ok:false, reason:'not-logged-in' };
+
+  const localSessions = loadAllSessions();
+  const { data: existing, error: existingErr } = await client.from('activities').select('client_id').eq('user_id', user.id);
+  if (!existingErr) {
+    const existingIds = new Set((existing || []).map(r => r.client_id));
+    for (const s of localSessions) {
+      if (!existingIds.has(s.id)) await pushActivityRow(s, null);
+    }
+  }
+
+  const { data: rows, error } = await client.from('activities').select('*').eq('user_id', user.id).order('date', { ascending: true });
+  if (error || !rows) return { ok:false, reason: error ? error.message : 'empty' };
+  const ids = [];
+  rows.forEach(row => {
+    const session = activityRowToSession(row);
+    saveSession(session.id, session);
+    ids.push(session.id);
+  });
+  saveIndex(ids);
+  return { ok:true, count: rows.length };
+}
+
 /* --------------------------- ANALYSE D'UNE SÉANCE (page Activité) --------------------------- */
 
 // Détection des montées d'une séance à partir de la série altitude/distance déjà stockée.

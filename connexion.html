@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#151E2B">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/app.js"></script>
+<style>
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  .login-card{width:100%;max-width:380px;margin:24px;}
+  .login-card h1{margin-bottom:4px;}
+  .login-card .field{display:flex;flex-direction:column;gap:4px;margin-top:12px;}
+  .login-card input{padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg);color:var(--text);}
+  .login-actions{display:flex;gap:8px;margin-top:16px;}
+</style>
+</head>
+<body>
+
+<section class="card login-card">
+  <h1>ELEV</h1>
+  <p class="hint">Connecte-toi pour accéder à ton tableau de bord.</p>
+
+  <div id="notConfigured" style="display:none;">
+    <div class="msg err">La synchronisation Supabase n'est pas encore configurée sur cet appareil.</div>
+    <p class="hint">Renseigne l'URL et la clé de ton projet Supabase dans <a href="parametres.html">Paramètres</a>, puis reviens ici.</p>
+  </div>
+
+  <form id="loginForm" style="display:none;">
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="password">Mot de passe</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+    </div>
+    <div class="login-actions">
+      <button class="btn primary" id="loginBtn" type="submit">Se connecter</button>
+      <button class="btn" id="signupBtn" type="button">Créer un compte</button>
+    </div>
+    <div id="loginMsg" style="margin-top:12px;"></div>
+  </form>
+</section>
+
+<script>
+const nextUrl = new URLSearchParams(location.search).get('next') || 'index.html';
+
+(async function init() {
+  const client = getSupabaseClient();
+  if (!client) { document.getElementById('notConfigured').style.display = 'block'; return; }
+  const { data } = await client.auth.getSession();
+  if (data && data.session) { location.replace(nextUrl); return; }
+  document.getElementById('loginForm').style.display = 'block';
+})();
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const client = getSupabaseClient();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  showMsg('loginMsg', 'Connexion…', 'info');
+  const { error } = await client.auth.signInWithPassword({ email, password });
+  if (error) { showMsg('loginMsg', 'Erreur : ' + error.message, 'err'); return; }
+  location.replace(nextUrl);
+});
+document.getElementById('signupBtn').addEventListener('click', async () => {
+  const client = getSupabaseClient();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  if (!email || !password) { showMsg('loginMsg', 'Email et mot de passe requis.', 'err'); return; }
+  const { error } = await client.auth.signUp({ email, password });
+  if (error) { showMsg('loginMsg', 'Erreur : ' + error.message, 'err'); return; }
+  showMsg('loginMsg', 'Compte créé. Selon la configuration du projet, une confirmation par email peut être nécessaire avant de pouvoir te connecter.', 'ok');
+});
+</script>
+</body>
+</html>
