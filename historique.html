@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -25,10 +26,12 @@
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
@@ -43,7 +46,7 @@
   </div>
 </header>
 
-<main>
+<main class="activities-main">
 
   <div id="importMsg" class="storage-warning-target"></div>
 
@@ -55,10 +58,12 @@
       <button type="button" class="chip-btn" data-period="365">1 an</button>
     </div>
     <select id="sportFilterSelect" class="filter-select"></select>
-    <input type="text" id="searchInput" class="filter-search" placeholder="Rechercher une activité…">
+    <input type="text" id="searchInput" class="filter-search" placeholder="Rechercher…">
   </section>
 
-  <section class="card">
+  <div class="activities-summary" id="activitiesSummary"></div>
+
+  <section class="card activities-list-card">
     <div class="activities-table-head">
       <span>Date</span><span>Activité</span><span>Distance</span><span>D+</span>
       <span>Durée</span><span>Allure</span><span>FC moy.</span><span>Mini profil</span><span></span>
@@ -175,6 +180,15 @@ function renderHistory() {
     return true;
   }).sort((a,b) => b.date.localeCompare(a.date));
 
+  const summary = document.getElementById('activitiesSummary');
+  if (filtered.length) {
+    const totalKm = filtered.reduce((sum, s) => sum + (s.distanceKm || 0), 0);
+    const totalDplus = filtered.reduce((sum, s) => sum + (s.ascent || 0), 0);
+    const totalS = filtered.reduce((sum, s) => sum + (s.durationS || 0), 0);
+    summary.innerHTML = '<span>' + filtered.length + ' activité' + (filtered.length > 1 ? 's' : '') + '</span>' +
+      '<span>' + totalKm.toFixed(1) + ' km</span><span>' + Math.round(totalDplus) + ' m D+</span><span>' + fmtDuration(totalS) + '</span>';
+  } else { summary.innerHTML = ''; }
+
   const list = document.getElementById('historyList');
   document.getElementById('historyEmpty').style.display = filtered.length ? 'none' : 'block';
   document.getElementById('historyEnd').style.display = filtered.length ? 'block' : 'none';
@@ -202,6 +216,7 @@ function renderHistory() {
 // sur la page Analyse (analyse.html).
 function refreshAll() { renderSportFilterChips(); renderHistory(); }
 refreshAll(); // premier rendu depuis le cache local, avant même la vérification de connexion
+renderSidebarUser();
 
 // Ancien lien direct vers une séance (#s=id, ex. carte "Dernière activité" de l'Accueil, non modifiée
 // dans cette phase) : redirige vers la nouvelle page de détail dédiée.

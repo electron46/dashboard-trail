@@ -215,6 +215,13 @@ tr.session-row:hover{background:var(--bg);}
 .chart-box svg circle[data-tooltip]:hover{r:5;opacity:.85;}
 .chart-box svg rect[data-tooltip]:hover{opacity:.75;}
 .chart-tooltip{position:fixed;display:none;pointer-events:none;background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:.72rem;padding:5px 9px;border-radius:6px;z-index:200;white-space:nowrap;box-shadow:var(--shadow);}
+
+/* Courbes à forte densité de points (Allure/FC de séance, ~300 points) : les repères ne
+   s'affichent qu'au survol de leur zone de détection, pas en permanence — sinon la courbe
+   disparaît sous des dizaines de points fixes. Sans effet sur les autres graphiques (tendances
+   hebdomadaires à peu de points), qui gardent leurs repères visibles en permanence. */
+.chart-declutter circle.chart-dot{opacity:0;transition:opacity 120ms;}
+.chart-declutter circle[data-tooltip]:hover + circle.chart-dot{opacity:1;}
 .sync-charts-wrap{position:relative;cursor:crosshair;}
 .sync-charts-wrap .chart-box svg{pointer-events:none;}
 .sync-tooltip{position:absolute;top:6px;right:14px;background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius-pill);padding:4px 10px;font-family:var(--font-mono);font-size:.72rem;color:var(--text);pointer-events:none;z-index:2;box-shadow:var(--shadow);}
@@ -278,10 +285,10 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 .records-table input{padding:6px 8px;font-size:.82rem;}
 
 /* Onglets internes (ex. page Paramètres) */
-.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:0;}
-.tabs button{font:inherit;font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:none;border:1px solid transparent;border-bottom:2px solid transparent;padding:9px 12px;cursor:pointer;margin-bottom:-1px;}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:0;}
+.tabs button{font:inherit;font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:none;border:1px solid transparent;border-bottom:2px solid transparent;padding:10px 13px;cursor:pointer;margin-bottom:-1px;transition:color 150ms,border-color 150ms;}
 .tabs button:hover{color:var(--text);}
-.tabs button.active{color:var(--text);border-bottom-color:var(--text);font-weight:600;}
+.tabs button.active{color:var(--text);border-bottom-color:var(--accent);font-weight:700;}
 .tab-panel{display:none;flex-direction:column;gap:18px;}
 .tab-panel.active{display:flex;}
 
@@ -332,6 +339,11 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 .insight-card.status-rising_fast .insight-eyebrow{color:var(--warn);}
 .insight-card .insight-title{margin:0 0 8px;font-family:var(--font-display);font-size:1.15rem;font-weight:700;}
 .insight-card p{margin:0;font-size:.88rem;line-height:1.6;color:var(--muted);}
+/* Micro-sections (page Activité, 2-3 observations max) — un court titre par observation plutôt
+   qu'un paragraphe anonyme, pour donner plus de présence au bloc. */
+.insight-card .insight-item{margin-top:14px;}
+.insight-card .insight-item:first-of-type{margin-top:0;}
+.insight-card .insight-item h4{margin:0 0 3px;font-family:var(--font-display);font-size:.92rem;font-weight:700;color:var(--text);}
 
 /* Carte "dernière activité" — traitement le plus riche de la page : plus grande, cliquable
    dans son ensemble, légère élévation au survol (sans dépendre de la seule couleur pour signaler
@@ -418,30 +430,41 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
    HTML par ligne, réagencée en CSS Grid selon la largeur d'écran) avec mini-profil altimétrique/
    GPS par séance pour garder une identité trail (voir sessionPreviewSvg). Page pensée pour
    retrouver et ouvrir une sortie rapidement, pas pour l'analyse de tendance (voir analyse.html). */
-.activities-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 18px;}
-.filter-select{padding:8px 12px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--panel-raised);color:var(--text);font-family:var(--font-sans);font-size:.82rem;cursor:pointer;}
-.filter-search{flex:1 1 200px;min-width:160px;padding:8px 14px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:.82rem;}
+/* Conteneur élargi : la page doit se sentir comme une vraie bibliothèque de séances sur grand
+   écran, pas comme un petit tableau posé au centre (cf. passe de finition UI/UX). */
+main.activities-main{max-width:1600px;}
 
+.activities-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;}
+.filter-select{flex:0 0 auto;max-width:160px;padding:7px 10px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--panel-raised);color:var(--text);font-family:var(--font-sans);font-size:.8rem;cursor:pointer;}
+.filter-search{flex:1 1 180px;min-width:140px;max-width:280px;padding:7px 14px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:.8rem;}
+
+/* Résumé compact de la période filtrée — pas de cartes, juste une ligne de repères rapides. */
+.activities-summary{display:flex;gap:22px;flex-wrap:wrap;padding:2px 4px;font-size:.82rem;color:var(--muted);}
+.activities-summary span{font-variant-numeric:tabular-nums;}
+.activities-summary span:first-child{color:var(--text);font-weight:600;}
+
+.activities-list-card{padding-top:14px;}
 .activities-table-head{display:none;}
-.activity-row-list{display:flex;flex-direction:column;gap:8px;}
-.activity-row{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 140px 120px;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel);text-decoration:none;color:inherit;transition:background 150ms,border-color 150ms;}
-.activity-row:hover{background:var(--panel-raised);border-color:var(--muted-2);}
+.activity-row-list{display:flex;flex-direction:column;gap:6px;}
+.activity-row{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 160px 130px;align-items:center;gap:16px;padding:11px 16px;border:1px solid transparent;border-radius:var(--radius-md);background:var(--panel);text-decoration:none;color:inherit;transition:background 150ms,border-color 150ms,transform 150ms,box-shadow 150ms;}
+.activity-row:hover{background:var(--panel-raised);border-color:var(--muted-2);transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.22);}
 .activity-row:hover .link-arrow{color:var(--accent);}
 .activity-row .cell{min-width:0;}
 .activity-row .cell-date{font-family:var(--font-mono);color:var(--muted);line-height:1.15;}
 .activity-row .cell-date .cell-day{display:block;font-size:1.1rem;font-weight:700;color:var(--text);font-family:var(--font-display);}
 .activity-row .cell-date .cell-month,.activity-row .cell-date .cell-year{display:block;font-size:.6rem;letter-spacing:.04em;}
 .activity-row .cell-activity{overflow:hidden;}
-.activity-row .row-title{display:block;font-family:var(--font-display);font-size:.94rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.activity-row .row-title{display:block;font-family:var(--font-display);font-size:.96rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .activity-row .row-sub{display:block;font-size:.7rem;color:var(--muted);margin-top:1px;}
 .activity-row .cell-stat{font-size:.86rem;font-variant-numeric:tabular-nums;color:var(--text);font-weight:600;}
-.activity-row .cell-visual{width:100%;height:44px;border-radius:var(--radius-sm);overflow:hidden;background:radial-gradient(120% 100% at 30% 20%,#1E2A22,#0C100E 75%);display:flex;align-items:center;justify-content:center;}
+.activity-row .cell-visual{width:100%;height:52px;border-radius:var(--radius-sm);overflow:hidden;background:radial-gradient(120% 100% at 30% 20%,#1E2A22,#0C100E 75%);display:flex;align-items:center;justify-content:center;}
 .activity-row .cell-visual svg{width:100%;height:100%;display:block;}
-.activity-row .cell-arrow{justify-self:end;white-space:nowrap;}
+.activity-row .cell-arrow{justify-self:end;white-space:nowrap;transition:color 150ms,transform 150ms;}
+.activity-row:hover .cell-arrow{transform:translateX(2px);}
 .activities-list-end{text-align:center;padding:14px 0 2px;color:var(--muted-2);font-size:.78rem;}
 
 @media (min-width:641px){
-  .activities-table-head{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 140px 120px;gap:14px;padding:0 14px 8px;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+  .activities-table-head{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 160px 130px;gap:16px;padding:0 16px 10px;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2);}
 }
 @media (max-width:640px){
   .activity-row{position:relative;grid-template-columns:1fr 1fr;grid-template-areas:"date activity" "d1 d2" "d3 d4" "d5 d5";row-gap:8px;padding-right:26px;}
@@ -489,6 +512,9 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 }
 .analysis-col{display:flex;flex-direction:column;gap:14px;min-width:0;}
 .mini-card h2{margin-bottom:10px;}
+.mini-list-group{margin-bottom:14px;}
+.mini-list-group:last-child{margin-bottom:0;}
+.mini-list-title{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2);font-weight:700;margin-bottom:6px;}
 .mini-list{display:flex;flex-direction:column;gap:7px;}
 .mini-list-row{display:flex;justify-content:space-between;gap:10px;font-size:.82rem;padding-bottom:7px;border-bottom:1px solid var(--border);}
 .mini-list-row:last-child{border-bottom:none;padding-bottom:0;}
@@ -498,19 +524,27 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 
 /* Donut de répartition des zones FC (version compacte, colonne d'analyse) */
 .zone-donut-row{display:flex;align-items:center;gap:16px;}
-.zone-donut{flex-shrink:0;}
-.zone-donut-legend{display:flex;flex-direction:column;gap:6px;font-size:.76rem;color:var(--muted);min-width:0;}
-.zone-donut-legend strong{color:var(--text);}
+/* Réduit d'environ 35% par rapport à la taille d'origine (118px) : la légende doit être l'élément
+   principal de lecture, le donut n'est qu'un repère visuel d'ensemble. */
+.zone-donut{flex-shrink:0;width:74px;height:74px;}
+.zone-donut-legend{flex:1 1 auto;display:flex;flex-direction:column;gap:5px;min-width:0;}
+.zdl-row{display:grid;grid-template-columns:8px 1fr auto auto;align-items:center;gap:7px;font-size:.82rem;}
+.zdl-label{color:var(--text);}
+.zdl-pct{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;text-align:right;}
+.zdl-time{color:var(--muted);font-size:.74rem;font-variant-numeric:tabular-nums;text-align:right;min-width:44px;}
 .zone-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;}
 .zone-dot.z1{background:var(--muted-2);} .zone-dot.z2{background:var(--accent-light);} .zone-dot.z3{background:var(--accent);}
 .zone-dot.z4{background:var(--warn);} .zone-dot.z5{background:var(--danger);}
 
 /* Aperçu "Montées principales" (colonne d'analyse) — mini-tableau, détail complet dans l'onglet Montées */
-.climbs-mini-table{display:flex;flex-direction:column;gap:2px;font-size:.78rem;}
-.climbs-mini-head,.climbs-mini-row{display:grid;grid-template-columns:16px 1fr .8fr .7fr .8fr;gap:6px;padding:5px 0;}
-.climbs-mini-head{color:var(--muted);font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);}
+/* Pleine largeur (section dédiée, plus confinée à la colonne d'analyse) : 7 colonnes lisibles
+   plutôt qu'un tableau étriqué. */
+.climbs-mini-table{display:flex;flex-direction:column;gap:2px;font-size:.85rem;overflow-x:auto;}
+.climbs-mini-head,.climbs-mini-row{display:grid;grid-template-columns:28px 1fr 1fr 1fr 1fr 1fr 1fr;gap:12px;padding:8px 4px;min-width:520px;}
+.climbs-mini-head{color:var(--muted);font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);}
 .climbs-mini-row{border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text);}
 .climbs-mini-row:last-child{border-bottom:none;}
+.climbs-mini-row:hover{background:var(--panel-raised);}
 #climbsMiniCard .link-arrow{display:inline-block;margin-top:10px;font-size:.78rem;}
 
 /* Stats d'en-tête du profil altimétrique (D+/D-/alt min/alt max) */

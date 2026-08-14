@@ -1102,27 +1102,29 @@ function computeSessionComparison(session, allSessions, n) {
 // post-séance. On ne produit que des observations que les données permettent réellement d'établir
 // (voir CLAUDE.md / consignes de rédaction : pas de diagnostic physiologique, pas d'affirmation non
 // vérifiable). Retourne un tableau de 0 à 3 phrases courtes.
+// Retourne jusqu'à 3 observations {title, text} — mêmes règles/seuils déterministes qu'avant,
+// juste enrichies d'un court titre pour l'affichage (voir renderInsight dans activite.html).
 function generateSessionInsight(session, zoneDist, climbs) {
   const bullets = [];
 
   if (zoneDist) {
     const z1z2 = zoneDist.slice(0, 2).reduce((a, z) => a + z.pct, 0);
     const z3plus = zoneDist.slice(2).reduce((a, z) => a + z.pct, 0);
-    if (z3plus >= 55) bullets.push(z3plus + '% du temps a été passé en zones Z3, Z4 et Z5 : intensité soutenue.');
-    else if (z1z2 >= 65) bullets.push(z1z2 + '% du temps a été passé en zones Z1 et Z2 : sortie principalement axée endurance.');
+    if (z3plus >= 55) bullets.push({ title: 'Intensité soutenue', text: z3plus + '% du temps a été passé en zones Z3, Z4 et Z5.' });
+    else if (z1z2 >= 65) bullets.push({ title: 'Sortie endurance', text: z1z2 + '% du temps a été passé en zones Z1 et Z2 : sortie principalement axée endurance.' });
   }
 
   if (climbs && climbs.length) {
     const withHr = climbs.filter(c => c.avgHr != null);
     if (withHr.length && session.avgHr != null) {
       const avgClimbHr = Math.round(withHr.reduce((a, c) => a + c.avgHr, 0) / withHr.length);
-      if (avgClimbHr - session.avgHr >= 8) bullets.push('La fréquence cardiaque est nettement plus élevée dans les montées (' + avgClimbHr + ' bpm en moyenne) que sur l\'ensemble de la séance (' + session.avgHr + ' bpm).');
+      if (avgClimbHr - session.avgHr >= 8) bullets.push({ title: 'FC en montée', text: 'Nettement plus élevée dans les montées (' + avgClimbHr + ' bpm en moyenne) que sur l\'ensemble de la séance (' + session.avgHr + ' bpm).' });
     }
     const withVam = climbs.filter(c => c.vamMh != null && c.gainM != null);
     if (withVam.length) {
       const totalGain = withVam.reduce((a, c) => a + c.gainM, 0);
       const avgVam = Math.round(withVam.reduce((a, c) => a + c.vamMh * c.gainM, 0) / totalGain);
-      bullets.push('VAM moyenne en montée : ' + avgVam + ' m/h sur ' + withVam.length + ' montée' + (withVam.length > 1 ? 's' : '') + ' détectée' + (withVam.length > 1 ? 's' : '') + '.');
+      bullets.push({ title: 'Montées', text: 'VAM moyenne : ' + avgVam + ' m/h sur ' + withVam.length + ' montée' + (withVam.length > 1 ? 's' : '') + ' détectée' + (withVam.length > 1 ? 's' : '') + '.' });
     }
   }
 
@@ -1134,13 +1136,25 @@ function generateSessionInsight(session, zoneDist, climbs) {
     const mean = paces.reduce((a, b) => a + b, 0) / paces.length;
     const variance = paces.reduce((a, p) => a + Math.pow(p - mean, 2), 0) / paces.length;
     const cv = Math.sqrt(variance) / mean;
-    if (cv < 0.06) bullets.push('Ton allure est restée relativement stable sur les portions de terrain comparables.');
+    if (cv < 0.06) bullets.push({ title: 'Régularité', text: 'Ton allure est restée relativement stable sur les portions de terrain comparables.' });
   }
 
   return bullets.slice(0, 3);
 }
 
 /* --------------------------- 6) UTILITAIRES DOM --------------------------- */
+// Bloc utilisateur de la sidebar (avatar initiale + prénom) — identique à celui de l'Accueil,
+// réutilisé par les autres pages migrées vers la sidebar harmonisée (voir CLAUDE.md section 15).
+function renderSidebarUser() {
+  const el = document.getElementById('sidebarUser');
+  if (!el) return;
+  const profile = getProfile();
+  const prenom = (profile.nom || '').trim().split(/\s+/)[0];
+  const initial = prenom ? prenom[0].toUpperCase() : '?';
+  el.innerHTML = '<div class="avatar">' + escapeHtml(initial) + '</div>' +
+    '<div class="user-info"><strong>' + escapeHtml(prenom || 'Ton profil') + '</strong><a href="profil.html">Voir mon profil</a></div>';
+}
+
 function showMsg(elId, text, kind) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -1562,7 +1576,7 @@ function lineChartSvg(title, points, opts) {
   const dots = points.map(p => {
     const cx = sx(p.x).toFixed(1), cy = sy(p.y).toFixed(1);
     return '<circle cx="'+cx+'" cy="'+cy+'" r="11" fill="transparent" data-tooltip="'+escapeHtml(p.label)+'"/>' +
-      '<circle cx="'+cx+'" cy="'+cy+'" r="4" fill="var(--accent)" style="pointer-events:none;"/>';
+      '<circle class="chart-dot" cx="'+cx+'" cy="'+cy+'" r="4" fill="var(--accent)" style="pointer-events:none;"/>';
   }).join('');
   const firstLabel = points[0].xLabel, lastLabel = points[points.length-1].xLabel;
   // Silhouette de terrain optionnelle en arrière-plan (ex. altitude derrière l'allure ou la FC) —
