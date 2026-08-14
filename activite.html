@@ -437,14 +437,48 @@ function chartPointsFor(s) {
 }
 
 /* --------------------------- ONGLET ALLURE --------------------------- */
+// Seuil de pause : un point dont l'allure dépasse ~2,2x l'allure médiane de la séance est traité
+// comme un arrêt/quasi-arrêt pour l'AFFICHAGE (jamais la donnée source) — gap dans la courbe plutôt
+// qu'une chute verticale vers une valeur qui écraserait l'échelle. Seuil relatif (pas un chiffre fixe
+// en min/km) car il doit s'adapter à l'allure propre de chaque coureur/séance.
+const ALLURE_PAUSE_MEDIAN_FACTOR = 2.2;
+function buildAllureDisplayPoints(points) {
+  const paces = points.map(p => p.paceSecKm).filter(v => v != null).sort((a, b) => a - b);
+  if (!paces.length) return { display: points, yMin: null, yMax: null };
+  const median = paces[Math.floor(paces.length / 2)];
+  const pauseThreshold = median * ALLURE_PAUSE_MEDIAN_FACTOR;
+
+  const display = points.map(p => Object.assign({}, p));
+  display.forEach(p => {
+    if (p.paceSecKm != null && p.paceSecKm > pauseThreshold) { p.isPause = true; p.paceSecKm = null; }
+  });
+  // Regroupe les points de pause consécutifs pour donner une durée exploitable au tooltip.
+  let i = 0;
+  while (i < display.length) {
+    if (!display[i].isPause) { i++; continue; }
+    let j = i; while (j < display.length && display[j].isPause) j++;
+    const durationS = display[j - 1].t - display[i].t;
+    for (let k = i; k < j; k++) display[k].pauseDurationS = durationS;
+    i = j;
+  }
+
+  // Échelle robuste (percentile 2-98%) sur les points restants (hors pauses) : une poignée de
+  // quasi-arrêts encore présents (en dessous du seuil de pause mais très lents) ne doit pas
+  // étirer tout le graphe — ils restent visibles, juste aplatis au bord (voir clamp dans elevChartSvg).
+  const validPaces = display.map(p => p.paceSecKm).filter(v => v != null).sort((a, b) => a - b);
+  const yMin = validPaces.length ? percentileOf(validPaces, 0.02) : null;
+  const yMax = validPaces.length ? percentileOf(validPaces, 0.98) : null;
+  return { display, yMin, yMax };
+}
 function renderAllureTab(s) {
   const box = document.getElementById('allureTabBox');
   const points = chartPointsFor(s);
   if (!points.filter(p => p.paceSecKm != null).length) { box.innerHTML = '<div class="empty">Pas de donnée d\'allure disponible pour cette activité.</div>'; return; }
-  const chart = elevChartSvg(points, { key: 'paceSecKm', backgroundKey: 'alt', invertY: true, yFormat: fmtPace, axisHint: 'plus rapide ↑' });
-  box.innerHTML = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre). L\'axe est inversé : une courbe qui monte = une allure plus rapide.</p>' + chart;
+  const { display, yMin, yMax } = buildAllureDisplayPoints(points);
+  const chart = elevChartSvg(display, { key: 'paceSecKm', backgroundKey: 'alt', invertY: true, yFormat: fmtPace, axisHint: 'plus rapide ↑', yMin, yMax });
+  box.innerHTML = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre). L\'axe est inversé : une courbe qui monte = une allure plus rapide. Les arrêts/pauses apparaissent en vide dans la courbe plutôt que comme une donnée d\'allure.</p>' + chart;
   const wrap = box.querySelector('.elev-chart-wrap');
-  if (wrap) initElevChart(wrap, points, p => moveMapCursor(p.lat, p.lon));
+  if (wrap) initElevChart(wrap, display, p => { if (!p.isPause) moveMapCursor(p.lat, p.lon); });
 }
 
 /* --------------------------- ONGLET FRÉQUENCE CARDIAQUE --------------------------- */
@@ -596,11 +630,11 @@ function renderPlanVsActual(s, planned) {
 }
 
 /* --------------------------- COACH ELEV : RETOUR STRUCTURÉ (parsing du texte IA) ---------------------------
-   Le modèle répond en texte brut avec 4 marqueurs (voir AI_COACH_SYSTEM_PROMPT ci-dessous) plutôt qu'en
-   JSON, pour rester robuste aux imperfections de formatage. On découpe ce texte en 4 cartes ; si les
-   marqueurs sont absents (ancien format, ou réponse inattendue), on retombe sur un bloc de texte simple
-   plutôt que de planter — mais jamais les balises/marqueurs bruts ne doivent apparaître à l'écran. */
-const COACH_SECTION_MARKERS = [['analyse','ANALYSE:'],['positif','POSITIF:'],['vigilance','VIGILANCE:'],['suite','SUITE:']];
+   Le modèle répond en texte brut avec 5 marqueurs (voir AI_COACH_SYSTEM_PROMPT ci-dessous) plutôt qu'en
+   JSON, pour rester robuste aux imperfections de formatage : une conclusion centrale (RESUME) + 4 cartes
+   courtes (phrase clé + 2-4 puces). Si les marqueurs sont absents (ancien format, ou réponse inattendue),
+   on retombe sur un bloc de texte simple plutôt que de planter — jamais les marqueurs bruts à l'écran. */
+const COACH_SECTION_MARKERS = [['resume','RESUME:'],['analyse','ANALYSE:'],['positif','POSITIF:'],['vigilance','VIGILANCE:'],['suite','SUITE:']];
 function parseCoachSections(text) {
   const positions = COACH_SECTION_MARKERS.map(([, marker]) => text.indexOf(marker));
   if (positions.some(p => p < 0)) return null;
@@ -612,20 +646,40 @@ function parseCoachSections(text) {
   });
   return result;
 }
+// Une carte = une phrase clé (première ligne, sans "-") puis 2-4 puces ("- ..."). Robuste si le
+// modèle ne suit pas exactement le format (tout redevient alors une phrase clé unique).
+function splitLeadAndBullets(text) {
+  const lines = (text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const bullets = lines.filter(l => l.startsWith('- ')).map(l => l.slice(2).trim());
+  const lead = lines.find(l => !l.startsWith('- '));
+  return { lead: lead || (bullets.length ? '' : text.trim()), bullets };
+}
 function renderCoachCards(text) {
   const box = document.getElementById('aiFeedbackBox');
   if (!text) { box.innerHTML = ''; return; }
   const parsed = parseCoachSections(text);
   if (!parsed) { box.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>'; return; }
+
+  const resumeHtml = parsed.resume
+    ? '<p class="coach-resume-eyebrow"><img src="' + ICON('zap') + '" alt="">Coach ELEV</p><p class="coach-resume-text">' + escapeHtml(parsed.resume) + '</p>'
+    : '';
+
   const cards = [
     ['Analyse de la séance', parsed.analyse],
     ['Ce qui est positif', parsed.positif],
     ['Point de vigilance', parsed.vigilance],
     ['Pour la suite', parsed.suite],
   ];
-  box.innerHTML = '<div class="coach-cards-grid">' + cards.map(([title, txt]) =>
-    '<div class="coach-card"><h4>' + title + '</h4><p>' + escapeHtml(txt || 'Non communiqué.') + '</p></div>'
-  ).join('') + '</div>';
+  const cardsHtml = '<div class="coach-cards-grid">' + cards.map(([title, txt]) => {
+    const { lead, bullets } = splitLeadAndBullets(txt);
+    return '<div class="coach-card"><h4>' + title + '</h4>' +
+      (lead ? '<p>' + escapeHtml(lead) + '</p>' : '') +
+      (bullets.length ? '<ul>' + bullets.map(b => '<li>' + escapeHtml(b) + '</li>').join('') + '</ul>' : '') +
+      (!lead && !bullets.length ? '<p>Non communiqué.</p>' : '') +
+    '</div>';
+  }).join('') + '</div>';
+
+  box.innerHTML = resumeHtml + cardsHtml;
 }
 
 /* --------------------------- RETOUR IA (identique au coach post-séance existant) --------------------------- */
@@ -641,13 +695,16 @@ Comparer une séance réalisée (données issues d'un fichier .FIT ou saisies ma
 L'utilisateur suit un plan d'entraînement en vue d'un ou plusieurs objectifs de course. Il doit savoir rapidement si une séance a rempli son rôle dans la progression, si un écart est ponctuel ou récurrent, et si le plan doit être ajusté.
 </pourquoi>
 <criteres_de_succes>
+- En moins de 10 secondes de lecture, l'utilisateur comprend : ce que raconte la séance, ce qui s'est bien passé, ce qu'il faut surveiller, quoi faire ensuite — jamais en lisant de gros paragraphes
+- La conclusion centrale (RESUME) est une vraie synthèse propre à CETTE séance (durée, relief, intensité, locomotion, zones, écart au plan si pertinent) — jamais une formulation générique qui pourrait s'appliquer à n'importe quelle sortie
 - L'écart entre séance prévue et séance réalisée (déjà affiché visuellement à l'utilisateur en chiffres, distance/D+/D-) est interprété, pas seulement répété : la qualification s'appuie sur l'ensemble des métriques disponibles, pas sur une seule
 - Si un historique est fourni, l'analyse précise si l'écart est ponctuel ou récurrent
 - Ce qui a été bien géré dans la séance est identifié explicitement, pas seulement ce qui a manqué
-- Tout signal d'alerte est classé par niveau de gravité, pas seulement signalé de façon binaire
+- Tout signal d'alerte est classé par niveau de gravité, formulé de façon prudente (jamais diagnostique), pas seulement signalé de façon binaire
 - Les contraintes réelles du jour sont prises en compte si elles expliquent un écart
 - En cas de donnée insuffisante pour trancher, l'incertitude est assumée plutôt que masquée
 - La réponse se termine par une recommandation concrète pour la ou les séances suivantes
+- Aucune répétition d'une même information entre deux sections
 </criteres_de_succes>
 </objectif>
 
@@ -666,46 +723,61 @@ Données fournies à chaque usage :
 </situation>
 
 <instructions>
-1) Comparez chiffre par chiffre la séance prévue et la séance réalisée (distance, D+, durée, allure, FC) — ces chiffres sont déjà affichés à l'utilisateur avant votre réponse, ne les listez pas de nouveau, appuyez-vous dessus pour votre analyse.
-2) Qualifiez l'écart (conforme / en dessous / au-dessus) en croisant au moins deux métriques (par exemple distance ET allure/FC) avant de conclure — ne tranchez pas sur un seul indicateur isolé.
-3) Si un historique est fourni, indiquez si l'écart observé est ponctuel ou s'il se répète sur les séances précédentes, et pondérez la recommandation en conséquence.
-4) Identifiez ce qui a été bien géré (allure tenue, gestion du relief, régularité, respect d'une zone cible...) même si l'écart global est en dessous du prévu — une séance imparfaite a presque toujours un aspect positif réel, ne l'inventez pas s'il n'y en a vraiment aucun.
-5) Repérez tout signal d'alerte (FC anormalement haute pour l'allure, douleur ou gêne signalée, séance très écourtée) et classez-le sur 3 niveaux : Rien à signaler / À surveiller / Signal fort.
-6) Si une contrainte réelle mentionnée par l'utilisateur explique un écart, dites-le explicitement plutôt que de le compter comme un manquement.
-7) Avant de conclure, vérifiez la cohérence de votre qualification de l'écart avec l'ensemble des métriques disponibles et avec l'historique le cas échéant.
-8) Terminez par une recommandation actionnable pour la prochaine séance ou pour la semaine.
+1) Rédigez d'abord mentalement votre analyse complète (écart chiffré déjà affiché à l'utilisateur, croisement d'au moins deux métriques avant toute qualification, historique ponctuel/récurrent, point positif réel, signal d'alerte éventuel), PUIS compressez chaque idée à l'essentiel pour le format court demandé — ne sautez pas l'étape d'analyse, seul le texte final doit rester concis.
+2) La conclusion centrale (RESUME) doit varier selon la séance : durée, relief (D+/D-), intensité (zones), part de marche/course, et écart au plan si une séance était prévue. Ne réutilisez jamais une formulation toute faite.
+3) Qualifiez l'écart au plan (conforme / en dessous / au-dessus) en croisant au moins deux métriques avant de conclure — ne tranchez pas sur un seul indicateur isolé. Si aucune séance n'était planifiée, dites-le une seule fois, brièvement, dans ANALYSE (pas ailleurs).
+4) Si un historique est fourni, indiquez si l'écart observé est ponctuel ou récurrent, et pondérez SUITE en conséquence.
+5) Identifiez ce qui a été réellement bien géré (allure tenue, gestion du relief, régularité, zone cible respectée...) — une séance imparfaite a presque toujours un aspect positif réel ; ne l'inventez pas s'il n'y en a vraiment aucun, dites-le alors sobrement.
+6) VIGILANCE : formulez tout signal en termes de prudence, jamais de certitude ou de diagnostic. Interdits : affirmer qu'une zone du corps "est fragilisée/abîmée", employer "surentraînement" ou "blessure" comme un fait acquis, prédire un risque comme certain. Préférez : "à surveiller", "peut augmenter la sollicitation de X", "si une gêne apparaît", "surveille l'évolution après la séance". Si un antécédent de santé est mentionné dans le contexte utilisateur, traitez-le comme un facteur de prudence à mentionner SEULEMENT si la séance du jour le rend pertinent (ex. grosse descente + antécédent de cheville) — jamais comme une alerte générique récitée à chaque séance. S'il n'y a rien à signaler, écrivez simplement "Rien de particulier à signaler." sans forcer une observation.
+7) SUITE doit être actionnable : 2-4 puces concrètes, jamais un paragraphe narratif.
+8) Avant de répondre, vérifiez : aucune section ne répète une information déjà donnée dans une autre.
 </instructions>
 
 <exclusions>
-- Ne donnez pas d'avis médical sur une douleur signalée : recommandez la prudence et, si la gêne persiste, une consultation. À la place, contentez-vous d'un conseil d'entraînement (réduire l'impact, adapter la charge).
-- N'inventez aucune donnée manquante (allure, FC, D+, historique) : si une donnée n'est pas fournie, indiquez "Non communiqué" et basez l'analyse sur ce qui est disponible.
-- Si les données disponibles ne permettent pas de trancher avec certitude entre un écart lié à la forme et un écart lié au contexte, dites-le explicitement plutôt que de trancher par défaut.
-- Ne noyez pas la réponse sous des explications physiologiques longues : allez à l'essentiel, avec les chiffres et la conclusion pratique.
-- Ne proposez pas d'ajustement irréaliste compte tenu des contraintes signalées par l'utilisateur : proposez une alternative adaptée à ce qu'il a réellement à disposition.
+- Ne donnez jamais de diagnostic ni d'avis médical : uniquement des observations prudentes et des conseils d'entraînement (réduire l'impact, adapter la charge, surveiller tel symptôme).
+- N'inventez aucune donnée manquante (allure, FC, D+, historique) : basez l'analyse sur ce qui est disponible, sans combler les trous.
+- Ne noyez pas la réponse sous des explications physiologiques longues : allez à l'essentiel.
+- Ne proposez pas d'ajustement irréaliste compte tenu des contraintes signalées par l'utilisateur.
+- Pas de paragraphes de 8-12 lignes : une phrase clé + puces courtes par section, jamais plus.
 </exclusions>
 
 <exemple>
-Séance prévue : Samedi, sortie longue 18 km / 800 m D+, allure Z2.
-Séance réalisée : 16 km / 650 m D+, allure Z2, FC moyenne cohérente, ressenti "bonnes jambes".
-Historique : les 2 sorties longues précédentes étaient conformes au plan.
+Séance réalisée : 18,7 km / 4h21 / 1452 m D+ / 1982 m D- / FC moyenne 165 bpm / 70% du temps en marche / 88% du temps en Z3-Z5.
+Séance prévue : sortie longue 17 km / 1700 m D+, intensité Z2.
+Historique : pas de sortie longue comparable récente.
+Contexte utilisateur : antécédent de gêne à la cheville droite, rien signalé sur cette séance.
 
-ANALYSE: Écart en dessous du prévu en volume (-11% distance, -19% D+), mais l'intensité est respectée. Comme les 2 séances précédentes étaient conformes, cet écart est ponctuel et non un signe de fatigue installée. Probablement lié à une contrainte de temps ou de terrain.
-POSITIF: L'allure et la FC sont restées cohérentes avec la zone Z2 visée du début à la fin, malgré la distance raccourcie — l'intensité prévue a bien été respectée.
-VIGILANCE: Rien à signaler.
-SUITE: Pas d'ajustement nécessaire cette semaine. Si l'écart de distance se répète sur les 2 prochaines sorties longues, allonger le parcours suivant pour rattraper le kilométrage prévu sur le cycle.
+RESUME: Sortie exigeante, dominée par la marche sur terrain fortement pentu, intensité nettement au-dessus de la cible Z2 prévue.
+ANALYSE: Effort long et très vallonné, plus intense que prévu.
+- 18,7 km en 4h21, +10% de distance vs plan
+- 1452 m D+ / 1982 m D-
+- 88% du temps en Z3-Z5 alors que Z2 était visée
+- Aucune sortie longue comparable récente pour juger d'une tendance
+POSITIF: Effort soutenu mais géré de façon cohérente.
+- Cadence compatible avec une sortie fortement marchée
+- Gestion régulière des montées (VAM stable, voir onglet Montées)
+- Distance et D+ tenus malgré l'intensité élevée
+VIGILANCE: Grosse descente (1982 m D-) à noter.
+- Compte tenu de ton antécédent à la cheville droite, surveille une gêne inhabituelle ou un gonflement dans les heures suivant la séance
+- Rien de signalé sur cette sortie elle-même
+SUITE: Prioriser la récupération avant la prochaine charge importante.
+- 48h de vigilance sur la cheville avant une nouvelle grosse séance de D-
+- Si l'intensité élevée se répète sur la prochaine sortie longue, revoir l'allure cible
+- Compléter le plan pour fiabiliser les prochaines comparaisons
 </exemple>
 
 <contre_exemple>
-"Bravo, belle séance, continuez comme ça !" — sans comparaison chiffrée, sans croisement des métriques, sans niveau de gravité pour une éventuelle alerte, sans recommandation concrète. Trop vague, n'apporte rien d'actionnable.
+"Bravo, belle séance, continuez comme ça !" — sans conclusion propre à la séance, sans puces, sans signal de vigilance formulé prudemment, sans recommandation concrète. Trop vague et trop long à la fois si développé en paragraphes.
 </contre_exemple>
 
 <format_de_sortie>
-Répondez UNIQUEMENT avec ces 4 sections, chacune introduite en tout début de ligne par son marqueur exact suivi de ":" (respectez l'orthographe et la casse exactes de ces 4 marqueurs, sans rien d'autre avant le premier) :
-ANALYSE: analyse de l'écart, avec mention ponctuel/récurrent si historique disponible (2-4 phrases)
-POSITIF: ce qui a été bien géré dans cette séance (1-3 phrases ; si vraiment rien ne se dégage, dites-le plutôt que d'inventer)
-VIGILANCE: point de vigilance santé/fatigue — niveau (Rien à signaler / À surveiller / Signal fort) + une phrase
-SUITE: recommandation actionnable pour la suite (2-3 phrases maximum)
-Aucun texte hors de ces 4 sections. Aucune balise XML, aucun markdown (pas de **gras**, pas de listes à puces, pas de tableau) dans la réponse finale.
+Répondez UNIQUEMENT avec ces 5 sections, chacune introduite en tout début de ligne par son marqueur exact suivi de ":" (respectez l'orthographe et la casse exactes, rien d'autre avant le premier marqueur) :
+RESUME: une seule phrase de synthèse, propre à cette séance (pas de puces).
+ANALYSE: une phrase clé, puis 2-4 lignes commençant chacune par "- ".
+POSITIF: une phrase clé, puis 2-4 lignes "- ".
+VIGILANCE: une phrase clé (ton prudent, jamais diagnostique), puis 0-3 lignes "- ". Si rien à signaler, une seule phrase "Rien de particulier à signaler." suffit, sans puce.
+SUITE: une phrase clé actionnable, puis 2-4 lignes "- ".
+Aucun texte hors de ces 5 sections. Aucune balise XML, aucun markdown autre que les puces "- " (pas de **gras**, pas de titres, pas de tableau).
 </format_de_sortie>`;
 
 async function generateAiFeedback(id) {

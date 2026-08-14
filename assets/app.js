@@ -1643,9 +1643,14 @@ function elevChartSvg(points, opts) {
   if (minY === maxY) { minY -= 1; maxY += 1; }
   const spanY = (maxY - minY) || 1;
   const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
-  const sy = y => opts.invertY
-    ? padT + (y - minY) / spanY * (h - padT - padB)
-    : (h - padB) - (y - minY) / spanY * (h - padT - padB);
+  // Clampé au domaine [minY,maxY] : si l'échelle est resserrée (percentile robuste, voir Allure),
+  // un point ponctuel hors domaine s'aplatit proprement au bord plutôt que de sortir du cadre.
+  const sy = y => {
+    const yc = Math.min(maxY, Math.max(minY, y));
+    return opts.invertY
+      ? padT + (yc - minY) / spanY * (h - padT - padB)
+      : (h - padB) - (yc - minY) / spanY * (h - padT - padB);
+  };
 
   // Découpe en segments continus : jamais de faux raccord au-dessus d'une valeur manquante
   // (ex. pause sans allure exploitable) — un vrai vide dans la courbe plutôt qu'une donnée inventée.
@@ -1706,6 +1711,13 @@ function elevChartSvg(points, opts) {
 // Contenu du tooltip commun aux 3 graphiques signature : n'affiche que les champs réellement
 // disponibles sur le point survolé, quel que soit le graphique à l'origine du survol.
 function elevChartTooltipText(p) {
+  // Point marqué comme pause (voir renderAllureTab) : jamais de valeur d'allure fabriquée pendant
+  // un arrêt, on l'indique explicitement à la place.
+  if (p.isPause) {
+    const parts = ['Pause', p.distKm != null ? p.distKm.toFixed(2) + ' km' : null];
+    if (p.pauseDurationS) parts.push('durée ' + fmtDuration(p.pauseDurationS));
+    return parts.filter(Boolean).join(' · ');
+  }
   const parts = [];
   if (p.distKm != null) parts.push(p.distKm.toFixed(2) + ' km');
   if (p.alt != null) parts.push(Math.round(p.alt) + ' m');
@@ -1714,6 +1726,16 @@ function elevChartTooltipText(p) {
   if (p.cadenceSpm != null) parts.push(p.cadenceSpm + ' spm');
   if (p.power != null) parts.push(p.power + ' W');
   return parts.join(' · ');
+}
+
+// Percentile linéaire sur un tableau trié croissant (méthode standard, interpolation entre les
+// deux valeurs encadrantes) — utilisé pour une échelle robuste (voir renderAllureTab).
+function percentileOf(sortedVals, p) {
+  if (!sortedVals.length) return null;
+  const idx = (sortedVals.length - 1) * p;
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo === hi) return sortedVals[lo];
+  return sortedVals[lo] + (sortedVals[hi] - sortedVals[lo]) * (idx - lo);
 }
 
 // Câble le survol (souris + tactile) d'un graphique produit par elevChartSvg. `onMove(point)` est

@@ -251,10 +251,23 @@ tr.session-row:hover{background:var(--bg);}
 .plan-actual-card .pa-delta.neg{color:var(--danger);}
 
 /* Coach ELEV — retour structuré en 4 cartes (jamais de texte brut avec balises visibles) */
-.coach-cards-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px;}
+/* Conclusion centrale (RESUME), au-dessus des 4 cartes — même traitement visuel que l'Insight ELEV
+   pour rester dans la même famille (bloc distinctif, pas juste un titre). */
+.coach-resume-eyebrow{display:flex;align-items:center;gap:6px;margin:0 0 8px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-light);}
+.coach-resume-eyebrow img{width:13px;height:13px;filter:invert(78%) sepia(20%) saturate(500%) hue-rotate(50deg);}
+.coach-resume-text{margin:0 0 16px;font-family:var(--font-display);font-size:1.1rem;font-weight:700;line-height:1.4;color:var(--text);}
+
+/* 4 cartes courtes : sur desktop, 2 colonnes par défaut (plutôt que 4 étroites) — repasse à 4
+   uniquement si l'espace est vraiment large ; 1 colonne sur mobile. */
+.coach-cards-grid{display:grid;grid-template-columns:1fr;gap:12px;}
+@media (min-width:640px){ .coach-cards-grid{grid-template-columns:1fr 1fr;} }
+@media (min-width:1200px){ .coach-cards-grid{grid-template-columns:repeat(4,1fr);} }
 .coach-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;background:var(--panel-raised,var(--panel));}
 .coach-card h4{margin:0 0 8px;font-family:var(--font-display);font-size:.86rem;font-weight:700;}
-.coach-card p{margin:0;font-size:.86rem;line-height:1.55;color:var(--muted);}
+.coach-card p{margin:0 0 8px;font-size:.86rem;line-height:1.5;color:var(--text);font-weight:600;}
+.coach-card p:last-child{margin-bottom:0;}
+.coach-card ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:5px;}
+.coach-card li{font-size:.82rem;line-height:1.45;color:var(--muted);}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
