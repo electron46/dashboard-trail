@@ -449,8 +449,12 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 .drop-overlay.show{display:flex;}
 
 /* Page Activité (détail) — carte GPS (conteneur Leaflet) */
+/* Boîte de la carte GPS (Leaflet) — la règle générique "svg{width:100%;height:auto}" qui vivait
+   ici a été retirée : elle visait à l'origine le graphique de profil altimétrique (qui utilise
+   maintenant sa propre structure, voir .sync-charts-wrap plus bas), mais s'appliquait aussi au SVG
+   interne de Leaflet, cassant son système de positionnement en pixels et rendant le tracé GPS
+   invisible malgré un rendu correct des tuiles. */
 .altitude-profile-box{border:1px solid var(--border);border-radius:var(--radius-md);}
-.altitude-profile-box svg{width:100%;height:auto;display:block;}
 .resume-group-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px;font-weight:700;}
 .resume-group-title:first-child{margin-top:0;}
 
