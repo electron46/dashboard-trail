@@ -724,21 +724,70 @@ const RPE_ZONES = [
   { key:'z5', label:'Z5', range:'9–10', desc:'Très difficile' },
 ];
 
-// --- Équipements (chaussures) ---
+// --- Équipements (chaussures, montres/GPS, accessoires, autres) ---
+// Même stockage qu'avant (trail:gear, inclus dans buildSyncPayload) — pas de table Supabase dédiée,
+// le lien séance↔équipement est déjà normalisé via `session.gearId` (colonne `gear_id` de la table
+// `activities`). category ajoutée avec défaut 'chaussures' pour rester compatible avec les paires déjà
+// enregistrées avant cette passe (voir CLAUDE.md, refonte Équipements).
 function getGear() { try { return JSON.parse(localStorage.getItem(GEAR_KEY) || '[]'); } catch (e) { return []; } }
 function saveGear(list) { try { localStorage.setItem(GEAR_KEY, JSON.stringify(list)); scheduleSync(); return true; } catch (e) { return false; } }
 function upsertGearItem(item) {
   const list = getGear();
-  if (!item.id) item.id = 'chaussure-' + Date.now();
+  if (!item.id) item.id = 'equip-' + Date.now();
   const i = list.findIndex(g => g.id === item.id);
   if (i >= 0) list[i] = item; else list.push(item);
   saveGear(list);
   return item;
 }
 function deleteGearItem(id) { saveGear(getGear().filter(g => g.id !== id)); }
-// Km parcourus par une paire = km de base saisi manuellement + somme des séances qui lui sont associées.
+// Km parcourus par un équipement = km de base saisi manuellement + somme des séances qui lui sont associées.
 function gearKmFromSessions(gearId) {
   return loadAllSessions().filter(s => s.gearId === gearId).reduce((sum, s) => sum + (s.distanceKm || 0), 0);
+}
+
+// Seuils d'état automatique (chaussures uniquement — kilométrage vs repère configuré), centralisés ici
+// pour n'être calculés qu'à un seul endroit (voir CLAUDE.md — pas de score d'usure inventé ailleurs).
+const EQUIPMENT_STATUS_THRESHOLDS = { warn: 0.75, danger: 0.95 };
+
+// Usage complet d'un équipement : kilométrage (si chaussures), statut (auto pour les chaussures — override
+// manuel prioritaire si renseigné ; manuel uniquement pour les autres catégories), dernière utilisation et
+// nombre de séances associées. Un seul helper réutilisé partout sur la page (voir CLAUDE.md §64).
+function getEquipmentUsage(item) {
+  const sessions = loadAllSessions().filter(s => s.gearId === item.id);
+  const lastSession = sessions.length ? sessions[sessions.length - 1] : null;
+  const isDistanceTracked = (item.category || 'chaussures') === 'chaussures';
+  let km = null, pct = null, autoStatus = null;
+  if (isDistanceTracked) {
+    km = (item.kmInitial || 0) + sessions.reduce((sum, s) => sum + (s.distanceKm || 0), 0);
+    const seuil = item.seuilKm || 700;
+    pct = seuil > 0 ? Math.round((km / seuil) * 100) : null;
+    if (pct != null) autoStatus = pct >= EQUIPMENT_STATUS_THRESHOLDS.danger * 100 ? 'remplacer' : (pct >= EQUIPMENT_STATUS_THRESHOLDS.warn * 100 ? 'surveiller' : 'bon');
+  }
+  const status = !item.actif ? 'archive' : (item.manualStatus || autoStatus || 'bon');
+  return {
+    km, pct, autoStatus, status, isDistanceTracked,
+    sessionsCount: sessions.length,
+    lastUsedDate: lastSession ? lastSession.date : null,
+    lastSession,
+  };
+}
+
+// Appareils FIT récemment détectés (montre/GPS) qui ne sont pas encore enregistrés comme équipement —
+// pour proposer "Ajouter à mes équipements" sans jamais créer automatiquement (confirmation utilisateur
+// obligatoire). Réutilise les `devices` déjà extraits par le parser, aucune nouvelle intégration.
+function getDetectedDevices(n) {
+  const known = new Set(getGear().filter(g => g.category === 'montre').map(g => (g.nom || '').toLowerCase()));
+  const seen = new Set();
+  const out = [];
+  const sessions = loadAllSessions();
+  for (let i = sessions.length - 1; i >= 0 && out.length < (n || 3); i--) {
+    (sessions[i].devices || []).forEach(d => {
+      if (!d.productName || seen.has(d.productName) || known.has(d.productName.toLowerCase())) return;
+      seen.add(d.productName);
+      out.push({ name: d.productName, date: sessions[i].date });
+    });
+  }
+  return out;
 }
 
 /* --------------------------- 4) PLAN CSV --------------------------- */

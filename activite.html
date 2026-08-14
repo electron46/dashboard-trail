@@ -195,7 +195,7 @@ function initActivityPage(s) {
   renderInsight(s, zoneDist, climbs);
 
   const gearSelect = document.getElementById('gearSelect');
-  const gear = getGear();
+  const gear = getGear().filter(g => g.actif !== false || g.id === s.gearId);
   gearSelect.innerHTML = '<option value="">Non renseignée</option>' + gear.map(g => '<option value="'+g.id+'">'+escapeHtml(g.nom)+'</option>').join('');
   gearSelect.value = s.gearId || '';
   gearSelect.addEventListener('change', () => {
