@@ -24,6 +24,7 @@
     <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+    <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
@@ -61,6 +62,7 @@
   <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
   <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
   <a href="objectifs.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+  <a href="plan.html"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
   <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
   <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
   <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
@@ -137,18 +139,23 @@ function renderRaces() {
   }
   box.innerHTML = races.map(r => {
     const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
-    const prep = computePrepStatus(r.date);
     let prepHtml = '';
     if (days >= 0) {
-      if (prep) {
-        const levelBadge = prep.level === 'low' ? '<span class="badge warn-badge">Sous le plan</span>'
-          : (prep.level === 'high' ? '<span class="badge danger-badge">Au-dessus du plan</span>' : '<span class="badge ok-badge">Dans le plan</span>');
-        prepHtml = '<div class="prep">Volume 28 derniers jours vs plan : ' + prep.pct + '% ' + levelBadge +
-          '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pct) + '%"></div></div>' +
-          (prep.pctDplus != null ? '<div style="margin-top:4px;">D+ cumulé vs plan : ' + prep.pctDplus + '%<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,prep.pctDplus) + '%"></div></div></div>' : '') +
-          '</div>';
+      const readiness = computeRaceReadiness(r);
+      if (readiness.overall != null) {
+        const levelBadge = readiness.overall < 60 ? '<span class="badge warn-badge">À renforcer</span>' : '<span class="badge ok-badge">Sur la bonne voie</span>';
+        prepHtml = '<div class="prep readiness">' +
+          '<div>Indice de préparation : <strong>' + readiness.overall + '%</strong> ' + levelBadge + '</div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,readiness.overall) + '%"></div></div>' +
+          '<div class="readiness-subs">' +
+          readiness.subs.map(s => '<div class="readiness-sub" data-tooltip="' + escapeHtml(s.detail) + '"><span>' + s.label + '</span>' +
+            '<div class="bar-track"><div class="bar-fill" style="width:' + (s.score!=null ? Math.min(100,s.score) : 0) + '%"></div></div>' +
+            '<small>' + (s.score!=null ? s.score+'%' : 'n/d') + '</small></div>').join('') +
+          '</div>' +
+          (readiness.weakest ? '<div class="readiness-weak">Point faible actuel : ' + readiness.weakest.label + ' (' + readiness.weakest.score + '%)</div>' : '') +
+        '</div>';
       } else {
-        prepHtml = '<div class="prep" style="opacity:.75;">Importe un plan (page Paramètres) pour suivre l\'état de préparation.</div>';
+        prepHtml = '<div class="prep" style="opacity:.75;">Pas encore assez de séances récentes (12 dernières semaines) pour calculer un indice de préparation.</div>';
       }
     }
     const ratio = ratioDplusKm(r.denivele, r.distanceKm);
@@ -165,6 +172,7 @@ function renderRaces() {
     '</div>';
   }).join('');
   box.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openRaceModal(btn.dataset.edit)));
+  initChartTooltips(box);
 }
 
 function renderTimeline() {

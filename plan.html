@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#151E2B">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/app.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+  </div>
+  <nav class="sidebar-nav">
+    <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+    <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
+    <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+    <a href="plan.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+    <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+    <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
+  </nav>
+</aside>
+<div class="app-main">
+<header class="app-topbar">
+  <h1>Plan d'entraînement</h1>
+  <button id="themeToggle" type="button">☀ Clair</button>
+</header>
+
+<main>
+
+  <section class="card" id="noPlanCard" style="display:none;">
+    <h2>Aucun plan importé</h2>
+    <p class="hint">Importe ton plan d'entraînement (CSV) en page <a href="parametres.html#plan">Paramètres</a> pour voir tes semaines en calendrier ici. En attendant, tu peux quand même voir tes séances réalisées ci-dessous.</p>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;">
+      <div class="row">
+        <button class="btn small" id="prevWeekBtn" type="button">← Semaine précédente</button>
+        <button class="btn small" id="todayWeekBtn" type="button">Aujourd'hui</button>
+        <button class="btn small" id="nextWeekBtn" type="button">Semaine suivante →</button>
+      </div>
+    </div>
+    <h2 id="weekTitle" style="margin-top:12px;"></h2>
+    <div id="weekSummaryBox"></div>
+  </section>
+
+  <section class="card">
+    <div class="plan-grid" id="planGrid"></div>
+  </section>
+
+</main>
+
+<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+</div>
+</div>
+
+<nav class="mobile-nav">
+  <a href="index.html"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
+  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
+  <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
+  <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+  <a href="plan.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
+  <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
+  <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
+</nav>
+
+<script>
+const WEEKDAY_LABELS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+function addDaysIso(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
+function fmtDayShort(iso) { const [,m,d] = iso.split('-'); return d + '/' + m; }
+
+let currentWeekStart = isoWeek(new Date().toISOString().slice(0,10));
+
+function renderWeekSummary(days, plan, sessions) {
+  const weekEnd = addDaysIso(currentWeekStart, 6);
+  const plannedInWeek = plan.filter(p => p.date >= currentWeekStart && p.date <= weekEnd);
+  const doneInWeek = sessions.filter(s => s.date >= currentWeekStart && s.date <= weekEnd);
+  const plannedKm = plannedInWeek.reduce((s,p) => s + (p.distanceKm||0), 0);
+  const doneKm = doneInWeek.reduce((s,x) => s + (x.distanceKm||0), 0);
+  const plannedDplus = plannedInWeek.reduce((s,p) => s + (p.deniveleM||0), 0);
+  const doneDplus = doneInWeek.reduce((s,x) => s + (x.ascent||0), 0);
+  const box = document.getElementById('weekSummaryBox');
+  if (!plannedInWeek.length && !doneInWeek.length) { box.innerHTML = '<p class="hint">Aucune séance prévue ni réalisée cette semaine.</p>'; return; }
+  const pctKm = plannedKm > 0 ? Math.round((doneKm/plannedKm)*100) : null;
+  const pctDplus = plannedDplus > 0 ? Math.round((doneDplus/plannedDplus)*100) : null;
+  const rows = [
+    ['Distance', doneKm.toFixed(1)+' km', plannedKm > 0 ? plannedKm.toFixed(1)+' km' : 'Non planifié', pctKm],
+    ['D+', Math.round(doneDplus)+' m', plannedDplus > 0 ? Math.round(plannedDplus)+' m' : 'Non planifié', pctDplus],
+  ];
+  box.innerHTML = '<div class="metrics-grid">' + rows.map(([lbl, done, planned, pct]) =>
+    '<div class="metric"><div class="lbl">' + lbl + ' — réalisé / prévu</div><div class="val">' + done + ' / ' + planned +
+    (pct != null ? ' <small class="hint">(' + pct + '%)</small>' : '') + '</div></div>'
+  ).join('') + '</div>';
+}
+
+function planSessionCard(p) {
+  const dplusDmoins = (p.deniveleM ? p.deniveleM+' m D+' : '') + (p.descenteM ? ' / '+p.descenteM+' m D-' : '');
+  return '<div class="plan-session planned">' +
+    '<span class="type">' + escapeHtml(p.type || 'Séance') + '</span>' +
+    (p.distanceKm ? p.distanceKm+' km' : '') + (dplusDmoins ? ' — '+dplusDmoins : '') +
+    (p.fcCorpsSeance ? '<div class="hint">Zone FC : '+escapeHtml(p.fcCorpsSeance)+'</div>' : (p.intensite ? '<div class="hint">Intensité : '+escapeHtml(p.intensite)+'</div>' : '')) +
+    (p.dureeDetail ? '<div class="hint">'+escapeHtml(p.dureeDetail)+'</div>' : '') +
+    (p.notes ? '<div class="hint">Objectif : '+escapeHtml(p.notes)+'</div>' : '') +
+  '</div>';
+}
+function doneSessionCard(s, planned) {
+  let diffHtml = '';
+  if (planned && planned.distanceKm) {
+    const diffPct = Math.round(((s.distanceKm||0) - planned.distanceKm) / planned.distanceKm * 100);
+    if (isFinite(diffPct)) diffHtml = '<div class="plan-compare-diff">' + (diffPct >= 0 ? '+' : '') + diffPct + '% de volume vs prévu</div>';
+  }
+  return '<div class="plan-session done">' +
+    '<span class="type">' + escapeHtml(s.sport || 'Séance réalisée') + '</span>' +
+    fmtNum(s.distanceKm,' km',1) + (s.ascent ? ' — '+Math.round(s.ascent)+' m D+' : '') +
+    '<div class="hint">' + fmtDuration(s.durationS) + (s.avgPaceSecPerKm ? ' — '+fmtPace(s.avgPaceSecPerKm) : '') + (s.avgHr ? ' — '+s.avgHr+' bpm' : '') + '</div>' +
+    diffHtml +
+  '</div>';
+}
+
+function renderWeek() {
+  const plan = getPlan() || [];
+  const sessions = loadAllSessions();
+  document.getElementById('noPlanCard').style.display = plan.length ? 'none' : 'block';
+
+  const weekEnd = addDaysIso(currentWeekStart, 6);
+  const todayISO = new Date().toISOString().slice(0,10);
+  const firstItem = plan.find(p => p.date >= currentWeekStart && p.date <= weekEnd);
+  const weekLabel = 'Semaine du ' + fmtDayShort(currentWeekStart) + ' au ' + fmtDayShort(weekEnd) +
+    (firstItem && firstItem.semaine ? ' — Semaine ' + firstItem.semaine : '') +
+    (firstItem && firstItem.bloc ? ' — ' + escapeHtml(firstItem.bloc) : '');
+  document.getElementById('weekTitle').textContent = weekLabel;
+
+  const days = [];
+  for (let i = 0; i < 7; i++) days.push(addDaysIso(currentWeekStart, i));
+  renderWeekSummary(days, plan, sessions);
+
+  document.getElementById('planGrid').innerHTML = days.map((date, i) => {
+    const plannedItems = plan.filter(p => p.date === date);
+    const doneItems = sessions.filter(s => s.date === date);
+    const isToday = date === todayISO;
+    let body = '';
+    if (!plannedItems.length && !doneItems.length) {
+      body = '<div class="hint" style="opacity:.6;">Repos / rien de prévu</div>';
+    } else {
+      plannedItems.forEach(p => { body += planSessionCard(p); });
+      doneItems.forEach(s => { body += doneSessionCard(s, plannedItems[0]); });
+    }
+    return '<div class="plan-day' + (isToday ? ' today' : '') + '">' +
+      '<div class="day-label">' + WEEKDAY_LABELS[i] + ' ' + fmtDayShort(date) + (isToday ? ' <span class="hint">(aujourd\'hui)</span>' : '') + '</div>' +
+      body +
+    '</div>';
+  }).join('');
+}
+
+document.getElementById('prevWeekBtn').addEventListener('click', () => { currentWeekStart = addDaysIso(currentWeekStart, -7); renderWeek(); });
+document.getElementById('nextWeekBtn').addEventListener('click', () => { currentWeekStart = addDaysIso(currentWeekStart, 7); renderWeek(); });
+document.getElementById('todayWeekBtn').addEventListener('click', () => { currentWeekStart = isoWeek(new Date().toISOString().slice(0,10)); renderWeek(); });
+
+renderWeek();
+</script>
+</body>
+</html>

@@ -53,6 +53,11 @@ Fonctionnalités ajoutées après le MVP initial (à la demande de l'utilisateur
 - Site installable comme application (PWA) sur l'écran d'accueil du téléphone
 - Mode sombre par défaut / clair en option (voir rebranding, section 14)
 - Site à plusieurs pages plutôt qu'un fichier unique (voir section 6)
+- Page Analyse : comparaison de séances de même distance dans le temps (progression), graphique allure/FC (efficacité)
+- Détail de séance enrichi : carte du parcours GPS (Leaflet + fond OpenStreetMap) et graphiques allure/FC/altitude synchronisés (un curseur commun aux trois courbes + repère sur la carte)
+- Profil de performance (page Profil) : radar à 6 axes (endurance, montée, descente, vitesse, résistance, régularité) calculé depuis l'historique des séances, sur des repères fixes documentés
+- Indice de préparation détaillé par course (page Objectifs) : décomposé en 5 sous-scores (volume, dénivelé, sorties longues, intensité, régularité) avec point faible identifié automatiquement, remplace l'ancien pourcentage unique
+- Page Plan en calendrier hebdomadaire : séances planifiées et réalisées côte à côte, jour par jour, avec écart de volume
 
 Version souhaitée :
 - [x] MVP simple mais utilisable
@@ -98,16 +103,19 @@ Claude doit proposer une solution simple et adaptée au besoin, en expliquant br
 
 Dossiers ou fichiers importants :
 - `index.html` — page d'accueil (échéances de la saison, état de préparation vs plan, zones FC Karvonen, estimation IA du temps de course)
-- `historique.html` — import des séances .fit, historique, graphiques (dont allure par type de terrain), détail de séance + retour IA structuré
-- `profil.html` — profil traileur (infos perso, santé, records, objectifs de course)
+- `historique.html` — import des séances .fit, historique, détail de séance (carte GPS, graphiques allure/FC/altitude synchronisés, comparaison au plan, retour IA structuré)
+- `analyse.html` — comparaison de séances de même distance dans le temps, graphique d'efficacité allure/FC
+- `objectifs.html` — gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (5 sous-scores), estimation IA du temps de course
+- `plan.html` — plan d'entraînement en calendrier hebdomadaire (séances planifiées vs réalisées, jour par jour)
+- `profil.html` — profil traileur (infos perso, santé, records, objectifs de course, radar de performance à 6 axes)
 - `equipements.html` — suivi d'usure des chaussures
 - `parametres.html` — plan CSV (import + vue détaillée dépliable par semaine), clé API Claude, export/import des données, synchro Supabase, thème, réinitialisation
 - `assets/style.css` — styles partagés par toutes les pages (identité ELEV : palette navy/cloud/vert, Raleway/Inter, sidebar de navigation, thème sombre par défaut)
-- `assets/app.js` — logique partagée : parsing des fichiers .fit, parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation
+- `assets/app.js` — logique partagée : parsing des fichiers .fit (dont position GPS), parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation / indice de préparation / profil de performance
 - `assets/icon.svg`, `manifest.json` — icône et manifeste PWA (site installable sur écran d'accueil mobile)
 - `assets/logo-full.png` — logo officiel ELEV (affiché dans la sidebar)
 - `dashboard-trail.html` — ancienne page unique, conservée uniquement comme redirection vers `index.html` (compatibilité d'anciens liens)
-- Toutes les données (séances, plan, courses, profil, équipements, clé API) sont stockées dans le navigateur (`localStorage`), rien n'est envoyé sur un serveur sauf appel volontaire à l'API Claude ou synchro Supabase explicitement configurée
+- Toutes les données (séances, plan, courses, profil, équipements, clé API) sont stockées dans le navigateur (`localStorage`), rien n'est envoyé sur un serveur sauf appel volontaire à l'API Claude, synchro Supabase explicitement configurée, ou chargement des fonds de carte OpenStreetMap (carte GPS d'une séance)
 
 Fichiers à ne pas modifier sans me prévenir :
 - Aucun pour l'instant.
@@ -148,8 +156,11 @@ Donner une vue d'ensemble claire de la saison de courses et de l'état de prépa
 
 Pages ou écrans nécessaires :
 - Accueil : vue d'ensemble de la saison (liste des courses avec statut, échéance, état de préparation vs plan en km et D+), gestion des courses, zones FC Karvonen, estimation IA du temps de course
-- Historique : import des séances, historique filtrable, graphiques de progression (dont allure par type de terrain), détail de séance (comparaison au plan + retour IA structuré + contexte du jour)
-- Profil : infos perso, points de vigilance santé, records personnels, objectifs de course
+- Activités (historique) : import des séances, historique filtrable, graphiques de progression (dont allure par type de terrain), détail de séance (carte GPS, courbes allure/FC/altitude synchronisées, comparaison au plan, retour IA structuré, contexte du jour)
+- Analyse : comparaison de séances de même distance dans le temps, graphique d'efficacité allure vs FC
+- Objectifs : gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (volume, dénivelé, sorties longues, intensité, régularité), estimation IA du temps de course
+- Plan : calendrier hebdomadaire du plan d'entraînement, séances planifiées vs réalisées jour par jour
+- Profil : infos perso, points de vigilance santé, records personnels, objectifs de course, radar de performance à 6 axes
 - Équipements : suivi d'usure des chaussures
 - Paramètres : plan CSV (import + vue détaillée par semaine), clé API, export/import des données, synchro Supabase, thème
 
@@ -253,6 +264,9 @@ Décisions importantes :
 - Rebranding complet ELEV importé depuis un projet Claude Design System (claude.ai/design) et appliqué à tout le site : palette navy/cloud/vert, typographies Raleway/Inter, logo officiel, sidebar de navigation desktop + barre de navigation mobile (remplace l'ancien menu du haut avec sous-menu "Plus")
 - Thème sombre choisi comme thème par défaut (c'est la surface réelle du produit selon la charte ELEV) ; le thème clair reste disponible via la bascule, utile en plein soleil
 - Site installable comme PWA (icône + manifeste) pour un accès en un tap depuis l'écran d'accueil du téléphone
+- Carte GPS du parcours via Leaflet + fond OpenStreetMap (gratuit, sans clé API) plutôt qu'un tracé SVG sans fond de carte — accepté que la zone géographique de la séance soit transmise aux serveurs OSM à chaque affichage (seule entorse au fonctionnement 100% local du site)
+- Radar de performance et indice de préparation détaillé calculés sur des repères fixes documentés dans le code (ex. 60 km/semaine, 2200 m D+/semaine), pas sur une comparaison à d'autres coureurs ni sur un service externe — à ajuster si les repères se révèlent irréalistes à l'usage
+- Site à 8 pages (Accueil, Activités, Analyse, Objectifs, Plan, Profil, Équipements, Paramètres), toutes reliées par la même sidebar / barre de navigation mobile
 
 Choix refusés :
 - Aucun à ce jour.
