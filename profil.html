@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -25,54 +26,65 @@
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
-  <h1>Profil traileur</h1>
+  <div>
+    <h1>Mon profil</h1>
+    <p class="hint" style="margin-top:2px;">Gérez vos informations personnelles et sportives.</p>
+  </div>
   <button id="themeToggle" type="button">☀ Clair</button>
 </header>
 
 <main>
 
-  <section class="card">
-    <h2>Informations générales</h2>
+  <!-- ============ IDENTITÉ + À PROPOS ============ -->
+  <div class="profile-hero">
+    <section class="card" id="identityCard"></section>
+    <section class="card" id="aboutCard"></section>
+  </div>
+
+  <!-- ============ INFOS PERSO / FC / RPE ============ -->
+  <div class="profile-card-grid" style="margin-top:14px;">
+    <section class="card" id="persoCard"></section>
+    <section class="card" id="fcCard"></section>
+    <section class="card" id="rpeCard"></section>
+  </div>
+
+  <!-- ============ PRÉFÉRENCES / SEUILS / CONNECTIVITÉ ============ -->
+  <div class="profile-card-grid" style="margin-top:14px;">
+    <section class="card" id="prefsCard"></section>
+    <section class="card" id="seuilsCard"></section>
+    <section class="card" id="connectCard"></section>
+  </div>
+
+  <!-- ============ ZONE PERSONNALISÉE (P2, non construite) ============ -->
+  <section class="card" style="margin-top:14px;">
+    <h2>Zone d'entraînement personnalisée <small style="font-weight:400;color:var(--muted);">(bientôt disponible)</small></h2>
+    <p class="hint">Définissez vos propres zones d'entraînement basées sur la fréquence cardiaque ou l'allure.</p>
+    <button class="btn small" type="button" disabled title="Fonctionnalité à venir">+ Créer une zone personnalisée</button>
+  </section>
+
+  <!-- ============ POINTS DE VIGILANCE SANTÉ ============ -->
+  <section class="card" style="margin-top:14px;" id="healthCard"></section>
+
+  <!-- ============ SECTIONS AVANCÉES (accordéon) — profil traileur détaillé, réutilisé par le résumé IA ============ -->
+  <div id="advancedGroups" style="margin-top:14px;"></div>
+  <section class="card" style="margin-top:0;">
     <div class="row">
-      <label class="field">Nom / pseudo
-        <input type="text" id="profNom" placeholder="ex. Nico">
-      </label>
-      <label class="field">Date de naissance
-        <input type="date" id="profNaissance">
-      </label>
+      <button class="btn primary" id="saveAdvancedBtn" type="button">Enregistrer ces informations</button>
     </div>
+    <div id="advancedMsg"></div>
   </section>
 
-  <section class="card">
-    <h2>Objectifs de course <small>principaux, secondaires ou envisagés</small></h2>
-    <div id="objectifsRacesBox"></div>
-    <div class="row" style="margin-top:10px;">
-      <button class="btn small" id="addObjectifBtn" type="button">+ Ajouter un objectif</button>
-    </div>
-    <p class="hint">Pour la technicité du terrain, la chaleur attendue et l'estimation IA du temps de course, va sur la fiche complète en page <a href="index.html">Accueil</a>.</p>
-    <label class="field" style="margin-top:10px;">Notes libres sur d'autres pistes non encore formalisées
-      <textarea id="profObjectifsAutres" placeholder="ex. envie d'un ultra en 2027, encore flou"></textarea>
-    </label>
-  </section>
-
-  <section class="card">
-    <h2>Points de vigilance santé <small>utilisés automatiquement par le retour IA en page Historique</small></h2>
-    <p class="hint">Ex. blessures passées, fragilités à surveiller (entorses, tendinites...), consignes de renforcement/proprioception. Laisse vide si rien à signaler.</p>
-    <label class="field">
-      <textarea id="profSante" placeholder="ex. Entorse de cheville fin 2025 : travail systematique de proprioception et renforcement excentrique des mollets a surveiller, en particulier sur les sorties techniques ou en descente."></textarea>
-    </label>
-  </section>
-
-  <div id="fieldGroups"></div>
-
-  <section class="card">
+  <!-- ============ RECORDS PERSONNELS ============ -->
+  <section class="card" style="margin-top:14px;">
     <h2>Records personnels</h2>
     <table class="records-table" id="recordsTable">
       <thead><tr><th>Distance / type</th><th>Temps</th><th>Course</th><th>Date</th><th></th></tr></thead>
@@ -80,26 +92,23 @@
     </table>
     <div class="row" style="margin-top:10px;">
       <button class="btn small" id="addRecordBtn" type="button">+ Ajouter un record</button>
+      <button class="btn small primary" id="saveRecordsBtn" type="button">Enregistrer les records</button>
     </div>
+    <div id="recordsMsg"></div>
   </section>
 
-  <section class="card">
+  <!-- ============ PROFIL DE PERFORMANCE (radar, inchangé) ============ -->
+  <section class="card" style="margin-top:14px;">
     <h2>Profil de performance <small>calculé à partir de tes séances importées</small></h2>
     <div id="radarBox"></div>
     <p class="hint">Chaque axe est calculé à partir de repères fixes documentés (volume, dénivelé, allure sur terrain roulant, dérive cardiaque, régularité) — pas une comparaison à d'autres coureurs, juste une lecture de ton propre historique. Réimporte tes séances récentes en page <a href="historique.html">Activités</a> si un axe indique "n/d" (donnée insuffisante).</p>
     <div id="radarNotes" class="hint"></div>
   </section>
 
-  <section class="card">
-    <div class="row">
-      <button class="btn primary" id="saveProfileBtn" type="button">Enregistrer le profil</button>
-    </div>
-    <div id="profileMsg"></div>
-  </section>
-
-  <section class="card">
+  <!-- ============ RÉSUMÉ POUR L'IA (inchangé) ============ -->
+  <section class="card" style="margin-top:14px;">
     <h2>Résumé pour l'IA <small>à coller dans une conversation Claude pour construire un plan d'entraînement complet</small></h2>
-    <p class="hint">Génère un texte structuré à partir de tout ce que tu as renseigné ci-dessus (les champs laissés vides apparaissent comme "non renseigné"). Enregistre d'abord le profil, puis génère et copie le résumé.</p>
+    <p class="hint">Génère un texte structuré à partir de tout ce que tu as renseigné ci-dessus (les champs laissés vides apparaissent comme "non renseigné").</p>
     <div class="row">
       <button class="btn" id="genSummaryBtn" type="button">Générer le résumé</button>
       <button class="btn" id="copySummaryBtn" type="button">Copier le texte</button>
@@ -125,121 +134,246 @@
   <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
 </nav>
 
-<div class="modal-backdrop" id="objModalBackdrop">
-  <div class="modal">
-    <h3 id="objModalTitle">Ajouter un objectif</h3>
-    <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
-      <label class="field">Nom de la course
-        <input type="text" id="objName" placeholder="ex. Ti Bénare">
-      </label>
-      <label class="field">Date
-        <input type="date" id="objDate">
-      </label>
-      <label class="field">Distance (km)
-        <input type="number" id="objDistance" min="0" step="0.1">
-      </label>
-      <label class="field">Dénivelé positif (m)
-        <input type="number" id="objDenivele" min="0" step="10">
-      </label>
-      <label class="field">Statut
-        <select id="objStatut">
-          <option value="principal">Objectif principal</option>
-          <option value="secondaire">Objectif secondaire</option>
-          <option value="envisage">Objectif envisagé</option>
-        </select>
-      </label>
-      <label class="field">Temps visé (optionnel)
-        <input type="text" id="objTempsVise" placeholder="ex. 12h00">
-      </label>
-    </div>
-    <div class="row" style="margin-top:14px;justify-content:space-between;">
-      <button class="btn danger small" id="deleteObjBtn" type="button" style="display:none;">Supprimer</button>
-      <div class="row">
-        <button class="btn" id="cancelObjBtn" type="button">Annuler</button>
-        <button class="btn primary" id="saveObjBtn" type="button">Enregistrer</button>
-      </div>
-    </div>
-    <div id="objModalMsg"></div>
-  </div>
-</div>
-
 <script>
 let records = [];
 function statutLabelText(s) { return s === 'principal' ? 'objectif principal' : (s === 'envisage' ? 'objectif envisagé' : 'objectif secondaire'); }
-
-/* --------------------------- OBJECTIFS DE COURSE (ajout/édition/suppression + temps visé) --------------------------- */
-function renderObjectifsRaces() {
-  const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
-  const box = document.getElementById('objectifsRacesBox');
-  if (!races.length) { box.innerHTML = '<div class="empty">Aucun objectif enregistré pour l\'instant.</div>'; return; }
-  box.innerHTML = races.map(r => (
-    '<div class="row" style="align-items:center;">' +
-      '<div style="flex:1 1 240px;"><strong>' + escapeHtml(r.name) + '</strong> <span class="hint">(' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+, ' + statutLabelText(r.statut) + ')</span></div>' +
-      '<label class="field" style="flex:1 1 160px;">Temps visé<input type="text" data-race="' + r.id + '" value="' + escapeHtml(r.tempsVise || '') + '" placeholder="ex. 12h00"></label>' +
-      '<button class="btn small" data-edit-obj="' + r.id + '" type="button">Modifier</button>' +
-    '</div>'
-  )).join('');
-  box.querySelectorAll('[data-edit-obj]').forEach(btn => btn.addEventListener('click', () => openObjModal(btn.dataset.editObj)));
+function computeAge(naissanceISO) {
+  if (!naissanceISO) return null;
+  const b = new Date(naissanceISO), t = new Date();
+  let age = t.getFullYear() - b.getFullYear();
+  const m = t.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && t.getDate() < b.getDate())) age--;
+  return age >= 0 ? age : null;
 }
-function saveObjectifsRaces() {
-  document.querySelectorAll('#objectifsRacesBox [data-race]').forEach(inp => {
-    const race = getRaces().find(r => r.id === inp.dataset.race);
-    if (race) upsertRace(Object.assign({}, race, { tempsVise: inp.value.trim() }));
+
+/* --------------------------- IDENTITÉ --------------------------- */
+let identityEditing = false;
+function renderIdentity() {
+  const card = document.getElementById('identityCard');
+  const p = getProfile();
+  const prenom = (p.nom || '').trim().split(/\s+/)[0];
+  const initial = prenom ? prenom[0].toUpperCase() : '?';
+  const memberSince = p.createdAt ? fmtDate(p.createdAt.slice(0,10)) : null;
+
+  if (!identityEditing) {
+    card.innerHTML =
+      '<div class="row" style="justify-content:space-between;align-items:flex-start;">' +
+        '<div class="profile-identity">' +
+          '<div class="avatar">' + escapeHtml(initial) + '</div>' +
+          '<div>' +
+            '<h2>' + escapeHtml(p.nom || 'Ton profil') + '</h2>' +
+            '<div class="meta-row">' +
+              (p.geoBase ? '<span>📍 ' + escapeHtml(p.geoBase) + '</span>' : '') +
+              (memberSince ? '<span>Membre depuis ' + memberSince + '</span>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<button class="btn small" id="identityEditBtn" type="button">Modifier</button>' +
+      '</div>';
+    document.getElementById('identityEditBtn').addEventListener('click', () => { identityEditing = true; renderIdentity(); });
+  } else {
+    card.innerHTML =
+      '<h2 style="margin-bottom:10px;">Identité</h2>' +
+      '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+        '<label class="field">Prénom / pseudo<input type="text" id="idNomInput" value="' + escapeHtml(p.nom || '') + '" placeholder="ex. Nico"></label>' +
+        '<label class="field">Localisation<input type="text" id="idGeoInput" value="' + escapeHtml(p.geoBase || '') + '" placeholder="ex. Île de La Réunion, France"></label>' +
+      '</div>' +
+      '<div class="row" style="margin-top:12px;">' +
+        '<button class="btn primary small" id="idSaveBtn" type="button">Enregistrer</button>' +
+        '<button class="btn small" id="idCancelBtn" type="button">Annuler</button>' +
+      '</div>';
+    document.getElementById('idSaveBtn').addEventListener('click', () => {
+      const patch = { nom: document.getElementById('idNomInput').value.trim(), geoBase: document.getElementById('idGeoInput').value.trim() };
+      if (!getProfile().createdAt) patch.createdAt = new Date().toISOString();
+      patchProfile(patch);
+      identityEditing = false;
+      renderIdentity();
+      renderSidebarUser();
+    });
+    document.getElementById('idCancelBtn').addEventListener('click', () => { identityEditing = false; renderIdentity(); });
+  }
+}
+
+/* --------------------------- À PROPOS --------------------------- */
+let aboutEditing = false;
+function renderAbout() {
+  const card = document.getElementById('aboutCard');
+  const p = getProfile();
+  if (!aboutEditing) {
+    card.innerHTML =
+      '<div class="row" style="justify-content:space-between;align-items:flex-start;">' +
+        '<h2 style="margin:0;">À propos</h2>' +
+        '<button class="btn small" id="aboutEditBtn" type="button">Modifier</button>' +
+      '</div>' +
+      '<p class="hint" style="margin-top:10px;white-space:pre-line;">' + (p.apropos ? escapeHtml(p.apropos) : 'Non renseigné.') + '</p>';
+    document.getElementById('aboutEditBtn').addEventListener('click', () => { aboutEditing = true; renderAbout(); });
+  } else {
+    card.innerHTML =
+      '<h2 style="margin-bottom:10px;">À propos</h2>' +
+      '<label class="field"><textarea id="aboutInput" rows="4" placeholder="ex. Passionné par le trail et la montagne. Toujours à la recherche de nouveaux défis.">' + escapeHtml(p.apropos || '') + '</textarea></label>' +
+      '<div class="row" style="margin-top:10px;">' +
+        '<button class="btn primary small" id="aboutSaveBtn" type="button">Enregistrer</button>' +
+        '<button class="btn small" id="aboutCancelBtn" type="button">Annuler</button>' +
+      '</div>';
+    document.getElementById('aboutSaveBtn').addEventListener('click', () => {
+      patchProfile({ apropos: document.getElementById('aboutInput').value.trim() });
+      aboutEditing = false;
+      renderAbout();
+    });
+    document.getElementById('aboutCancelBtn').addEventListener('click', () => { aboutEditing = false; renderAbout(); });
+  }
+}
+
+/* --------------------------- INFORMATIONS PERSONNELLES (naissance/âge/poids) --------------------------- */
+function renderPerso() {
+  const card = document.getElementById('persoCard');
+  const p = getProfile();
+  const age = computeAge(p.naissance);
+  card.innerHTML =
+    '<h2>Informations personnelles</h2>' +
+    '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+      '<label class="field">Date de naissance<input type="date" id="persoNaissance" value="' + escapeHtml(p.naissance || '') + '"></label>' +
+      '<label class="field">Poids (kg)<input type="number" id="persoPoids" min="0" step="0.5" value="' + escapeHtml(p.poids || '') + '"></label>' +
+    '</div>' +
+    '<div class="profile-field-row"><span class="k">Âge</span><span class="v">' + (age != null ? age + ' ans' : 'Non renseigné') + '</span></div>' +
+    '<div class="row" style="margin-top:10px;">' +
+      '<button class="btn small primary" id="persoSaveBtn" type="button">Enregistrer</button>' +
+      '<span id="persoMsg"></span>' +
+    '</div>';
+  document.getElementById('persoSaveBtn').addEventListener('click', () => {
+    patchProfile({ naissance: document.getElementById('persoNaissance').value, poids: document.getElementById('persoPoids').value.trim() });
+    renderPerso();
+    showMsg('persoMsg', 'Enregistré.', 'ok');
   });
 }
 
-let editingObjId = null;
-function openObjModal(id) {
-  editingObjId = id || null;
-  const race = id ? getRaces().find(r => r.id === id) : null;
-  document.getElementById('objModalTitle').textContent = race ? 'Modifier l\'objectif' : 'Ajouter un objectif';
-  document.getElementById('objName').value = race ? race.name : '';
-  document.getElementById('objDate').value = race ? race.date : '';
-  document.getElementById('objDistance').value = race ? race.distanceKm : '';
-  document.getElementById('objDenivele').value = race ? race.denivele : '';
-  document.getElementById('objStatut').value = race ? race.statut : 'envisage';
-  document.getElementById('objTempsVise').value = race ? (race.tempsVise || '') : '';
-  document.getElementById('deleteObjBtn').style.display = race ? 'inline-block' : 'none';
-  document.getElementById('objModalMsg').innerHTML = '';
-  document.getElementById('objModalBackdrop').classList.add('open');
+/* --------------------------- FRÉQUENCE CARDIAQUE --------------------------- */
+function renderFc() {
+  const card = document.getElementById('fcCard');
+  const p = getProfile();
+  const zones = karvonenZones(parseFloat(p.fcMax), parseFloat(p.fcRepos));
+  card.innerHTML =
+    '<h2>Fréquence cardiaque</h2>' +
+    '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+      '<label class="field">FC max (bpm)<input type="number" id="fcMaxInput" min="0" value="' + escapeHtml(p.fcMax || '') + '"></label>' +
+      '<label class="field">FC repos (bpm)<input type="number" id="fcReposInput" min="0" value="' + escapeHtml(p.fcRepos || '') + '"></label>' +
+    '</div>' +
+    '<div class="row" style="margin-top:10px;">' +
+      '<button class="btn small primary" id="fcSaveBtn" type="button">Enregistrer</button>' +
+      '<span id="fcMsg"></span>' +
+    '</div>' +
+    (zones ?
+      '<div class="profile-zone-list">' +
+        '<p class="hint" style="margin:10px 0 2px;">Méthode : Karvonen (% de réserve cardiaque) — repère indicatif, pas une prescription médicale.</p>' +
+        zones.map(z => '<div class="profile-zone-row"><span class="z-label"><span class="zone-dot ' + z.key + '"></span>' + escapeHtml(z.label) + '</span><span class="z-range">' + z.low + '–' + z.high + ' bpm</span><span class="z-desc"></span></div>').join('') +
+      '</div>'
+      : '<p class="hint" style="margin-top:10px;">Renseigne FC max et FC repos pour calculer tes zones.</p>');
+  document.getElementById('fcSaveBtn').addEventListener('click', () => {
+    patchProfile({ fcMax: document.getElementById('fcMaxInput').value.trim(), fcRepos: document.getElementById('fcReposInput').value.trim() });
+    renderFc();
+    showMsg('fcMsg', 'Enregistré.', 'ok');
+  });
 }
-function closeObjModal() { document.getElementById('objModalBackdrop').classList.remove('open'); editingObjId = null; }
-document.getElementById('addObjectifBtn').addEventListener('click', () => openObjModal(null));
-document.getElementById('cancelObjBtn').addEventListener('click', closeObjModal);
-document.getElementById('objModalBackdrop').addEventListener('click', e => { if (e.target.id === 'objModalBackdrop') closeObjModal(); });
-document.getElementById('saveObjBtn').addEventListener('click', () => {
-  const name = document.getElementById('objName').value.trim();
-  const date = document.getElementById('objDate').value;
-  const distanceKm = parseFloat(document.getElementById('objDistance').value);
-  const denivele = parseFloat(document.getElementById('objDenivele').value);
-  const statut = document.getElementById('objStatut').value;
-  const tempsVise = document.getElementById('objTempsVise').value.trim();
-  if (!name || !date || isNaN(distanceKm) || isNaN(denivele)) {
-    showMsg('objModalMsg', 'Merci de remplir tous les champs (nom, date, distance, dénivelé).', 'err');
-    return;
-  }
-  // Fusionne avec la course existante pour ne pas perdre la technicité/chaleur/estimation IA
-  // renseignées depuis la fiche complète en page Accueil.
-  const existingObj = editingObjId ? getRaces().find(r => r.id === editingObjId) : null;
-  upsertRace(Object.assign({}, existingObj, { id: editingObjId, name, date, distanceKm, denivele, statut, tempsVise }));
-  closeObjModal();
-  renderObjectifsRaces();
-});
-document.getElementById('deleteObjBtn').addEventListener('click', () => {
-  if (!editingObjId) return;
-  if (!confirm('Supprimer cet objectif ?')) return;
-  deleteRace(editingObjId);
-  closeObjModal();
-  renderObjectifsRaces();
-});
 
-/* --------------------------- CHAMPS GÉNÉRIQUES (historique, physio, dispo...) --------------------------- */
-function renderFieldGroups(profile) {
-  const container = document.getElementById('fieldGroups');
-  container.innerHTML = PROFILE_FIELD_GROUPS.map(group => (
-    '<section class="card">' +
-    '<h2>' + escapeHtml(group.title) + '</h2>' +
-    '<div class="row">' +
+/* --------------------------- ZONES D'INTENSITÉ (RPE) --------------------------- */
+function renderRpe() {
+  const card = document.getElementById('rpeCard');
+  card.innerHTML =
+    '<h2>Zones d\'intensité (effort perçu) <small style="font-weight:400;">RPE</small></h2>' +
+    '<p class="hint">Repère de perception d\'effort (échelle de Borg 1-10) — distinct de la fréquence cardiaque, qui est une mesure physiologique. Aucune séance n\'est notée en RPE dans ELEV aujourd\'hui : c\'est une échelle de lecture, pas un calcul.</p>' +
+    '<div class="profile-zone-list">' +
+      RPE_ZONES.map(z => '<div class="profile-zone-row"><span class="z-label"><span class="zone-dot ' + z.key + '"></span>' + escapeHtml(z.label) + '</span><span class="z-range">RPE ' + z.range + '</span><span class="z-desc">' + escapeHtml(z.desc) + '</span></div>').join('') +
+    '</div>';
+}
+
+/* --------------------------- PRÉFÉRENCES --------------------------- */
+function renderPrefs() {
+  const card = document.getElementById('prefsCard');
+  const race = getMainObjectiveRace();
+  let tz = '';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+  card.innerHTML =
+    '<h2>Préférences</h2>' +
+    '<div class="profile-field-view">' +
+      '<div class="profile-field-row"><span class="k">Objectif par défaut</span><span class="v">' +
+        (race ? escapeHtml(race.name) + ' <a class="link-arrow" href="objectifs.html">→</a>' : '<a href="objectifs.html">Ajouter un objectif →</a>') +
+      '</span></div>' +
+      '<div class="profile-field-row"><span class="k">Premier jour de la semaine</span><span class="v">Lundi<span class="profile-source-tag" title="Fixe pour l\'instant, utilisé par Accueil/Analyse/Plan">fixe</span></span></div>' +
+      '<div class="profile-field-row"><span class="k">Fuseau horaire</span><span class="v">' + (tz ? escapeHtml(tz) : 'Non détecté') + '<span class="profile-source-tag">détecté</span></span></div>' +
+    '</div>';
+}
+
+/* --------------------------- SEUILS ET PARAMÈTRES SPORT --------------------------- */
+function renderSeuils() {
+  const card = document.getElementById('seuilsCard');
+  const p = getProfile();
+  card.innerHTML =
+    '<h2>Seuils et paramètres sport</h2>' +
+    '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+      '<label class="field">Allure seuil / spécifique trail (min/km)<input type="text" id="seuilAllure" value="' + escapeHtml(p.allureSeuil || '') + '" placeholder="ex. 5:10"></label>' +
+      '<label class="field">VMA (km/h)<input type="number" id="seuilVma" min="0" step="0.1" value="' + escapeHtml(p.vma || '') + '"></label>' +
+    '</div>' +
+    '<p class="hint" style="margin-top:8px;">Valeurs renseignées manuellement — ELEV n\'estime pas de puissance seuil, VO2max ni FTP aujourd\'hui.</p>' +
+    '<div class="row" style="margin-top:6px;">' +
+      '<button class="btn small primary" id="seuilSaveBtn" type="button">Enregistrer</button>' +
+      '<span id="seuilMsg"></span>' +
+    '</div>';
+  document.getElementById('seuilSaveBtn').addEventListener('click', () => {
+    patchProfile({ allureSeuil: document.getElementById('seuilAllure').value.trim(), vma: document.getElementById('seuilVma').value.trim() });
+    renderSeuils();
+    showMsg('seuilMsg', 'Enregistré.', 'ok');
+  });
+}
+
+/* --------------------------- CONNECTIVITÉ --------------------------- */
+async function renderConnect() {
+  const card = document.getElementById('connectCard');
+  const device = getLastDetectedDevice();
+  const { url, anonKey } = getSupabaseConfig();
+  let syncLine = 'Non configurée';
+  if (url && anonKey) {
+    syncLine = 'Configurée';
+    try { const user = await supaGetUser(); if (user) syncLine = 'Connectée (' + escapeHtml(user.email || '') + ')'; } catch (e) {}
+  }
+  card.innerHTML =
+    '<h2>Connectivité</h2>' +
+    '<div class="profile-field-view">' +
+      '<div class="profile-field-row"><span class="k">Import de séances</span><span class="v">Fichiers .fit (manuel)</span></div>' +
+      '<div class="profile-field-row"><span class="k">Synchro multi-appareils</span><span class="v">' + syncLine + '</span></div>' +
+      '<div class="profile-field-row"><span class="k">Dernier appareil détecté</span><span class="v">' + (device ? escapeHtml(device.name) : 'Non disponible') + '</span></div>' +
+    '</div>' +
+    '<div class="row" style="margin-top:10px;"><a class="link-arrow" href="parametres.html">Gérer les connexions →</a></div>';
+}
+
+/* --------------------------- SANTÉ --------------------------- */
+function renderHealth() {
+  const card = document.getElementById('healthCard');
+  const p = getProfile();
+  card.innerHTML =
+    '<h2>Points de vigilance santé <small>utilisés automatiquement par le retour IA post-séance</small></h2>' +
+    '<p class="hint">Ex. blessures passées, fragilités à surveiller (entorses, tendinites...), consignes de renforcement/proprioception. Laisse vide si rien à signaler.</p>' +
+    '<label class="field"><textarea id="healthInput" placeholder="ex. Entorse de cheville fin 2025 : travail systématique de proprioception et renforcement excentrique des mollets à surveiller, en particulier sur les sorties techniques ou en descente.">' + escapeHtml(p.sante || '') + '</textarea></label>' +
+    '<div class="row" style="margin-top:8px;">' +
+      '<button class="btn small primary" id="healthSaveBtn" type="button">Enregistrer</button>' +
+      '<span id="healthMsg"></span>' +
+    '</div>';
+  document.getElementById('healthSaveBtn').addEventListener('click', () => {
+    patchProfile({ sante: document.getElementById('healthInput').value.trim() });
+    showMsg('healthMsg', 'Enregistré.', 'ok');
+  });
+}
+
+/* --------------------------- SECTIONS AVANCÉES (accordéon) --------------------------- */
+// Groupes détaillés existants (historique, disponibilités, contraintes, blessures, outils, vie,
+// nutrition) : repliés par défaut pour ne pas allonger la page, mais le contenu et le mode de
+// sauvegarde restent ceux d'origine (alimentent aussi le Résumé pour l'IA plus bas).
+function renderAdvancedGroups(profile) {
+  const container = document.getElementById('advancedGroups');
+  const groups = PROFILE_FIELD_GROUPS.filter(g => g.title !== 'Données physiologiques');
+  container.innerHTML = groups.map((group, gi) => (
+    '<details class="profile-accordion"' + (gi === 0 ? '' : '') + '>' +
+    '<summary>' + escapeHtml(group.title) + '</summary>' +
+    '<div class="accordion-body"><div class="row">' +
     group.fields.map(([key, label, type, placeholder, options]) => {
       const val = escapeHtml(profile[key] || '');
       if (type === 'textarea') {
@@ -253,22 +387,15 @@ function renderFieldGroups(profile) {
       }
       return '<label class="field">' + escapeHtml(label) + '<input type="' + type + '" data-key="' + key + '" value="' + val + '" placeholder="' + escapeHtml(placeholder) + '"></label>';
     }).join('') +
-    '</div>' +
-    (group.title === 'Données physiologiques' ? '<div class="hint" id="karvonenHint"></div>' : '') +
-    '</section>'
-  )).join('');
-  const fcMaxInput = container.querySelector('[data-key="fcMax"]');
-  const fcReposInput = container.querySelector('[data-key="fcRepos"]');
-  function updateKarvonen() {
-    const z = karvonenZ2(parseFloat(fcMaxInput.value), parseFloat(fcReposInput.value));
-    const hint = document.getElementById('karvonenHint');
-    hint.textContent = z ? ('Zone Z2 estimée (Karvonen 60-70 %, indicatif) : ' + z.low + '–' + z.high + ' bpm') : '';
-  }
-  if (fcMaxInput && fcReposInput) { fcMaxInput.addEventListener('input', updateKarvonen); fcReposInput.addEventListener('input', updateKarvonen); updateKarvonen(); }
+    '</div></div></details>'
+  )).join('') +
+  '<details class="profile-accordion"><summary>Autres pistes non formalisées</summary><div class="accordion-body">' +
+    '<label class="field"><textarea id="profObjectifsAutres" placeholder="ex. envie d\'un ultra en 2027, encore flou">' + escapeHtml(profile.objectifsAutres || '') + '</textarea></label>' +
+  '</div></details>';
 }
-function collectFieldGroupValues() {
+function collectAdvancedValues() {
   const values = {};
-  document.querySelectorAll('#fieldGroups [data-key]').forEach(el => {
+  document.querySelectorAll('#advancedGroups [data-key]').forEach(el => {
     const key = el.dataset.key;
     if (el.type === 'checkbox') {
       if (!(key in values)) values[key] = [];
@@ -278,10 +405,15 @@ function collectFieldGroupValues() {
     }
   });
   Object.keys(values).forEach(k => { if (Array.isArray(values[k])) values[k] = values[k].join(', '); });
+  values.objectifsAutres = (document.getElementById('profObjectifsAutres') || {}).value ? document.getElementById('profObjectifsAutres').value.trim() : '';
   return values;
 }
+document.getElementById('saveAdvancedBtn').addEventListener('click', () => {
+  patchProfile(collectAdvancedValues());
+  showMsg('advancedMsg', 'Enregistré.', 'ok');
+});
 
-/* --------------------------- PROFIL DE PERFORMANCE (radar) --------------------------- */
+/* --------------------------- PROFIL DE PERFORMANCE (radar, inchangé) --------------------------- */
 function renderRadar() {
   const box = document.getElementById('radarBox');
   const notesBox = document.getElementById('radarNotes');
@@ -322,22 +454,9 @@ document.getElementById('addRecordBtn').addEventListener('click', () => {
   records.push({ label:'', temps:'', course:'', date:'' });
   renderRecords();
 });
-
-/* --------------------------- ENREGISTREMENT --------------------------- */
-document.getElementById('saveProfileBtn').addEventListener('click', () => {
-  const profile = Object.assign(
-    {
-      nom: document.getElementById('profNom').value.trim(),
-      naissance: document.getElementById('profNaissance').value,
-      sante: document.getElementById('profSante').value.trim(),
-      objectifsAutres: document.getElementById('profObjectifsAutres').value.trim(),
-      records: records.filter(r => r.label || r.temps || r.course || r.date),
-    },
-    collectFieldGroupValues()
-  );
-  saveProfile(profile);
-  saveObjectifsRaces();
-  showMsg('profileMsg', 'Profil enregistré.', 'ok');
+document.getElementById('saveRecordsBtn').addEventListener('click', () => {
+  patchProfile({ records: records.filter(r => r.label || r.temps || r.course || r.date) });
+  showMsg('recordsMsg', 'Records enregistrés.', 'ok');
 });
 
 /* --------------------------- RÉSUMÉ POUR L'IA --------------------------- */
@@ -345,16 +464,26 @@ function buildAiSummary() {
   const p = getProfile();
   const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
   const na = v => (v && String(v).trim()) ? v : 'non renseigné';
+  const age = computeAge(p.naissance);
   const lines = [];
   lines.push('PROFIL TRAILEUR — ' + (p.nom || 'Nico'));
   lines.push('');
+  if (p.apropos) { lines.push('## À propos'); lines.push(p.apropos); lines.push(''); }
   lines.push('## Objectifs de course');
   races.forEach(r => {
     lines.push('- ' + statutLabelText(r.statut).replace(/^./, c => c.toUpperCase()) + ' : ' + r.name + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+ — ' + fmtDate(r.date) + ' — Temps visé : ' + na(r.tempsVise));
   });
   lines.push('- Autres courses envisagées : ' + na(p.objectifsAutres));
   lines.push('');
-  PROFILE_FIELD_GROUPS.forEach(group => {
+  lines.push('## Informations personnelles et sportives');
+  lines.push('- Âge : ' + (age != null ? age + ' ans' : 'non renseigné'));
+  lines.push('- Poids (kg) : ' + na(p.poids));
+  lines.push('- FC max (bpm) : ' + na(p.fcMax));
+  lines.push('- FC repos (bpm) : ' + na(p.fcRepos));
+  lines.push('- VMA (km/h) : ' + na(p.vma));
+  lines.push('- Allure seuil : ' + na(p.allureSeuil));
+  lines.push('');
+  PROFILE_FIELD_GROUPS.filter(g => g.title !== 'Données physiologiques').forEach(group => {
     lines.push('## ' + group.title);
     group.fields.forEach(([key, label]) => { lines.push('- ' + label + ' : ' + na(p[key])); });
     lines.push('');
@@ -374,7 +503,7 @@ function buildAiSummary() {
 }
 document.getElementById('genSummaryBtn').addEventListener('click', () => {
   document.getElementById('summaryOutput').value = buildAiSummary();
-  showMsg('summaryMsg', 'Résumé généré ci-dessous — pense à l\'enregistrer via "Enregistrer le profil" avant si tu viens de modifier des champs.', 'info');
+  showMsg('summaryMsg', 'Résumé généré ci-dessous.', 'info');
 });
 document.getElementById('copySummaryBtn').addEventListener('click', async () => {
   const text = document.getElementById('summaryOutput').value;
@@ -388,17 +517,23 @@ document.getElementById('copySummaryBtn').addEventListener('click', async () => 
   }
 });
 
+/* --------------------------- INIT --------------------------- */
 (function init() {
   const p = getProfile();
-  document.getElementById('profNom').value = p.nom || '';
-  document.getElementById('profNaissance').value = p.naissance || '';
-  document.getElementById('profSante').value = p.sante || '';
-  document.getElementById('profObjectifsAutres').value = p.objectifsAutres || '';
   records = (p.records || []).slice();
+  renderIdentity();
+  renderAbout();
+  renderPerso();
+  renderFc();
+  renderRpe();
+  renderPrefs();
+  renderSeuils();
+  renderConnect();
+  renderHealth();
+  renderAdvancedGroups(p);
   renderRecords();
-  renderObjectifsRaces();
-  renderFieldGroups(p);
   renderRadar();
+  renderSidebarUser();
 })();
 </script>
 </body>
