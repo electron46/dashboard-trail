@@ -1013,6 +1013,50 @@ function detectClimbs(series, opts) {
   return raw.sort((a, b) => b.gainM - a.gainM).slice(0, 6).sort((a, b) => a.startDistKm - b.startDistKm);
 }
 
+// Répartition course / marche / arrêt sur une séance (ELEV, déterministe, source = elev — distincte
+// d'une éventuelle classification Garmin, non décodée pour l'instant : les messages "split" bruts du
+// fichier .fit existent mais leur mise en correspondance exacte des champs n'est pas encore fiable,
+// voir FIT Import Inspector). Basée sur la cadence plutôt que sur l'allure seule : en trail, une
+// montée raide se court souvent à une allure aussi lente qu'une marche, la cadence reste le signal
+// le plus fiable pour distinguer les deux. Seuils simples et documentés :
+const RUNWALK_CADENCE_THRESHOLD = 140; // pas/min — en dessous : marche
+const RUNWALK_STOP_SPEED_KMH = 1.5;    // en dessous : arrêt (quelle que soit la cadence)
+const RUNWALK_FALLBACK_PACE_S_KM = 510; // repli si cadence absente sur ce point (8:30/km)
+// N'est retournée que si la cadence est disponible sur au moins 60 % de la séance : en dessous,
+// la classification par l'allure seule est trop approximative en trail pour être présentée comme fiable.
+const RUNWALK_MIN_CADENCE_COVERAGE = 0.6;
+function computeRunWalkBreakdown(session) {
+  const series = (session && session.series) || [];
+  if (series.length < 2) return null;
+  let secRun = 0, secWalk = 0, secStop = 0, distRun = 0, distWalk = 0, totalSec = 0;
+  let withCadence = 0, totalIntervals = 0;
+  for (let i = 1; i < series.length; i++) {
+    const p0 = series[i - 1], p1 = series[i];
+    const dt = p1.t - p0.t; if (!dt || dt <= 0 || dt > 120) continue;
+    if (p0.distKm == null || p1.distKm == null) continue;
+    const dDist = Math.max(0, p1.distKm - p0.distKm);
+    totalIntervals++;
+    const speedKmh = dDist / (dt / 3600);
+    const cad = (p0.cadenceSpm != null && p1.cadenceSpm != null) ? (p0.cadenceSpm + p1.cadenceSpm) / 2 : null;
+    if (cad != null) withCadence++;
+    let state;
+    if (speedKmh < RUNWALK_STOP_SPEED_KMH) state = 'stop';
+    else if (cad != null) state = cad < RUNWALK_CADENCE_THRESHOLD ? 'walk' : 'run';
+    else state = (speedKmh > 0 ? 3600 / speedKmh : Infinity) > RUNWALK_FALLBACK_PACE_S_KM ? 'walk' : 'run';
+    totalSec += dt;
+    if (state === 'run') { secRun += dt; distRun += dDist; }
+    else if (state === 'walk') { secWalk += dt; distWalk += dDist; }
+    else secStop += dt;
+  }
+  if (totalSec <= 0 || totalIntervals === 0 || withCadence / totalIntervals < RUNWALK_MIN_CADENCE_COVERAGE) return null;
+  return {
+    run: { sec: secRun, km: distRun, pct: Math.round(secRun / totalSec * 100) },
+    walk: { sec: secWalk, km: distWalk, pct: Math.round(secWalk / totalSec * 100) },
+    stop: { sec: secStop, pct: Math.round(secStop / totalSec * 100) },
+    totalSec,
+  };
+}
+
 // Répartition du temps passé dans chaque zone FC (Karvonen) sur UNE séance, à partir de sa série
 // détaillée. Même logique que le calcul déjà utilisé pour le sous-score "Intensité" de l'indice de
 // préparation (computeRaceReadiness) — centralisée ici pour être réutilisée par page Activité.

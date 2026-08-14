@@ -458,7 +458,19 @@ function renderResumeTab(s) {
   const group = (title, items) => '<h4 class="resume-group-title">' + title + '</h4><div class="metrics-grid">' +
     items.map(([lbl, val]) => '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>').join('') + '</div>';
 
-  document.getElementById('resumeTabMetrics').innerHTML = group('Effort', effort) + group('Relief', relief) + group('Mouvement', mouvement);
+  let html = group('Effort', effort) + group('Relief', relief) + group('Mouvement', mouvement);
+
+  const runWalk = computeRunWalkBreakdown(s);
+  if (runWalk) {
+    html += '<h4 class="resume-group-title">Répartition locomotion <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0;">(estimation ELEV à partir de la cadence)</span></h4>' +
+      '<div class="metrics-grid">' +
+        '<div class="metric"><div class="lbl">Course</div><div class="val">' + fmtDuration(runWalk.run.sec) + ' · ' + runWalk.run.pct + '%</div></div>' +
+        '<div class="metric"><div class="lbl">Marche</div><div class="val">' + fmtDuration(runWalk.walk.sec) + ' · ' + runWalk.walk.pct + '%</div></div>' +
+        '<div class="metric"><div class="lbl">Arrêt</div><div class="val">' + fmtDuration(runWalk.stop.sec) + ' · ' + runWalk.stop.pct + '%</div></div>' +
+      '</div>';
+  }
+
+  document.getElementById('resumeTabMetrics').innerHTML = html;
 }
 
 function renderComparison(s, allSessions) {
