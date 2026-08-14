@@ -44,7 +44,10 @@ const RECORD_FIELDS = {
   4:['cadence',null,null], 5:['distance',100,0], 6:['speed',1000,0],
   7:['power',null,null], 13:['temperature',null,null],
   73:['enhanced_speed',1000,0], 78:['enhanced_altitude',5,500],
+  0:['position_lat',null,null], 1:['position_long',null,null],
 };
+// Position GPS encodée en "semicircles" dans le format FIT — conversion vers degrés décimaux.
+const SEMICIRCLE_TO_DEG = 180 / 2147483648;
 const SESSION_FIELDS = {
   253:['timestamp',null,null], 2:['start_time',null,null], 5:['sport',null,null], 6:['sub_sport',null,null],
   7:['total_elapsed_time',1000,0], 8:['total_timer_time',1000,0], 9:['total_distance',100,0],
@@ -211,6 +214,8 @@ function summarizeFit(messages, fileMeta) {
         hr: r.heart_rate ?? null,
         alt: r.enhanced_altitude ?? r.altitude ?? null,
         cadenceSpm: r.cadence != null ? Math.round(r.cadence * 2) : null,
+        lat: r.position_lat != null ? r.position_lat * SEMICIRCLE_TO_DEG : null,
+        lon: r.position_long != null ? r.position_long * SEMICIRCLE_TO_DEG : null,
       });
     }
   }

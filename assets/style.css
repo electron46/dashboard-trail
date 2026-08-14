@@ -129,6 +129,9 @@ tr.session-row:hover{background:var(--bg);}
 .chart-box svg circle[data-tooltip]:hover{r:5;opacity:.85;}
 .chart-box svg rect[data-tooltip]:hover{opacity:.75;}
 .chart-tooltip{position:fixed;display:none;pointer-events:none;background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:.72rem;padding:5px 9px;border-radius:6px;z-index:200;white-space:nowrap;box-shadow:var(--shadow);}
+.sync-charts-wrap{position:relative;cursor:crosshair;}
+.sync-charts-wrap .chart-box svg{pointer-events:none;}
+.sync-tooltip{position:absolute;top:6px;right:14px;background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius-pill);padding:4px 10px;font-family:var(--font-mono);font-size:.72rem;color:var(--text);pointer-events:none;z-index:2;box-shadow:var(--shadow);}
 .empty{color:var(--muted);font-size:.85rem;padding:14px;text-align:center;}
 
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0;}

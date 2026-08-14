@@ -9,7 +9,9 @@
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <meta name="theme-color" content="#151E2B">
 <link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -85,6 +87,7 @@
     <label class="field" style="max-width:280px;margin-top:6px;">Paire de chaussures utilisée
       <select id="gearSelect"><option value="">Non renseignée</option></select>
     </label>
+    <div id="detailMap" class="chart-box" style="display:none;margin-top:14px;padding:0;overflow:hidden;height:320px;"></div>
     <div class="charts-grid" id="detailChartsGrid" style="margin-top:14px;"></div>
     <div class="plan-compare" id="planCompare" style="display:none;"></div>
     <label class="field" style="margin-top:6px;">Contexte du jour / ressenti (optionnel — fatigue, météo, terrain, douleur, contrainte particulière…)
@@ -429,8 +432,125 @@ document.getElementById('aiGenBtn').addEventListener('click', async () => {
   } finally { btn.disabled = false; }
 });
 
+/* --------------------------- CARTE GPS --------------------------- */
+let detailMap = null, detailMapLine = null, detailMapCursor = null;
+function renderDetailMap(s) {
+  const mapEl = document.getElementById('detailMap');
+  const pts = (s.series || []).filter(p => p.lat != null && p.lon != null).map(p => [p.lat, p.lon]);
+  if (pts.length < 2 || typeof L === 'undefined') { mapEl.style.display = 'none'; return; }
+  mapEl.style.display = 'block';
+  if (!detailMap) {
+    detailMap = L.map(mapEl, { attributionControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(detailMap);
+  }
+  if (detailMapLine) detailMap.removeLayer(detailMapLine);
+  if (detailMapCursor) { detailMap.removeLayer(detailMapCursor); detailMapCursor = null; }
+  detailMapLine = L.polyline(pts, { color: '#6B8E4E', weight: 4 }).addTo(detailMap);
+  // Le conteneur est display:none à l'ouverture du modal → Leaflet doit recalculer sa taille une fois visible.
+  setTimeout(() => { detailMap.invalidateSize(); detailMap.fitBounds(detailMapLine.getBounds(), { padding: [16, 16] }); }, 150);
+}
+function moveMapCursor(lat, lon) {
+  if (!detailMap || lat == null || lon == null) return;
+  if (!detailMapCursor) {
+    detailMapCursor = L.circleMarker([lat, lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#E2836C', fillOpacity: 1 }).addTo(detailMap);
+  } else {
+    detailMapCursor.setLatLng([lat, lon]);
+  }
+}
+
 /* --------------------------- GRAPHIQUES --------------------------- */
 // svgEmpty / lineChartSvg / groupedBarChartSvg sont maintenant dans assets/app.js (partagés avec l'Accueil).
+
+// Allure / FC / altitude affichées en 3 courbes empilées partageant le même axe de distance,
+// avec un curseur commun (survol = même position km sur les 3 + repère sur la carte GPS).
+function syncedSessionChartsHtml(withDist) {
+  const w = 620, h = 150, padL = 54, padR = 18, padT = 14, padB = 24;
+  const defs = [
+    { key:'paceSecKm', title:'Allure (min/km)', color:'var(--accent)', fmt:v=>fmtPace(Math.round(v)) },
+    { key:'hr', title:'Fréquence cardiaque (bpm)', color:'var(--danger)', fmt:v=>Math.round(v)+' bpm' },
+    { key:'alt', title:'Altitude (m)', color:'var(--warn)', fmt:v=>Math.round(v)+' m' },
+  ].map(d => ({ ...d, pts: withDist.filter(p => p[d.key] != null).map(p => ({ x:p.distKm, y:p[d.key] })) }))
+   .filter(d => d.pts.length >= 2);
+  if (!defs.length) return '';
+  const minX = Math.min(...withDist.map(p => p.distKm)), maxX = Math.max(...withDist.map(p => p.distKm));
+  const spanX = (maxX - minX) || 1;
+  const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
+  let svgs = '';
+  defs.forEach((d, di) => {
+    const ys = d.pts.map(p => p.y);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const spanY = (maxY - minY) || 1;
+    const sy = y => (h - padB) - (y - minY) / spanY * (h - padT - padB);
+    const path = d.pts.map((p, i) => (i===0?'M':'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
+    const isLast = di === defs.length - 1;
+    svgs += '<div class="chart-box sync-chart" style="margin-top:' + (di===0?'0':'10px') + ';"><h3>' + d.title + '</h3>' +
+      '<svg viewBox="0 0 '+w+' '+h+'" data-key="'+d.key+'" data-min-y="'+minY+'" data-max-y="'+maxY+'">' +
+        '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+        '<text x="4" y="'+(padT+6)+'" font-size="12" fill="var(--muted)">'+d.fmt(maxY)+'</text>' +
+        '<text x="4" y="'+(h-padB+2)+'" font-size="12" fill="var(--muted)">'+d.fmt(minY)+'</text>' +
+        (isLast ? '<text x="'+padL+'" y="'+(h-6)+'" font-size="11" fill="var(--muted)">'+minX.toFixed(1)+' km</text><text x="'+(w-padR-44)+'" y="'+(h-6)+'" font-size="11" fill="var(--muted)">'+maxX.toFixed(1)+' km</text>' : '') +
+        '<path d="'+path+'" fill="none" stroke="'+d.color+'" stroke-width="2.5"/>' +
+        '<line class="sync-cursor" x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--text)" stroke-dasharray="3,3" opacity="0"/>' +
+        '<circle class="sync-dot" r="4.5" fill="'+d.color+'" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>' +
+      '</svg></div>';
+  });
+  return '<div class="sync-charts-wrap" id="syncChartsWrap" data-min-x="'+minX+'" data-max-x="'+maxX+'" data-padl="'+padL+'" data-padr="'+padR+'" data-w="'+w+'">' +
+    svgs + '<div class="sync-tooltip" id="syncTooltip" style="display:none;"></div></div>';
+}
+function initSyncedCharts(wrapper, withDist) {
+  if (!wrapper) return;
+  const minX = parseFloat(wrapper.dataset.minX), maxX = parseFloat(wrapper.dataset.maxX);
+  const padL = parseFloat(wrapper.dataset.padl), padR = parseFloat(wrapper.dataset.padr), w = parseFloat(wrapper.dataset.w);
+  const spanX = (maxX - minX) || 1;
+  const h = 150, padT = 14, padB = 24;
+  const svgs = Array.from(wrapper.querySelectorAll('svg'));
+  const tooltip = wrapper.querySelector('#syncTooltip');
+
+  function nearestIndex(distKm) {
+    let best = 0, bestDiff = Infinity;
+    withDist.forEach((p, i) => { const diff = Math.abs(p.distKm - distKm); if (diff < bestDiff) { bestDiff = diff; best = i; } });
+    return best;
+  }
+  function updateAt(clientX) {
+    const rect = wrapper.getBoundingClientRect();
+    const scale = w / rect.width;
+    let xVb = (clientX - rect.left) * scale;
+    xVb = Math.max(padL, Math.min(w - padR, xVb));
+    const distKm = minX + (xVb - padL) / (w - padL - padR) * spanX;
+    const p = withDist[nearestIndex(distKm)];
+    svgs.forEach(svg => {
+      const key = svg.dataset.key;
+      const minY = parseFloat(svg.dataset.minY), maxY = parseFloat(svg.dataset.maxY);
+      const spanY = (maxY - minY) || 1;
+      const cursor = svg.querySelector('.sync-cursor'), dot = svg.querySelector('.sync-dot');
+      cursor.setAttribute('x1', xVb.toFixed(1)); cursor.setAttribute('x2', xVb.toFixed(1)); cursor.setAttribute('opacity', '1');
+      const val = p[key];
+      if (val != null) {
+        const sy = (h - padB) - (val - minY) / spanY * (h - padT - padB);
+        dot.setAttribute('cx', xVb.toFixed(1)); dot.setAttribute('cy', sy.toFixed(1)); dot.setAttribute('opacity', '1');
+      } else {
+        dot.setAttribute('opacity', '0');
+      }
+    });
+    if (tooltip) {
+      const parts = [p.distKm != null ? p.distKm.toFixed(2) + ' km' : ''];
+      if (p.alt != null) parts.push(Math.round(p.alt) + ' m');
+      if (p.paceSecKm != null) parts.push(fmtPace(p.paceSecKm) + '/km');
+      if (p.hr != null) parts.push(p.hr + ' bpm');
+      tooltip.textContent = parts.filter(Boolean).join(' · ');
+      tooltip.style.display = 'block';
+    }
+    moveMapCursor(p.lat, p.lon);
+  }
+  wrapper.addEventListener('mousemove', e => updateAt(e.clientX));
+  wrapper.addEventListener('touchmove', e => { if (e.touches[0]) updateAt(e.touches[0].clientX); }, { passive:true });
+  wrapper.addEventListener('mouseleave', () => {
+    svgs.forEach(svg => { svg.querySelector('.sync-cursor').setAttribute('opacity','0'); svg.querySelector('.sync-dot').setAttribute('opacity','0'); });
+    if (tooltip) tooltip.style.display = 'none';
+  });
+}
 
 function renderDetailCharts(s) {
   const grid = document.getElementById('detailChartsGrid');
@@ -438,14 +558,10 @@ function renderDetailCharts(s) {
   const withDist = series.filter(p => p.distKm != null);
   const charts = [];
 
-  const pacePts = withDist.filter(p => p.paceSecKm != null).map(p => ({ x:p.distKm, y:p.paceSecKm, label: p.distKm.toFixed(1)+' km : '+fmtPace(p.paceSecKm) }));
-  if (pacePts.length >= 2) charts.push(lineChartSvg('Allure sur la séance (par km parcouru)', pacePts, { decimals:0 }));
+  renderDetailMap(s);
 
-  const hrPts = withDist.filter(p => p.hr != null).map(p => ({ x:p.distKm, y:p.hr, label: p.distKm.toFixed(1)+' km : '+p.hr+' bpm' }));
-  if (hrPts.length >= 2) charts.push(lineChartSvg('Fréquence cardiaque sur la séance (bpm)', hrPts));
-
-  const altPts = withDist.filter(p => p.alt != null).map(p => ({ x:p.distKm, y:p.alt, label: p.distKm.toFixed(1)+' km : '+Math.round(p.alt)+' m' }));
-  if (altPts.length >= 2) charts.push(lineChartSvg('Profil altimétrique de la séance (m)', altPts, { decimals:0 }));
+  const syncedHtml = syncedSessionChartsHtml(withDist);
+  if (syncedHtml) charts.push(syncedHtml);
 
   if (s.laps && s.laps.length >= 2) {
     const cats = s.laps.map(l => ({ shortLabel: 'Km ' + l.index, tooltipLabel: 'Km ' + l.index + (l.avgPaceSecPerKm ? ' (' + fmtPace(l.avgPaceSecPerKm) + ')' : '') }));
@@ -479,6 +595,7 @@ function renderDetailCharts(s) {
   }
   grid.innerHTML = charts.join('');
   initChartTooltips(grid);
+  initSyncedCharts(document.getElementById('syncChartsWrap'), withDist);
 }
 
 function renderCharts() {
