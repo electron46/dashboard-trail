@@ -688,6 +688,9 @@ function renderCharts() {
 
 function refreshAll() { renderSportFilterChips(); renderHistory(); renderCharts(); }
 refreshAll();
+
+// Ouverture directe d'une séance depuis un lien externe (ex. carte "Dernière activité" de l'Accueil).
+if (location.hash.startsWith('#s=')) openDetail(decodeURIComponent(location.hash.slice(3)));
 </script>
 </body>
 </html>

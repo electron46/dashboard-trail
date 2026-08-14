@@ -770,6 +770,62 @@ function computeRaceReadiness(race) {
   return { overall, subs, weakest };
 }
 
+// Indice de charge d'entraînement : ratio entre la charge aiguë (7 derniers jours) et la charge chronique
+// (moyenne des 4 dernières semaines), normalisé en score 0-100. Zone optimale usuelle en littérature sport
+// (ACWR — acute:chronic workload ratio) : 0,8-1,3. Basé uniquement sur le volume (km) déjà suivi ; ce n'est
+// pas une mesure physiologique (pas de FC, pas de TRIMP) — à traiter comme un repère, pas un diagnostic.
+function computeTrainingLoadIndex() {
+  const sessions = loadAllSessions();
+  if (sessions.length < 2) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const weeks = [];
+  for (let i = 3; i >= 0; i--) {
+    const start = new Date(new Date(today).getTime() - (i+1)*7*86400000).toISOString().slice(0,10);
+    const end = new Date(new Date(today).getTime() - i*7*86400000).toISOString().slice(0,10);
+    const km = sessions.filter(s => s.date > start && s.date <= end).reduce((a,s) => a + (s.distanceKm||0), 0);
+    weeks.push(+km.toFixed(1));
+  }
+  const acute = weeks[weeks.length-1];
+  const chronic = weeks.reduce((a,b)=>a+b,0) / weeks.length;
+  if (chronic <= 0) return null;
+  const ratio = acute / chronic;
+  let score;
+  if (ratio >= 0.8 && ratio <= 1.3) score = 100 - Math.abs(ratio - 1) * 40;
+  else if (ratio < 0.8) score = 92 - (0.8 - ratio) * 150;
+  else score = 88 - (ratio - 1.3) * 150;
+  score = Math.round(Math.max(0, Math.min(100, score)));
+  let level, label;
+  if (ratio < 0.8) { level = 'low'; label = 'Charge basse'; }
+  else if (ratio <= 1.3) { level = 'ok'; label = 'Charge optimale'; }
+  else if (ratio <= 1.5) { level = 'warn'; label = 'Charge élevée'; }
+  else { level = 'high'; label = 'Charge très élevée'; }
+  return { score, ratio: +ratio.toFixed(2), acute, chronic: +chronic.toFixed(1), level, label, weeks };
+}
+
+// Insight ELEV : traduit la charge et la tendance de volume en une phrase, à partir de règles explicites
+// et déterministes (pas d'IA, pas d'appel réseau). Priorité : signal de risque > tendance > stabilité.
+function computeTrainingInsight() {
+  const load = computeTrainingLoadIndex();
+  if (!load) return null;
+  const w = load.weeks; // [S-3, S-2, S-1, S courante], km, du plus ancien au plus récent
+  const last = w[w.length-1];
+  if (load.ratio >= 1.5) {
+    return { level: 'warn', text: 'Ta charge de la semaine (' + last.toFixed(1) + ' km) dépasse largement ta moyenne des 4 dernières semaines (' + load.chronic.toFixed(1) + ' km). Une hausse aussi rapide augmente le risque de blessure : une semaine plus légère peut être utile.' };
+  }
+  if (load.ratio <= 0.5 && load.chronic > 5) {
+    return { level: 'info', text: 'Volume nettement en retrait cette semaine (' + last.toFixed(1) + ' km, contre ' + load.chronic.toFixed(1) + ' km en moyenne). Repos voulu, blessure ou imprévu ? Pense à reprendre progressivement.' };
+  }
+  const rising = w.every((v,i) => i===0 || v >= w[i-1]-0.5);
+  const falling = w.every((v,i) => i===0 || v <= w[i-1]+0.5);
+  if (rising && last > w[0]*1.1) {
+    return { level: 'ok', text: 'Ton volume augmente progressivement depuis ' + w.length + ' semaines (' + w[0].toFixed(0) + ' → ' + last.toFixed(0) + ' km), avec une charge qui reste maîtrisée. Progression régulière.' };
+  }
+  if (falling && last < w[0]*0.9) {
+    return { level: 'info', text: 'Ton volume diminue depuis ' + w.length + ' semaines (' + w[0].toFixed(0) + ' → ' + last.toFixed(0) + ' km). Vérifie que c\'est bien une phase de récupération voulue et pas un simple relâchement.' };
+  }
+  return { level: 'ok', text: 'Ton volume est stable sur les ' + w.length + ' dernières semaines (autour de ' + load.chronic.toFixed(0) + ' km/semaine), avec une charge dans la zone optimale.' };
+}
+
 // Profil de performance à 6 axes, calculé à partir des séances des 12 dernières semaines (repères fixes
 // documentés ci-dessous, pas de comparaison à d'autres coureurs — juste une lecture de tes propres données).
 const RADAR_WEEKS = 12;
