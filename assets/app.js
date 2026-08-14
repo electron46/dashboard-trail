@@ -368,6 +368,96 @@ function summarizeFit(messages, fileMeta) {
   };
 }
 
+/* --------------------------- FIT IMPORT INSPECTOR (outil de développement) ---------------------------
+   Radiographie d'un fichier .fit : en-tête, intégrité (CRC), inventaire complet des messages
+   (connus et inconnus/propriétaires), taux de couverture des champs de la série de points, champs
+   développeur détectés, appareils. Ne modifie rien, ne stocke rien — lecture seule, page dédiée
+   inspecteur.html (non reliée à la navigation principale). */
+// CRC-16 du format FIT (table à 16 entrées, spécification Garmin/ANT+) — permet de détecter un
+// fichier tronqué ou corrompu avant même d'essayer de l'interpréter.
+const FIT_CRC_TABLE = [0x0000,0xCC01,0xD801,0x1400,0xF001,0x3C00,0x2800,0xE401,0xA001,0x6C00,0x7800,0xB401,0x5000,0x9C01,0x8801,0x4400];
+function fitCrc16(bytes) {
+  let crc = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    let tmp = FIT_CRC_TABLE[crc & 0xF];
+    crc = (crc >> 4) & 0x0FFF;
+    crc = crc ^ tmp ^ FIT_CRC_TABLE[byte & 0xF];
+    tmp = FIT_CRC_TABLE[crc & 0xF];
+    crc = (crc >> 4) & 0x0FFF;
+    crc = crc ^ tmp ^ FIT_CRC_TABLE[(byte >> 4) & 0xF];
+  }
+  return crc;
+}
+function buildFitInspectorReport(buffer, fileMeta) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  const headerSize = view.getUint8(0);
+  const protocolByte = view.getUint8(1);
+  const protocolVersion = (protocolByte >> 4) + '.' + (protocolByte & 0x0F);
+  const profileVersion = (view.getUint16(2, true) / 100).toFixed(2);
+  const dataSize = view.getUint32(4, true);
+  const signature = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+  const expectedSize = headerSize + dataSize + 2; // +2 = CRC de fin de fichier
+  const truncated = buffer.byteLength < expectedSize;
+
+  let headerCrcValid = null;
+  if (headerSize >= 14) {
+    const storedHeaderCrc = view.getUint16(12, true);
+    headerCrcValid = storedHeaderCrc === 0 ? null : (fitCrc16(bytes.slice(0, 12)) === storedHeaderCrc);
+  }
+  let fileCrcValid = null;
+  if (!truncated && buffer.byteLength >= headerSize + dataSize + 2) {
+    const storedFileCrc = view.getUint16(headerSize + dataSize, true);
+    fileCrcValid = fitCrc16(bytes.slice(0, headerSize + dataSize)) === storedFileCrc;
+  }
+
+  let messages = {}, parseError = null, summary = null;
+  try {
+    messages = parseFit(buffer);
+    summary = summarizeFit(messages, fileMeta);
+  } catch (e) { parseError = e.message; }
+
+  const messageInventory = Object.keys(messages).sort((a, b) => messages[b].length - messages[a].length).map(name => {
+    const m = /^unknown_(\d+)$/.exec(name);
+    return { name, count: messages[name].length, known: !m, globalMsgNum: m ? Number(m[1]) : null };
+  });
+
+  const records = messages.record || [];
+  const coverageFields = [
+    ['heart_rate','Fréquence cardiaque'], ['power','Puissance'], ['cadence','Cadence'],
+    ['altitude','Altitude'], ['enhanced_altitude','Altitude (enhanced)'], ['speed','Vitesse'],
+    ['enhanced_speed','Vitesse (enhanced)'], ['distance','Distance'], ['temperature','Température'],
+  ];
+  const recordCoverage = records.length ? coverageFields.map(([key, label]) => {
+    const n = records.filter(r => r[key] != null).length;
+    return { key, label, count: n, total: records.length, pct: Math.round(n / records.length * 1000) / 10 };
+  }) : [];
+  const gpsCount = records.filter(r => r.position_lat != null && r.position_long != null).length;
+  if (records.length) recordCoverage.unshift({ key:'gps', label:'Position GPS', count: gpsCount, total: records.length, pct: Math.round(gpsCount / records.length * 1000) / 10 });
+
+  const developerFields = (messages.field_description || []).map(d => ({
+    name: d.field_name, developerDataIndex: d.developer_data_index, fieldDefinitionNumber: d.field_definition_number,
+    units: d.units || null, scale: d.scale ?? null, offset: d.offset ?? null,
+  }));
+
+  return {
+    file: {
+      filename: fileMeta.name || null, sizeBytes: buffer.byteLength,
+      headerSize, protocolVersion, profileVersion, dataSize, signature,
+      signatureValid: signature === '.FIT', truncated, headerCrcValid, fileCrcValid, expectedSize,
+    },
+    parseError,
+    summary,
+    messageInventory,
+    recordCoverage,
+    developerFields,
+    devices: summary ? summary.devices : [],
+    laps: (messages.lap || []).length,
+    events: (messages.event || []).length,
+  };
+}
+
 /* --------------------------- 3) STOCKAGE --------------------------- */
 const STORAGE_PREFIX = 'trail:';
 const IDX_KEY = STORAGE_PREFIX + 'index';

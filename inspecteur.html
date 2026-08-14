@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FIT Import Inspector — ELEV (développement)</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#151E2B">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/app.js"></script>
+<style>
+  .app-main{margin:0 auto;max-width:1000px;}
+  .inspector-badge{display:inline-block;padding:3px 10px;border-radius:var(--radius-pill);background:var(--panel-raised);border:1px solid var(--border);font-size:.72rem;color:var(--muted);}
+  .cov-bar{height:6px;border-radius:99px;background:var(--panel-raised);overflow:hidden;margin-top:4px;}
+  .cov-bar > span{display:block;height:100%;background:var(--accent);}
+  table.inspector{width:100%;border-collapse:collapse;}
+  table.inspector th, table.inspector td{padding:6px 10px;border-bottom:1px solid var(--border);font-size:.85rem;text-align:left;}
+  .unknown-tag{color:var(--muted);font-style:italic;}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+<div class="app-main">
+<header class="app-topbar">
+  <div>
+    <h1>FIT Import Inspector <span class="inspector-badge">Outil de développement</span></h1>
+    <div class="hint">Radiographie d'un fichier .fit — lecture seule, rien n'est importé ni stocké. <a href="historique.html">← Retour à Activités</a></div>
+  </div>
+  <button id="themeToggle" type="button">☀ Clair</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Choisir un fichier .fit</h2>
+    <input type="file" id="fileInput" accept=".fit">
+    <div id="report" style="margin-top:16px;"></div>
+  </section>
+</main>
+</div>
+</div>
+
+<script>
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const out = document.getElementById('report');
+  if (!file) return;
+  out.innerHTML = '<p class="hint">Analyse en cours…</p>';
+  const buffer = await file.arrayBuffer();
+  let report;
+  try { report = buildFitInspectorReport(buffer, file); }
+  catch (err) { out.innerHTML = '<div class="msg err">Erreur d\'analyse : ' + err.message + '</div>'; return; }
+  out.innerHTML = renderReport(report);
+});
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+function renderReport(r) {
+  const f = r.file;
+  let html = '';
+
+  html += '<h3>Fichier</h3><table class="inspector"><tbody>' +
+    row('Nom', f.filename) + row('Taille', (f.sizeBytes/1024).toFixed(1) + ' Ko') +
+    row('Signature ".FIT"', f.signatureValid ? 'valide' : '⚠ invalide (' + esc(f.signature) + ')') +
+    row('Version protocole', f.protocolVersion) + row('Version profil', f.profileVersion) +
+    row('Fichier tronqué', f.truncated ? '⚠ oui — taille attendue ' + f.expectedSize + ' o, taille réelle ' + f.sizeBytes + ' o' : 'non') +
+    row('CRC en-tête', f.headerCrcValid === null ? 'non renseigné' : (f.headerCrcValid ? 'valide' : '⚠ invalide')) +
+    row('CRC fichier', f.fileCrcValid === null ? 'non vérifiable' : (f.fileCrcValid ? 'valide' : '⚠ invalide')) +
+    '</tbody></table>';
+
+  if (r.parseError) {
+    html += '<div class="msg err" style="margin-top:12px;">Échec du décodage : ' + esc(r.parseError) + '</div>';
+    return html;
+  }
+
+  if (r.summary) {
+    const s = r.summary;
+    html += '<h3 style="margin-top:20px;">Résumé de la séance</h3><table class="inspector"><tbody>' +
+      row('Date', s.date + (s.dateApprox ? ' (approximative — absente du fichier)' : '')) +
+      row('Sport', s.sport) + row('Distance', s.distanceKm != null ? s.distanceKm.toFixed(2) + ' km' : '—') +
+      row('D+ / D-', (s.ascent ?? '—') + ' m / ' + (s.descent ?? '—') + ' m') +
+      row('FC moyenne / max', (s.avgHr ?? '—') + ' / ' + (s.maxHr ?? '—') + ' bpm') +
+      '</tbody></table>';
+  }
+
+  html += '<h3 style="margin-top:20px;">Inventaire des messages (' + r.messageInventory.length + ' types)</h3>' +
+    '<table class="inspector"><thead><tr><th>Type</th><th>Occurrences</th><th>Statut</th></tr></thead><tbody>' +
+    r.messageInventory.map(m => '<tr><td>' + esc(m.name) + '</td><td>' + m.count + '</td><td>' +
+      (m.known ? 'nommé (champs décodés)' : '<span class="unknown-tag">non nommé — champs conservés en field_N (global msg ' + m.globalMsgNum + ')</span>') +
+      '</td></tr>').join('') + '</tbody></table>';
+
+  if (r.recordCoverage.length) {
+    html += '<h3 style="margin-top:20px;">Couverture des points (' + (r.summary ? r.summary.series.length + ' pts dans la séance, ' : '') + r.recordCoverage[0].total + ' points bruts au total)</h3>' +
+      '<table class="inspector"><tbody>' + r.recordCoverage.map(c =>
+        '<tr><td style="width:220px;">' + esc(c.label) + '</td><td>' + c.count + ' / ' + c.total + ' (' + c.pct + '%)' +
+        '<div class="cov-bar"><span style="width:' + c.pct + '%;"></span></div></td></tr>'
+      ).join('') + '</tbody></table>';
+  }
+
+  html += '<h3 style="margin-top:20px;">Champs développeur</h3>' +
+    (r.developerFields.length
+      ? '<table class="inspector"><thead><tr><th>Nom</th><th>Unité</th><th>Échelle/offset</th></tr></thead><tbody>' +
+        r.developerFields.map(d => '<tr><td>' + esc(d.name) + '</td><td>' + esc(d.units || '—') + '</td><td>' + (d.scale || '—') + ' / ' + (d.offset || 0) + '</td></tr>').join('') + '</tbody></table>'
+      : '<p class="hint">Aucun champ développeur détecté dans ce fichier.</p>');
+
+  html += '<h3 style="margin-top:20px;">Appareils (' + r.devices.length + ')</h3>' +
+    (r.devices.length
+      ? '<table class="inspector"><thead><tr><th>Fabricant</th><th>Produit</th><th>N° série</th><th>Version logicielle</th><th>Batterie</th></tr></thead><tbody>' +
+        r.devices.map(d => '<tr><td>' + (d.manufacturer === 1 ? 'Garmin' : (d.manufacturer ?? '—')) + '</td><td>' + esc(d.productName || d.product) + '</td><td>' + esc(d.serialNumber) + '</td><td>' + esc(d.softwareVersion) + '</td><td>' + esc(d.batteryStatus) + '</td></tr>').join('') + '</tbody></table>'
+      : '<p class="hint">Aucun appareil identifié.</p>');
+
+  html += '<p class="hint" style="margin-top:20px;">Laps : ' + r.laps + ' · Événements : ' + r.events + '</p>';
+
+  return html;
+}
+function row(label, value) { return '<tr><td style="width:220px;color:var(--muted);">' + esc(label) + '</td><td>' + esc(value) + '</td></tr>'; }
+</script>
+</body>
+</html>
