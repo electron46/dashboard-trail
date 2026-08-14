@@ -976,6 +976,20 @@ function sparklineSvg(values) {
   return '<svg class="kpi-spark" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none"><path d="'+path+'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
 
+// Anneau de progression circulaire compact (KPI "Objectif principal"). Trait de fond très
+// discret + arc rempli proportionnel au pourcentage, pas de texte à l'intérieur (la valeur
+// est déjà affichée en grand à côté).
+function ringSvg(pct) {
+  const size = 44, stroke = 4, r = (size - stroke) / 2, c = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference * (1 - Math.max(0, Math.min(100, pct)) / 100);
+  return '<svg class="kpi-ring" viewBox="0 0 '+size+' '+size+'">' +
+    '<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="rgba(244,247,245,.09)" stroke-width="'+stroke+'"/>' +
+    '<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="var(--accent)" stroke-width="'+stroke+'" stroke-linecap="round" ' +
+      'stroke-dasharray="'+circumference.toFixed(1)+'" stroke-dashoffset="'+offset.toFixed(1)+'" transform="rotate(-90 '+c+' '+c+')"/>' +
+  '</svg>';
+}
+
 // Aperçu visuel d'une séance pour la carte "Dernière activité" : trace GPS si les coordonnées sont
 // disponibles, sinon profil altimétrique, sinon rien — jamais d'image générique. Fonction de rendu
 // pure, sans dépendance à un fond de carte externe (contrairement à la carte Leaflet du détail de séance).

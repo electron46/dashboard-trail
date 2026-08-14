@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -30,6 +31,7 @@
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
@@ -65,6 +67,7 @@
         </div>
       </div>
       <div id="trendChartBox" style="margin-top:8px;"></div>
+      <a class="trend-link" href="historique.html">Voir toute l'analyse de tendance →</a>
     </section>
 
     <div id="insightBox"></div>
@@ -133,6 +136,12 @@ function renderGreeting() {
   const profile = getProfile();
   const prenom = (profile.nom || '').trim().split(/\s+/)[0];
   document.getElementById('greetingTitle').textContent = prenom ? ('Bonjour ' + prenom + ' 👋') : 'Bonjour 👋';
+
+  // Avatar généré à partir de l'initiale du prénom (pas de photo) — reste discret si le profil est vide.
+  const initial = prenom ? prenom[0].toUpperCase() : '?';
+  document.getElementById('sidebarUser').innerHTML =
+    '<div class="avatar">' + escapeHtml(initial) + '</div>' +
+    '<div class="user-info"><strong>' + escapeHtml(prenom || 'Ton profil') + '</strong><a href="profil.html">Voir mon profil</a></div>';
 }
 
 /* --------------------------- KPI PRINCIPAUX --------------------------- */
@@ -145,24 +154,26 @@ function mainObjectiveRace() {
   const principal = upcoming.find(r => r.statut === 'principal');
   return principal || upcoming[0];
 }
+const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
 function renderKpis() {
   const grid = document.getElementById('kpiGrid');
   const stats = getWeeklyStats();
   const recentWeeks = getRecentWeeklyVolumes(8);
   const fmtDelta = pct => pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%');
+  const arrow = pct => pct == null ? '' : (pct >= 0 ? '<span class="arrow">▲</span>' : '<span class="arrow">▼</span>');
   const cards = [];
 
   cards.push({
-    label: 'Volume hebdomadaire',
+    icon: 'route', label: 'Volume hebdomadaire',
     value: stats ? fmtNum(stats.distanceKm, ' km', 1) : null,
-    sub: stats ? (fmtDelta(stats.distanceDeltaPct) + ' vs semaine précédente') : 'Pas de séance enregistrée',
+    sub: stats ? (arrow(stats.distanceDeltaPct) + fmtDelta(stats.distanceDeltaPct) + ' vs sem. précédente') : 'Pas de séance enregistrée',
     status: stats && stats.distanceDeltaPct != null && stats.distanceDeltaPct >= 0 ? 'ok' : null,
     spark: recentWeeks.map(w => w.km),
   });
   cards.push({
-    label: 'Dénivelé hebdomadaire',
+    icon: 'mountain-snow', label: 'Dénivelé hebdomadaire',
     value: stats ? fmtNum(stats.ascent, ' m D+', 0) : null,
-    sub: stats ? (fmtDelta(stats.ascentDeltaPct) + ' vs semaine précédente') : 'Pas de séance enregistrée',
+    sub: stats ? (arrow(stats.ascentDeltaPct) + fmtDelta(stats.ascentDeltaPct) + ' vs sem. précédente') : 'Pas de séance enregistrée',
     status: stats && stats.ascentDeltaPct != null && stats.ascentDeltaPct >= 0 ? 'ok' : null,
     spark: recentWeeks.map(w => w.dplus),
   });
@@ -178,7 +189,7 @@ function renderKpis() {
   // volume n'est pas automatiquement négative (repos voulu) : couleur neutre, jamais rouge ici.
   const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: 'ok', falling: null };
   cards.push({
-    label: 'Tendance de charge',
+    icon: 'trending-up', label: 'Tendance de charge',
     value: trend ? trend.label : null,
     sub: trend ? trendSubs[trend.level] : 'Pas assez de séances récentes',
     status: trend ? trendStatus[trend.level] : null,
@@ -190,25 +201,25 @@ function renderKpis() {
     const readiness = computeRaceReadiness(race);
     const overall = readiness.overall;
     cards.push({
-      label: 'Objectif principal',
+      icon: 'target', label: 'Objectif principal',
       value: overall != null ? overall + '%' : null,
       sub: overall != null ? escapeHtml(race.name) : 'Pas assez de données pour ' + escapeHtml(race.name),
-      bar: overall,
+      ring: overall,
     });
   } else {
-    cards.push({ label: 'Objectif principal', value: null, sub: 'Aucune course à venir', bar: null });
+    cards.push({ icon: 'target', label: 'Objectif principal', value: null, sub: 'Aucune course à venir', ring: null });
   }
 
   grid.innerHTML = cards.map(c => {
     const spark = c.spark && c.spark.length >= 2 ? sparklineSvg(c.spark) : '';
+    const rightVisual = c.ring != null ? ringSvg(c.ring) : spark;
     return '<div class="kpi-card">' +
-      '<div class="kpi-label">' + (c.dot ? '<span class="kpi-status-dot status-' + c.dot + '"></span>' : '') + escapeHtml(c.label) + '</div>' +
+      '<div class="kpi-label">' + (c.dot ? '<span class="kpi-status-dot status-' + c.dot + '"></span>' : '<img src="' + ICON(c.icon) + '" alt="">') + escapeHtml(c.label) + '</div>' +
       '<div class="kpi-value-row">' +
         '<div class="kpi-value' + (c.value == null ? ' na' : '') + '">' + (c.value != null ? escapeHtml(c.value) : 'Non disponible') + '</div>' +
-        (spark ? '<div class="kpi-spark' + (c.status ? ' status-' + c.status : '') + '">' + spark + '</div>' : '') +
+        (rightVisual ? '<div class="' + (c.ring != null ? '' : 'kpi-spark' + (c.status ? ' status-' + c.status : '')) + '">' + rightVisual + '</div>' : '') +
       '</div>' +
       '<div class="kpi-sub' + (c.status ? ' status-' + c.status : '') + '">' + c.sub + '</div>' +
-      (c.bar != null ? '<div class="kpi-mini-bar"><div class="kpi-mini-bar-fill" style="width:' + c.bar + '%"></div></div>' : '') +
     '</div>';
   }).join('');
 }
@@ -221,15 +232,14 @@ function renderThisWeek() {
     grid.innerHTML = '<div class="empty">Importe des séances (page Activités) pour voir ce résumé.</div>';
     return;
   }
-  const fmtDelta = pct => (pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%'));
   const items = [
-    ['Distance', fmtNum(stats.distanceKm, ' km', 1), fmtDelta(stats.distanceDeltaPct)],
-    ['D+', fmtNum(stats.ascent, ' m', 0), fmtDelta(stats.ascentDeltaPct)],
-    ['Durée', fmtDuration(stats.durationS), fmtDelta(stats.durationDeltaPct)],
-    ['Sorties', String(stats.sessionsCount), fmtDelta(stats.sessionsDeltaPct)],
+    ['route', 'Distance', fmtNum(stats.distanceKm, ' km', 1)],
+    ['mountain-snow', 'D+', fmtNum(stats.ascent, ' m', 0)],
+    ['clock', 'Durée', fmtDuration(stats.durationS)],
+    ['flag', 'Sorties', String(stats.sessionsCount)],
   ];
-  grid.innerHTML = items.map(([lbl,val,delta]) =>
-    '<div class="week-stat"><div class="l">'+lbl+'</div><div class="v">'+val+'</div><div class="d' + (delta.startsWith('+') ? ' status-ok' : '') + '">'+delta+' vs sem. dernière</div></div>'
+  grid.innerHTML = items.map(([icon,lbl,val]) =>
+    '<div class="week-stat"><img src="' + ICON(icon) + '" alt=""><div><div class="l">'+lbl+'</div><div class="v">'+val+'</div></div></div>'
   ).join('');
 }
 
@@ -242,7 +252,7 @@ function renderInsight() {
     return;
   }
   box.innerHTML = '<div class="insight-card status-' + insight.level + '">' +
-    '<p class="insight-eyebrow">✦ Insight ELEV</p>' +
+    '<p class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</p>' +
     '<p class="insight-title">' + escapeHtml(insight.title) + '</p>' +
     '<p>' + escapeHtml(insight.text) + '</p>' +
   '</div>';
@@ -285,11 +295,11 @@ function renderLastActivity() {
   // Libellé d'affichage déterministe (sport + date) — jamais le nom de fichier brut de la montre.
   const label = (s.sport || 'Séance') + ' — ' + fmtDayMonth(s.date);
   const stats = [
-    fmtNum(s.distanceKm, ' km', 1),
-    fmtNum(s.ascent, ' m D+', 0),
-    fmtDuration(s.durationS),
-    s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : null,
-    s.avgHr != null ? s.avgHr + ' bpm' : null,
+    ['route', fmtNum(s.distanceKm, ' km', 1), 'Distance'],
+    ['mountain-snow', fmtNum(s.ascent, ' m D+', 0), 'Dénivelé'],
+    ['clock', fmtDuration(s.durationS), 'Durée'],
+    s.avgPaceSecPerKm != null ? ['gauge', fmtPace(s.avgPaceSecPerKm), 'Allure'] : null,
+    s.avgHr != null ? ['heart-pulse', s.avgHr + ' bpm', 'FC moy.'] : null,
   ].filter(Boolean);
   const visual = sessionPreviewSvg(s);
   box.innerHTML = '<a class="activity-card-link" href="historique.html#s=' + encodeURIComponent(s.id) + '"><div class="activity-card">' +
@@ -297,7 +307,7 @@ function renderLastActivity() {
     '<div class="activity-info">' +
       '<div class="hint">' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + '</div>' +
       '<h3>' + escapeHtml(label) + '</h3>' +
-      '<div class="activity-stats">' + stats.map(v => '<strong>' + v + '</strong>').join('') + '</div>' +
+      '<div class="activity-stats">' + stats.map(([icon,v,l]) => '<div class="activity-stat"><img src="' + ICON(icon) + '" alt=""><strong>' + v + '</strong><span>' + l + '</span></div>').join('') + '</div>' +
     '</div>' +
     '<span class="btn small">Voir l\'analyse →</span>' +
   '</div></a>';
@@ -315,30 +325,36 @@ function renderNextObjective() {
     return;
   }
   const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
-  const ratio = ratioDplusKm(r.denivele, r.distanceKm);
   const readiness = computeRaceReadiness(r);
-  let prepHtml = '';
+  const pills = [
+    'J-' + days,
+    fmtNum(r.distanceKm, ' km', 0),
+    fmtNum(r.denivele, ' m D+', 0),
+  ].map(p => '<span class="obj-pill">' + escapeHtml(p) + '</span>').join('');
+
+  let progressHtml;
   if (readiness.overall != null) {
-    prepHtml = '<div class="prep">Indice de préparation : <strong>' + readiness.overall + '%</strong>' +
-      '<div class="bar-track"><div class="bar-fill" style="width:' + readiness.overall + '%"></div></div></div>' +
-      '<div class="readiness-dots">' + readiness.subs.map(sub => {
-        const filled = sub.score != null ? Math.round(sub.score / 20) : 0;
-        const dots = Array.from({length:5}, (_,i) => '<span class="dot' + (i < filled ? ' filled' : '') + '"></span>').join('');
-        return '<div class="readiness-dot-row" title="' + escapeHtml(sub.detail) + '"><span>' + escapeHtml(sub.label) + '</span><span class="dots">' + dots + '</span></div>';
+    progressHtml = '<div class="obj-percent-row"><span class="obj-percent">' + readiness.overall + '%</span><span class="obj-percent-label">de préparation</span></div>' +
+      '<div class="obj-bar-track"><div class="obj-bar-fill" style="width:' + readiness.overall + '%"></div></div>' +
+      '<div class="obj-subs">' + readiness.subs.map(sub => {
+        const pct = sub.score != null ? sub.score : 0;
+        return '<div class="obj-sub-row" title="' + escapeHtml(sub.detail) + '">' +
+          '<span>' + escapeHtml(sub.label) + '</span>' +
+          '<div class="obj-sub-track"><div class="obj-sub-fill" style="width:' + pct + '%"></div></div>' +
+          '<span class="obj-sub-val">' + (sub.score != null ? sub.score + '%' : '—') + '</span>' +
+        '</div>';
       }).join('') + '</div>';
   } else {
-    prepHtml = '<div class="prep" style="opacity:.75;">Pas encore assez de données pour calculer l\'indice de préparation.</div>';
+    progressHtml = '<p class="hint" style="margin:0;">Pas encore assez de données pour calculer l\'indice de préparation.</p>';
   }
-  box.innerHTML = '<div class="race-chip ' + r.statut + '" style="flex:1 1 100%;">' +
-    '<span class="tag">' + statutLabel(r.statut) + '</span>' +
+
+  box.innerHTML = '<div class="objective-card">' +
+    '<p class="obj-eyebrow"><img src="' + ICON('target') + '" alt="">' + statutLabel(r.statut) + '</p>' +
     '<h3>' + escapeHtml(r.name) + '</h3>' +
-    '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small>' +
-    (ratio ? ' <span class="badge brand-badge">' + ratio + ' m/km</span>' : '') +
-    '<br><strong>J-' + days + ' jours</strong>' +
-    (r.tempsVise ? ' <small>— visé ' + escapeHtml(r.tempsVise) + '</small>' : '') +
-    prepHtml +
-    '</div>' +
-    '<div class="row" style="margin-top:10px;"><a class="btn small" href="objectifs.html">Voir mon objectif →</a></div>';
+    '<div class="obj-pills">' + pills + '</div>' +
+    progressHtml +
+    '<div class="row" style="margin-top:18px;"><a class="btn small" href="objectifs.html">Voir mon objectif →</a></div>' +
+  '</div>';
 }
 
 /* --------------------------- ANALYSES SECONDAIRES --------------------------- */
@@ -368,14 +384,16 @@ function renderNextPlanned() {
     return;
   }
   const bloc = getCurrentBloc();
-  box.innerHTML = '<h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:1rem;font-weight:700;">' + escapeHtml(nextPlanned.type || 'Séance') + '</h3>' +
-    '<div class="activity-stats" style="margin:8px 0;">' +
-      (nextPlanned.distanceKm ? '<strong>' + fmtNum(nextPlanned.distanceKm, ' km', 1) + '</strong>' : '') +
-      (nextPlanned.deniveleM ? '<strong>' + fmtNum(nextPlanned.deniveleM, ' m D+', 0) + '</strong>' : '') +
-      '<strong>' + fmtDate(nextPlanned.date) + '</strong>' +
-    '</div>' +
-    (bloc ? '<p class="hint" style="margin:0 0 10px;">' + escapeHtml(bloc) + '</p>' : '') +
-    '<a class="btn small" href="plan.html">Voir le plan →</a>';
+  const isToday = nextPlanned.date === today;
+  const pills = [
+    nextPlanned.distanceKm ? fmtNum(nextPlanned.distanceKm, ' km', 1) : null,
+    nextPlanned.deniveleM ? fmtNum(nextPlanned.deniveleM, ' m D+', 0) : null,
+    isToday ? 'Aujourd\'hui' : fmtDate(nextPlanned.date),
+  ].filter(Boolean).map(p => '<span class="next-session-pill">' + escapeHtml(p) + '</span>').join('');
+  box.innerHTML = '<div class="next-session-title"><img src="' + ICON('calendar') + '" alt=""><strong>' + escapeHtml(nextPlanned.type || 'Séance') + '</strong></div>' +
+    '<div class="next-session-pills">' + pills + '</div>' +
+    (bloc ? '<div class="next-session-bloc">' + escapeHtml(bloc) + '</div>' : '') +
+    '<div><a class="btn small" href="plan.html">Voir le plan →</a></div>';
 }
 
 // Répartition du temps passé par zone FC sur les 30 derniers jours — lecture seule sur l'Accueil
