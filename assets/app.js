@@ -539,6 +539,18 @@ function loadSession(id) { try { const raw = localStorage.getItem(STORAGE_PREFIX
 function saveSession(id, data) { try { localStorage.setItem(STORAGE_PREFIX + 'seance:' + id, JSON.stringify(data)); scheduleSync(); return true; } catch (e) { console.error(e); return false; } }
 function deleteSession(id) { try { localStorage.removeItem(STORAGE_PREFIX + 'seance:' + id); scheduleSync(); } catch (e) {} }
 function loadAllSessions() { return loadIndex().map(loadSession).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date)); }
+// Dernier appareil ayant enregistré une séance importée (page Profil, carte Connectivité) — lecture
+// seule des `devices` déjà extraits par le parser FIT à l'import, aucune nouvelle intégration. N'affiche
+// que si le fichier .fit fournissait un nom lisible (`product_name`) : un code fabricant/produit brut
+// serait illisible et n'est jamais montré tel quel (voir CLAUDE.md).
+function getLastDetectedDevice() {
+  const sessions = loadAllSessions();
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    const named = (sessions[i].devices || []).find(d => d.productName);
+    if (named) return { name: named.productName, date: sessions[i].date };
+  }
+  return null;
+}
 
 function getPlan() { try { const raw = localStorage.getItem(PLAN_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 function savePlan(plan) { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); scheduleSync(); return true; } catch (e) { return false; } }
@@ -573,6 +585,20 @@ function upsertRace(race) {
 }
 function deleteRace(id) { saveRaces(getRaces().filter(r => r.id !== id)); }
 function statutLabel(s) { return s === 'principal' ? 'Objectif principal' : (s === 'envisage' ? 'Objectif envisagé' : 'Objectif secondaire'); }
+// Course "objectif par défaut" à mettre en avant (page Profil) : la principale à venir, sinon la
+// prochaine à venir, sinon la plus récente déjà passée — même logique que objectifs.html
+// (defaultRaceId), pas réutilisée en amont sur Accueil/Objectifs pour ne rien changer à leur
+// comportement actuel (voir CLAUDE.md, refonte Profil).
+function getMainObjectiveRace() {
+  const today = new Date().toISOString().slice(0,10);
+  const races = getRaces().filter(r => !r.archived);
+  if (!races.length) return null;
+  const upcoming = races.filter(r => r.date >= today).sort((a,b) => a.date.localeCompare(b.date));
+  const principal = upcoming.find(r => r.statut === 'principal');
+  if (principal) return principal;
+  if (upcoming.length) return upcoming[0];
+  return races.slice().sort((a,b) => b.date.localeCompare(a.date))[0];
+}
 
 // --- Profil traileur ---
 const WEEKDAYS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
@@ -593,7 +619,6 @@ const PROFILE_FIELD_GROUPS = [
     ['histPratiqueAntFreq', 'Pratique sportive antérieure (fréquence, x/semaine)', 'number', ''],
   ]},
   { title: 'Données physiologiques', fields: [
-    ['age', 'Âge', 'number', ''],
     ['poids', 'Poids (kg)', 'number', ''],
     ['fcMax', 'FC max (bpm)', 'number', ''],
     ['fcRepos', 'FC repos (bpm)', 'number', ''],
@@ -640,10 +665,13 @@ const PROFILE_FIELD_GROUPS = [
   ]},
 ];
 const DEFAULT_PROFILE = Object.assign(
-  { nom:'', naissance:'', sante:'', records:[], objectifsAutres:'' },
+  { nom:'', naissance:'', sante:'', records:[], objectifsAutres:'', apropos:'', createdAt:null },
   ...PROFILE_FIELD_GROUPS.flatMap(g => g.fields.map(([key]) => ({ [key]: '' })))
 );
 function getProfile() { try { const raw = localStorage.getItem(PROFILE_KEY); return raw ? Object.assign({}, DEFAULT_PROFILE, JSON.parse(raw)) : Object.assign({}, DEFAULT_PROFILE); } catch (e) { return Object.assign({}, DEFAULT_PROFILE); } }
+// Fusionne partiellement le profil (édition par carte, page Profil) plutôt que d'exiger un formulaire
+// global — lit l'état courant, applique le correctif, sauvegarde l'ensemble (saveProfile reste inchangée).
+function patchProfile(partial) { saveProfile(Object.assign({}, getProfile(), partial)); }
 function saveProfile(profile) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); scheduleSync(); return true; } catch (e) { return false; } }
 // Zone Z2 indicative (méthode Karvonen, 60-70% de réserve cardiaque) — repère, pas une prescription médicale.
 function karvonenZ2(fcMax, fcRepos) {
@@ -669,6 +697,18 @@ function karvonenZones(fcMax, fcRepos) {
     high: Math.round(fcRepos + reserve * z.high),
   }));
 }
+
+// Repère RPE (perception d'effort, échelle de Borg 1-10) — table FIXE et informative, volontairement
+// distincte des zones de FC (perception vs mesure physiologique, voir CLAUDE.md). Aucune séance n'est
+// notée en RPE dans l'app aujourd'hui : ce n'est donc jamais un calcul, juste un repère de lecture
+// affiché en page Profil à côté des zones de FC mesurées.
+const RPE_ZONES = [
+  { key:'z1', label:'Z1', range:'1–2', desc:'Très facile' },
+  { key:'z2', label:'Z2', range:'3–4', desc:'Facile' },
+  { key:'z3', label:'Z3', range:'5–6', desc:'Modéré' },
+  { key:'z4', label:'Z4', range:'7–8', desc:'Difficile' },
+  { key:'z5', label:'Z5', range:'9–10', desc:'Très difficile' },
+];
 
 // --- Équipements (chaussures) ---
 function getGear() { try { return JSON.parse(localStorage.getItem(GEAR_KEY) || '[]'); } catch (e) { return []; } }
