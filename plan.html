@@ -56,8 +56,6 @@
 
   <section class="card" id="planHeroCard" style="display:none;"></section>
 
-  <div id="planInsightRow"></div>
-
   <div class="tabs" id="planTabs">
     <button type="button" data-tab="apercu" class="active">Aperçu</button>
     <button type="button" data-tab="semaines">Semaines</button>
@@ -69,7 +67,7 @@
   </div>
 
   <div class="tab-panel active" data-panel="apercu" id="panelApercu">
-    <div class="analysis-charts-row">
+    <div class="analysis-charts-row plan-top-row">
       <section class="card"><h2>Semaine en cours</h2><div id="planWeekBox"></div></section>
       <section class="card"><h2>Aperçu de la semaine</h2><div id="planWeekSessionsBox"></div></section>
       <section class="card"><h2>Prochaine séance</h2><div id="planNextSessionBox"></div></section>
@@ -77,7 +75,11 @@
     <div class="analysis-charts-row" style="margin-top:14px;">
       <section class="card"><h2>Évolution du volume</h2><div id="planVolumeChartBox"></div></section>
       <section class="card"><h2>Évolution du D+</h2><div id="planDplusChartBox"></div></section>
-      <section class="card card-compact"><h2>Charge d'entraînement</h2><div id="planChargeBox"></div></section>
+      <section class="card card-compact">
+        <h2>Charge d'entraînement</h2>
+        <div id="planChargeBox"></div>
+        <div id="planInsightCompactBox"></div>
+      </section>
     </div>
   </div>
 
@@ -188,30 +190,22 @@ function renderPlanHero() {
   const timeLabel = progress.status === 'finished' ? 'Plan terminé' :
     (progress.status === 'not_started' ? (progress.weeksRemaining + ' semaines avant le début') : (progress.weeksRemaining + ' semaine' + (progress.weeksRemaining>1?'s':'') + ' restante' + (progress.weeksRemaining>1?'s':'')));
 
-  const pills = [
-    ['Début', fmtDate(progress.fromISO)],
-    ['Fin', fmtDate(progress.toISO)],
-    ['Semaines', progress.totalWeeks],
-    currentPhase ? ['Phase actuelle', currentPhase.label] : null,
-  ].filter(Boolean).map(([l,v]) => '<div class="goal-hero-pill"><span class="l">' + escapeHtml(l) + '</span><span class="v">' + escapeHtml(String(v)) + '</span></div>').join('');
-
   heroCard.innerHTML =
     '<div class="goal-hero-top">' +
       '<div class="goal-hero-identity">' +
         '<div class="goal-hero-eyebrow"><span class="badge principal">Plan actif</span></div>' +
         '<h2>' + (goal ? 'Préparation ' + escapeHtml(goal.name) : 'Plan d\'entraînement') + '</h2>' +
-        (goal ? '<p class="hint" style="margin-top:6px;">Objectif : ' + escapeHtml(goal.name) + ' — ' + fmtNum(goal.distanceKm,' km',0) + ' / ' + fmtNum(goal.denivele,' m D+',0) + ' — ' + fmtDate(goal.date) + ' · <a class="link-arrow" href="objectifs.html">Voir l\'objectif →</a></p>' :
+        (goal ? '<p class="hint" style="margin-top:6px;">Objectif : ' + escapeHtml(goal.name) + ' — ' + fmtNum(goal.distanceKm,' km',0) + ' · ' + fmtNum(goal.denivele,' m D+',0) + ' · ' + fmtDate(goal.date) + ' · <a class="link-arrow" href="objectifs.html">Voir l\'objectif →</a></p>' :
           '<p class="hint" style="margin-top:6px;">Plan général — pas d\'objectif principal unique associé.</p>') +
       '</div>' +
-      '<div class="goal-hero-pills">' + pills + '</div>' +
     '</div>' +
     '<div class="metrics-grid" style="grid-template-columns:auto repeat(3,minmax(140px,1fr));margin-top:18px;">' +
-      '<div class="goal-hero-score">' +
-        '<div class="goal-ring-big">' + ringSvg(progress.pct, 96, progress.pct + '%') + '</div>' +
+      '<div class="goal-hero-score plan-hero-score">' +
+        '<div class="goal-ring-big">' + ringSvg(progress.pct, 112, progress.pct + '%') + '</div>' +
         '<div class="goal-score-meta">' +
           '<div class="goal-score-eyebrow">Plan complété</div>' +
           '<div class="lbl">' + escapeHtml(statusLabel) + '</div>' +
-          '<div class="countdown">' + escapeHtml(timeLabel) + '<small>Semaine ' + Math.max(1, Math.min(progress.totalWeeks, progress.weeksElapsed || 1)) + ' / ' + progress.totalWeeks + '</small></div>' +
+          '<div class="countdown">Semaine ' + Math.max(1, Math.min(progress.totalWeeks, progress.weeksElapsed || 1)) + ' / ' + progress.totalWeeks + '<small>' + escapeHtml(timeLabel) + '</small></div>' +
         '</div>' +
       '</div>' +
       '<div class="metric"><div class="lbl">Volume hebdo moyen (plan)</div><div class="val">' + (targets ? fmtNum(targets.avgWeeklyKm,' km',1) : 'Non disponible') + '</div></div>' +
@@ -228,15 +222,17 @@ function renderPlanHero() {
 }
 
 /* --------------------------- INSIGHT ELEV (plan) --------------------------- */
-function renderPlanInsight() {
-  const row = document.getElementById('planInsightRow');
+// Version compacte, fusionnée dans la carte "Charge d'entraînement" plutôt qu'un bloc pleine largeur
+// (voir CLAUDE.md, micro-passe finition Plan — 3 observations courtes ne justifient pas une grande carte).
+function renderPlanInsightCompact() {
+  const box = document.getElementById('planInsightCompactBox');
   const plan = getPlan();
   const sessions = loadAllSessions();
   const bullets = getPlanInsights(plan, sessions);
-  if (!bullets.length) { row.innerHTML = ''; return; }
-  row.innerHTML = '<div class="insight-card">' +
-    '<p class="insight-eyebrow"><img src="'+ICON_P('zap')+'" alt="">Insight ELEV</p>' +
-    bullets.map(b => '<div class="insight-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+  if (!bullets.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">' +
+    '<p class="insight-compact-eyebrow"><img src="'+ICON_P('zap')+'" alt="">Insight ELEV</p>' +
+    bullets.map(b => '<div class="insight-compact-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
   '</div>';
 }
 
@@ -284,9 +280,10 @@ function renderPlanWeekBox() {
         (wp.statusLabel ? '<span class="badge ' + statusClass + '" style="margin-top:6px;display:inline-block;">' + escapeHtml(wp.statusLabel) + '</span>' : '') +
       '</div>' +
     '</div>' +
-    '<div class="metrics-grid" style="grid-template-columns:1fr 1fr;margin-top:14px;">' +
+    '<div class="metrics-grid" style="margin-top:14px;">' +
       '<div class="metric"><div class="lbl">Volume — réalisé / prévu</div><div class="val">' + wp.doneKm.toFixed(1) + ' / ' + (wp.plannedKm>0?wp.plannedKm.toFixed(1):'—') + ' km</div></div>' +
       '<div class="metric"><div class="lbl">D+ — réalisé / prévu</div><div class="val">' + Math.round(wp.doneDplus) + ' / ' + (wp.plannedDplus>0?Math.round(wp.plannedDplus):'—') + ' m</div></div>' +
+      (wp.plannedDurationMin != null ? '<div class="metric"><div class="lbl">Durée — réalisée / prévue</div><div class="val">' + fmtDuration(wp.doneDurationS) + ' / ' + Math.floor(wp.plannedDurationMin/60) + 'h' + String(wp.plannedDurationMin%60).padStart(2,'0') + '</div></div>' : '') +
     '</div>' +
     (wp.missedCount ? '<p class="hint" style="margin-top:8px;color:var(--danger);">' + wp.missedCount + ' séance' + (wp.missedCount>1?'s':'') + ' manquée' + (wp.missedCount>1?'s':'') + ' cette semaine.</p>' : '');
 }
@@ -302,15 +299,18 @@ function renderPlanWeekSessions() {
   const todayISO = new Date().toISOString().slice(0,10);
   const days = [];
   for (let i = 0; i < 7; i++) days.push(addDaysIso(week.startISO, i));
+  const STATUS_BADGE = {
+    rest: '<span class="badge status-rest">Repos</span>',
+    done: '<span class="badge status-done">Terminé</span>',
+    missed: '<span class="badge status-missed">Manqué</span>',
+    todo: '<span class="badge status-todo">À faire</span>',
+  };
   box.innerHTML = '<div class="mini-list">' + days.map((date, i) => {
     const plannedItems = week.items.filter(p => p.date === date);
     const doneItems = sessions.filter(s => s.date === date);
     const isToday = date === todayISO;
-    let statusBadge = '';
-    if (!plannedItems.length && !doneItems.length) statusBadge = '<span class="badge status-rest">Repos</span>';
-    else if (doneItems.length) statusBadge = '<span class="badge status-done">Terminé</span>';
-    else if (plannedItems.length && date < todayISO) statusBadge = '<span class="badge status-missed">Manqué</span>';
-    else if (plannedItems.length) statusBadge = '<span class="badge status-todo">À faire</span>';
+    const status = getPlanDayStatus(date, plannedItems.length, doneItems.length);
+    const statusBadge = STATUS_BADGE[status];
     const label = plannedItems.length ? plannedItems.map(p => escapeHtml(p.type||'Séance') + (p.distanceKm?' · '+p.distanceKm+' km':'')).join(', ') :
       (doneItems.length ? doneItems.map(s => escapeHtml(s.sport||'Séance')).join(', ') : 'Repos');
     return '<div class="mini-list-row"' + (isToday?' style="color:var(--text);font-weight:600;"':'') + '>' +
@@ -364,8 +364,9 @@ function renderPlanCharts() {
     volBox.innerHTML = msg; dplusBox.innerHTML = msg; chargeBox.innerHTML = msg;
     return;
   }
-  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, fmt: v=>v.toFixed(0)+' km' });
-  dplusBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, fmt: v=>Math.round(v)+' m' });
+  const todayISO = new Date().toISOString().slice(0,10);
+  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, fmt: v=>v.toFixed(0)+' km', mutedPlanned:true, futureFromISO:todayISO });
+  dplusBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, fmt: v=>Math.round(v)+' m', mutedPlanned:true, futureFromISO:todayISO });
   initChartTooltips(volBox); initChartTooltips(dplusBox);
 
   const trend = getTrainingTrend();
@@ -420,7 +421,7 @@ function renderPlanChargeVolume() {
     volBox.innerHTML = msg; durBox.innerHTML = msg; chargeBox.innerHTML = msg;
     return;
   }
-  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, height:220, fmt: v=>v.toFixed(0)+' km' });
+  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, height:220, fmt: v=>v.toFixed(0)+' km', mutedPlanned:true, futureFromISO:new Date().toISOString().slice(0,10) });
   initChartTooltips(volBox);
   durBox.innerHTML = agg ? ('<div class="metric" style="border:none;padding:0;"><div class="val" style="font-size:1.6rem;">' + fmtDuration(agg.durationS) + '</div><p class="hint">Cumulé sur les semaines couvertes par le plan.</p></div>') : '<div class="empty">Non disponible.</div>';
 
@@ -431,14 +432,21 @@ function renderPlanChargeVolume() {
 }
 
 /* --------------------------- ONGLET SORTIES CLÉS --------------------------- */
-function keyPlanSessionRow(p) {
+const KEY_ROW_BADGE = {
+  done: '<span class="badge status-done">Terminé</span>',
+  missed: '<span class="badge status-missed">Manqué</span>',
+  todo: '<span class="badge status-todo">À faire</span>',
+  rest: '',
+};
+function keyPlanSessionRow(p, plan) {
   const sessions = loadAllSessions();
-  const done = sessions.find(s => s.date === p.date);
-  const today = new Date().toISOString().slice(0,10);
-  const statusBadge = done ? '<span class="badge status-done">Terminé</span>' : (p.date < today ? '<span class="badge status-missed">Manqué</span>' : '<span class="badge status-todo">À faire</span>');
+  const doneForDay = sessions.filter(s => s.date === p.date);
+  const plannedForDay = (plan || getPlan() || []).filter(x => x.date === p.date).length;
+  const status = getPlanDayStatus(p.date, plannedForDay, doneForDay.length);
+  const done = doneForDay[0];
   return '<div class="mini-list-row">' +
     '<span class="mini-list-lbl">' + fmtDate(p.date) + ' — ' + escapeHtml(p.type || 'Séance') + '</span>' +
-    '<span class="mini-list-val">' + fmtNum(p.distanceKm,' km',1) + ' · ' + fmtNum(p.deniveleM,' m D+',0) + ' ' + statusBadge +
+    '<span class="mini-list-val">' + fmtNum(p.distanceKm,' km',1) + ' · ' + fmtNum(p.deniveleM,' m D+',0) + ' ' + KEY_ROW_BADGE[status] +
       (done ? ' <a class="link-arrow" href="activite.html?id=' + encodeURIComponent(done.id) + '">Voir →</a>' : '') +
     '</span>' +
   '</div>';
@@ -448,7 +456,7 @@ function renderPlanKeySessions() {
   const plan = getPlan();
   const keys = getKeyPlannedSessions(plan);
   if (!keys.length) { box.innerHTML = '<div class="empty">Aucune séance clé identifiable dans ce plan.</div>'; return; }
-  box.innerHTML = '<div class="mini-list">' + keys.map(keyPlanSessionRow).join('') + '</div>';
+  box.innerHTML = '<div class="mini-list">' + keys.map(p => keyPlanSessionRow(p, plan)).join('') + '</div>';
 }
 
 /* --------------------------- ONGLET INTENSITÉ --------------------------- */
@@ -489,7 +497,7 @@ function renderPlanDplusTab() {
   const data = planWeeksAndMap();
   const box = document.getElementById('planDplusChart2Box');
   if (!data || data.weeks.length < 2) box.innerHTML = '<div class="empty">Pas assez de semaines pour ce graphique.</div>';
-  else { box.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, height:240, fmt: v=>Math.round(v)+' m' }); initChartTooltips(box); }
+  else { box.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, height:240, fmt: v=>Math.round(v)+' m', mutedPlanned:true, futureFromISO:new Date().toISOString().slice(0,10) }); initChartTooltips(box); }
 
   const plan = getPlan();
   const climbBox = document.getElementById('planClimbSessionsBox');
@@ -497,7 +505,7 @@ function renderPlanDplusTab() {
   const targets = getPlanTargets(plan);
   const climbSessions = (plan||[]).filter(p => climbRe.test(p.type||'') || (targets && targets.avgWeeklyDplus && (p.deniveleM||0) >= 0.5*targets.avgWeeklyDplus)).sort((a,b)=>a.date.localeCompare(b.date));
   if (!climbSessions.length) { climbBox.innerHTML = '<div class="empty">Aucune séance à D+ notable identifiée dans ce plan.</div>'; return; }
-  climbBox.innerHTML = '<div class="mini-list">' + climbSessions.map(keyPlanSessionRow).join('') + '</div>';
+  climbBox.innerHTML = '<div class="mini-list">' + climbSessions.map(p => keyPlanSessionRow(p, plan)).join('') + '</div>';
 }
 
 /* --------------------------- ONGLET AJUSTEMENTS --------------------------- */
@@ -521,7 +529,6 @@ document.querySelectorAll('#planTabs button').forEach(btn => btn.addEventListene
 /* --------------------------- ORCHESTRATION --------------------------- */
 function renderPlanPage() {
   renderPlanHero();
-  renderPlanInsight();
   const plan = getPlan();
   if (plan && plan.length) {
     renderPlanWeekBox();
@@ -534,6 +541,7 @@ function renderPlanPage() {
     renderPlanIntensity();
     renderPlanDplusTab();
   }
+  renderPlanInsightCompact();
   renderPlanNotes();
 }
 
