@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -34,9 +34,12 @@
 <header class="app-topbar">
   <div>
     <h1 id="greetingTitle">Bonjour 👋</h1>
-    <p class="hint" id="greetingSub" style="margin-top:2px;">Voici ton résumé du jour.</p>
+    <p class="hint" id="greetingSub" style="margin-top:2px;">Voici ton résumé d'entraînement.</p>
   </div>
-  <button id="themeToggle" type="button">☀ Clair</button>
+  <div class="app-topbar-actions">
+    <a class="btn small accent" href="historique.html">+ Importer une activité</a>
+    <button id="themeToggle" type="button">☀ Clair</button>
+  </div>
 </header>
 
 <main>
@@ -48,7 +51,6 @@
   <section class="card">
     <h2>Cette semaine <small id="thisWeekRange"></small></h2>
     <div class="metrics-grid" id="thisWeekGrid"></div>
-    <div id="thisWeekChartBox" style="margin-top:6px;"></div>
   </section>
 
   <section class="card">
@@ -57,39 +59,28 @@
   </section>
 
   <section class="card">
+    <h2>Tendance principale <small>(volume hebdomadaire, 12 dernières semaines)</small></h2>
+    <div class="period-select" id="trendMetricSelect">
+      <button type="button" data-metric="km" class="active">Volume (km)</button>
+      <button type="button" data-metric="dplus">D+ (m)</button>
+    </div>
+    <div id="trendChartBox" style="margin-top:10px;"></div>
+  </section>
+
+  <section class="card">
     <h2>Dernière activité</h2>
     <div id="lastActivityBox"></div>
   </section>
 
   <section class="card">
-    <h2>Objectif en cours</h2>
+    <h2>Objectif principal</h2>
     <div id="nextObjectiveBox"></div>
   </section>
 
   <section class="card">
     <h2>Détail de la charge <small>(charge aiguë vs chronique, 12 dernières semaines)</small></h2>
     <div id="loadChartBox"></div>
-    <p class="hint">Charge aiguë = volume de la semaine. Charge chronique = moyenne des 4 dernières semaines. C'est la base du score « Charge d'entraînement » affiché en haut de page.</p>
-  </section>
-
-  <section class="card">
-    <h2>Tendances <small>(volume, dénivelé, temps, charge)</small></h2>
-    <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:4px;">
-      <div class="tabs" id="seasonMetricTabs">
-        <button type="button" data-metric="distance" class="active">Distance</button>
-        <button type="button" data-metric="dplus">D+</button>
-        <button type="button" data-metric="temps">Temps</button>
-        <button type="button" data-metric="charge">Charge</button>
-      </div>
-      <div class="period-select" id="seasonPeriodSelect">
-        <button type="button" data-weeks="4">4 sem.</button>
-        <button type="button" data-weeks="12" class="active">12 sem.</button>
-        <button type="button" data-weeks="26">6 mois</button>
-        <button type="button" data-weeks="52">1 an</button>
-      </div>
-    </div>
-    <div id="seasonChartBox"></div>
-    <p class="hint" id="seasonChartHint"></p>
+    <p class="hint">Charge aiguë = volume de la semaine. Charge chronique = moyenne des 4 dernières semaines. C'est la base de la tendance de charge affichée en haut de page.</p>
   </section>
 
   <section class="card">
@@ -165,51 +156,54 @@ function mainObjectiveRace() {
 function renderKpis() {
   const grid = document.getElementById('kpiGrid');
   const cards = [];
+  const stats = getWeeklyStats();
 
-  const load = computeTrainingLoadIndex();
+  const fmtDelta = pct => pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%');
   cards.push({
-    label: 'Charge d\'entraînement',
-    value: load ? load.score + '/100' : null,
-    sub: load ? load.label + ' · ratio ' + load.ratio : 'Pas assez de séances récentes',
-    status: load ? load.level : null,
+    label: 'Volume hebdomadaire',
+    value: stats ? fmtNum(stats.distanceKm, ' km', 1) : null,
+    sub: stats ? (fmtDelta(stats.distanceDeltaPct) + ' vs semaine précédente') : 'Pas de séance enregistrée',
+    status: stats && stats.distanceDeltaPct != null ? (stats.distanceDeltaPct >= 0 ? 'ok' : null) : null,
+  });
+  cards.push({
+    label: 'Dénivelé hebdomadaire',
+    value: stats ? fmtNum(stats.ascent, ' m D+', 0) : null,
+    sub: stats ? (fmtDelta(stats.ascentDeltaPct) + ' vs semaine précédente') : 'Pas de séance enregistrée',
+    status: stats && stats.ascentDeltaPct != null ? (stats.ascentDeltaPct >= 0 ? 'ok' : null) : null,
   });
 
-  const sessions = loadAllSessions();
-  const today = new Date().toISOString().slice(0,10);
-  const weekStart = isoWeek(today);
-  const prevWeekStart = new Date(new Date(weekStart).getTime() - 7*86400000).toISOString().slice(0,10);
-  const weekKm = sessions.filter(s => s.date >= weekStart && s.date <= today).reduce((a,s)=>a+(s.distanceKm||0),0);
-  const prevWeekKm = sessions.filter(s => s.date >= prevWeekStart && s.date < weekStart).reduce((a,s)=>a+(s.distanceKm||0),0);
-  let volSub = 'Pas de séance cette semaine';
-  let volStatus = null;
-  if (sessions.length) {
-    if (prevWeekKm > 0) {
-      const delta = Math.round(((weekKm - prevWeekKm) / prevWeekKm) * 100);
-      volSub = (delta >= 0 ? '+' : '') + delta + '% vs semaine dernière';
-      volStatus = delta >= 0 ? 'ok' : null;
-    } else if (weekKm > 0) {
-      volSub = 'Semaine dernière sans séance';
-    }
-  }
-  cards.push({ label: 'Volume cette semaine', value: sessions.length ? fmtNum(weekKm, ' km', 1) : null, sub: volSub, status: volStatus });
+  const trend = getTrainingTrend();
+  const trendSubs = {
+    rising: 'Volume récent supérieur à ta moyenne des dernières semaines.',
+    rising_fast: 'Hausse rapide par rapport à ta charge habituelle.',
+    stable: 'Proche de ta moyenne des 4 dernières semaines.',
+    falling: 'Inférieur à tes semaines précédentes.',
+  };
+  const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: null, falling: null };
+  cards.push({
+    label: 'Tendance de charge',
+    value: trend ? trend.label : null,
+    sub: trend ? trendSubs[trend.level] : 'Pas assez de séances récentes',
+    status: trend ? trendStatus[trend.level] : null,
+  });
 
   const race = mainObjectiveRace();
   if (race) {
     const readiness = computeRaceReadiness(race);
     const overall = readiness.overall;
-    let label, status;
-    if (overall == null) { label = 'Non disponible'; status = null; }
-    else if (overall >= 75) { label = 'Prêt'; status = 'ok'; }
-    else if (overall >= 50) { label = 'En progression'; status = 'warn'; }
-    else { label = 'À renforcer'; status = 'danger'; }
+    let status;
+    if (overall == null) status = null;
+    else if (overall >= 75) status = 'ok';
+    else if (overall >= 50) status = 'warn';
+    else status = 'danger';
     cards.push({
-      label: 'Préparation — ' + (race.statut === 'principal' ? 'objectif principal' : statutLabel(race.statut).toLowerCase()),
+      label: 'Objectif principal',
       value: overall != null ? overall + '%' : null,
-      sub: overall != null ? (label + ' · ' + escapeHtml(race.name)) : 'Pas assez de données pour ' + escapeHtml(race.name),
+      sub: overall != null ? ('Préparation · ' + escapeHtml(race.name)) : 'Pas assez de données pour ' + escapeHtml(race.name),
       status,
     });
   } else {
-    cards.push({ label: 'Préparation objectif', value: null, sub: 'Aucune course à venir — ajoute-en une en page Objectifs', status: null });
+    cards.push({ label: 'Objectif principal', value: null, sub: 'Aucune course à venir', status: null });
   }
 
   grid.innerHTML = cards.map(c =>
@@ -222,68 +216,78 @@ function renderKpis() {
 /* --------------------------- CETTE SEMAINE --------------------------- */
 function renderThisWeek() {
   const grid = document.getElementById('thisWeekGrid');
-  const sessions = loadAllSessions();
-  const today = new Date().toISOString().slice(0,10);
-  const weekStart = isoWeek(today);
-  const prevWeekStart = new Date(new Date(weekStart).getTime() - 7*86400000).toISOString().slice(0,10);
   document.getElementById('thisWeekRange').textContent = '(depuis lundi, vs semaine précédente)';
-  if (!sessions.length) {
+  const stats = getWeeklyStats();
+  if (!stats) {
     grid.innerHTML = '<div class="empty">Importe des séances (page Activités) pour voir ce résumé.</div>';
-    document.getElementById('thisWeekChartBox').innerHTML = '';
     return;
   }
-  const current = sessions.filter(s => s.date >= weekStart && s.date <= today);
-  const previous = sessions.filter(s => s.date >= prevWeekStart && s.date < weekStart);
-  const sum = (arr, key) => arr.reduce((a,s) => a + (s[key] || 0), 0);
-  const pctDelta = (cur, prev) => {
-    if (!prev) return cur > 0 ? '+100%' : '—';
-    const d = Math.round(((cur - prev) / prev) * 100);
-    return (d >= 0 ? '+' : '') + d + '%';
-  };
+  const fmtDelta = pct => (pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%')) + ' vs semaine dernière';
   const items = [
-    ['Distance', fmtNum(sum(current,'distanceKm'), ' km', 1), pctDelta(sum(current,'distanceKm'), sum(previous,'distanceKm'))],
-    ['D+', fmtNum(sum(current,'ascent'), ' m', 0), pctDelta(sum(current,'ascent'), sum(previous,'ascent'))],
-    ['Durée', fmtDuration(sum(current,'durationS')), pctDelta(sum(current,'durationS'), sum(previous,'durationS'))],
-    ['Sorties', String(current.length), pctDelta(current.length, previous.length)],
+    ['Distance', fmtNum(stats.distanceKm, ' km', 1), fmtDelta(stats.distanceDeltaPct)],
+    ['D+', fmtNum(stats.ascent, ' m', 0), fmtDelta(stats.ascentDeltaPct)],
+    ['Durée', fmtDuration(stats.durationS), fmtDelta(stats.durationDeltaPct)],
+    ['Sorties', String(stats.sessionsCount), fmtDelta(stats.sessionsDeltaPct)],
   ];
-  grid.innerHTML = items.map(([lbl,val,delta]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="hint" style="margin-top:2px;">'+delta+' vs semaine dernière</div></div>').join('');
-
-  // Petit graphique de contexte : volume des 8 dernières semaines (pas de tabs, juste le repère visuel).
-  const weeks = [];
-  for (let i = 7; i >= 0; i--) {
-    const ws = isoWeek(new Date(new Date(today).getTime() - i*7*86400000).toISOString().slice(0,10));
-    const weEnd = new Date(ws); weEnd.setDate(weEnd.getDate() + 6);
-    const km = sessions.filter(s => s.date >= ws && s.date <= weEnd.toISOString().slice(0,10)).reduce((a,s)=>a+(s.distanceKm||0),0);
-    weeks.push({ startISO: ws, km });
-  }
-  const chartBox = document.getElementById('thisWeekChartBox');
-  if (weeks.filter(w=>w.km>0).length >= 2) {
-    const points = weeks.map((w,i) => ({ x:i, y:+w.km.toFixed(1), xLabel: w.startISO.slice(8,10)+'/'+w.startISO.slice(5,7), label: 'Semaine du ' + fmtDate(w.startISO) + ' : ' + w.km.toFixed(1) + ' km' }));
-    chartBox.innerHTML = lineChartSvg('Volume (km) — 8 dernières semaines', points, { decimals: 1 });
-    initChartTooltips(chartBox);
-  } else {
-    chartBox.innerHTML = '';
-  }
+  grid.innerHTML = items.map(([lbl,val,delta]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="hint" style="margin-top:2px;">'+delta+'</div></div>').join('');
 }
 
 /* --------------------------- INSIGHT ELEV --------------------------- */
 function renderInsight() {
   const box = document.getElementById('insightBox');
-  const insight = computeTrainingInsight();
+  const insight = generateElevInsight();
   if (!insight) {
     box.innerHTML = '<div class="empty">Importe au moins deux semaines de séances pour obtenir un insight.</div>';
     return;
   }
-  const icon = insight.level === 'warn' ? '⚠' : '💡';
-  box.innerHTML = '<div class="insight-card status-' + insight.level + '"><span class="insight-icon">' + icon + '</span><p>' + escapeHtml(insight.text) + '</p></div>';
+  const icon = insight.level === 'rising_fast' ? '⚠' : '💡';
+  box.innerHTML = '<div class="insight-card status-' + insight.level + '"><span class="insight-icon">' + icon + '</span>' +
+    '<div><p class="insight-title">' + escapeHtml(insight.title) + '</p><p>' + escapeHtml(insight.text) + '</p></div></div>';
 }
+
+/* --------------------------- TENDANCE PRINCIPALE --------------------------- */
+// Un seul graphique de tendance sur la page : volume hebdomadaire par défaut, avec bascule D+.
+// Fenêtre fixe de 12 semaines — volontairement simple, pas de sélecteur de période supplémentaire.
+let trendMetric = 'km';
+function renderTrendChart() {
+  const box = document.getElementById('trendChartBox');
+  const sessions = loadAllSessions();
+  if (sessions.length < 2) { box.innerHTML = svgEmpty('Tendance principale'); return; }
+  const weeks = [];
+  const today = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const ws = isoWeek(new Date(today.getTime() - i*7*86400000).toISOString().slice(0,10));
+    const weEnd = new Date(ws); weEnd.setDate(weEnd.getDate() + 6);
+    const inWeek = sessions.filter(s => s.date >= ws && s.date <= weEnd.toISOString().slice(0,10));
+    weeks.push({
+      startISO: ws,
+      km: inWeek.reduce((a,s) => a + (s.distanceKm||0), 0),
+      dplus: inWeek.reduce((a,s) => a + (s.ascent||0), 0),
+      shortLabel: ws.slice(8,10)+'/'+ws.slice(5,7),
+    });
+  }
+  const isKm = trendMetric === 'km';
+  const points = weeks.map((w,i) => ({
+    x: i, y: +(isKm ? w.km : w.dplus).toFixed(1), xLabel: w.shortLabel,
+    label: 'Semaine du ' + fmtDate(w.startISO) + ' : ' + (isKm ? w.km.toFixed(1) + ' km' : Math.round(w.dplus) + ' m D+'),
+  }));
+  box.innerHTML = lineChartSvg(isKm ? 'Volume (km) par semaine' : 'Dénivelé positif (m) par semaine', points, { decimals: isKm ? 1 : 0 });
+  initChartTooltips(box);
+}
+document.querySelectorAll('#trendMetricSelect button').forEach(btn => btn.addEventListener('click', () => {
+  trendMetric = btn.dataset.metric;
+  document.querySelectorAll('#trendMetricSelect button').forEach(b => b.classList.toggle('active', b === btn));
+  renderTrendChart();
+}));
 
 /* --------------------------- DERNIÈRE ACTIVITÉ --------------------------- */
 function renderLastActivity() {
   const box = document.getElementById('lastActivityBox');
   const sessions = loadAllSessions();
   if (!sessions.length) {
-    box.innerHTML = '<div class="empty">Aucune séance importée. <a href="historique.html">Importe ta première séance</a>.</div>';
+    box.innerHTML = '<div class="empty-state"><div class="empty-title">Pas encore d\'activité</div>' +
+      '<p>Importe ton premier fichier .fit pour commencer à analyser ton entraînement.</p>' +
+      '<a class="btn small accent" href="historique.html">Importer une activité</a></div>';
     return;
   }
   const s = sessions[sessions.length - 1];
@@ -291,25 +295,28 @@ function renderLastActivity() {
     fmtNum(s.distanceKm, ' km', 1),
     fmtNum(s.ascent, ' m D+', 0),
     fmtDuration(s.durationS),
+    s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) + '/km' : null,
     s.avgHr != null ? s.avgHr + ' bpm' : null,
   ].filter(Boolean);
-  box.innerHTML = '<div class="activity-card">' +
+  box.innerHTML = '<a class="activity-card-link" href="historique.html#s=' + encodeURIComponent(s.id) + '"><div class="activity-card">' +
     '<div class="activity-info">' +
       '<div class="hint">' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + (s.sport ? ' — ' + escapeHtml(s.sport) : '') + '</div>' +
       '<h3>' + escapeHtml(s.fileName ? s.fileName.replace(/\.(fit|FIT)$/,'') : 'Séance du ' + fmtDate(s.date)) + '</h3>' +
       '<div class="activity-stats">' + stats.map(v => '<strong>' + v + '</strong>').join('<span>·</span>') + '</div>' +
     '</div>' +
-    '<a class="btn small" href="historique.html#s=' + encodeURIComponent(s.id) + '">Voir l\'analyse →</a>' +
-  '</div>';
+    '<span class="btn small">Voir l\'analyse →</span>' +
+  '</div></a>';
 }
 
-/* --------------------------- OBJECTIF EN COURS --------------------------- */
+/* --------------------------- OBJECTIF PRINCIPAL --------------------------- */
 function renderNextObjective() {
   const box = document.getElementById('nextObjectiveBox');
   const today = new Date().toISOString().slice(0,10);
   const r = mainObjectiveRace();
   if (!r) {
-    box.innerHTML = '<div class="empty">Aucune course à venir. <a href="objectifs.html">Ajoute ta prochaine course</a>.</div>';
+    box.innerHTML = '<div class="empty-state"><div class="empty-title">Aucun objectif défini</div>' +
+      '<p>Ajoute une course pour suivre ta préparation.</p>' +
+      '<a class="btn small accent" href="objectifs.html">Ajouter un objectif</a></div>';
     return;
   }
   const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
@@ -359,56 +366,6 @@ function renderLoadChart() {
   box.innerHTML = groupedBarChartSvg('Kilomètres par semaine', weeks, series);
   initChartTooltips(box);
 }
-
-/* --------------------------- PROFIL DE SAISON (togglable) --------------------------- */
-const SEASON_METRICS = {
-  distance: { label:'Distance', get:w=>w.km, decimals:1, unit:' km' },
-  dplus:    { label:'D+',       get:w=>w.dplus, decimals:0, unit:' m' },
-  temps:    { label:'Temps',    get:w=>w.hours, decimals:1, unit:' h' },
-  charge:   { label:'Charge',   get:w=>w.charge, decimals:1, unit:'' },
-};
-let seasonMetric = 'distance';
-let seasonWeeks = 12;
-function renderSeasonChart() {
-  const box = document.getElementById('seasonChartBox');
-  const sessions = loadAllSessions();
-  if (sessions.length < 2) { box.innerHTML = svgEmpty('Tendances'); document.getElementById('seasonChartHint').textContent = ''; return; }
-  const firstWeek = isoWeek(sessions[0].date);
-  const lastWeek = isoWeek(new Date().toISOString().slice(0,10));
-  const weeks = [];
-  let cursor = firstWeek;
-  while (cursor <= lastWeek && weeks.length < 104) { // 2 ans de garde-fou, évite une boucle interminable sur une date aberrante
-    const weekEndDate = new Date(cursor); weekEndDate.setDate(weekEndDate.getDate() + 6);
-    const weekEndISO = weekEndDate.toISOString().slice(0,10);
-    const inWeek = sessions.filter(s => s.date >= cursor && s.date <= weekEndISO);
-    const km = inWeek.reduce((a,s) => a + (s.distanceKm||0), 0);
-    const dplus = inWeek.reduce((a,s) => a + (s.ascent||0), 0);
-    const hours = inWeek.reduce((a,s) => a + (s.durationS||0), 0) / 3600;
-    weeks.push({ startISO: cursor, km, dplus, hours, charge: km + dplus/100, shortLabel: cursor.slice(8,10)+'/'+cursor.slice(5,7) });
-    cursor = new Date(new Date(cursor).getTime() + 7*86400000).toISOString().slice(0,10);
-  }
-  const windowWeeks = weeks.slice(-seasonWeeks);
-  const metric = SEASON_METRICS[seasonMetric];
-  const points = windowWeeks.map((w,i) => ({
-    x: i, y: +metric.get(w).toFixed(2), xLabel: w.shortLabel,
-    label: 'Semaine du ' + fmtDate(w.startISO) + ' : ' + metric.get(w).toFixed(metric.decimals) + metric.unit,
-  }));
-  box.innerHTML = lineChartSvg(metric.label + ' par semaine', points, { decimals: metric.decimals });
-  initChartTooltips(box);
-  document.getElementById('seasonChartHint').textContent = seasonMetric === 'charge'
-    ? 'Charge = distance (km) + dénivelé positif / 100 — un repère simple combinant volume et dénivelé, pas une mesure physiologique.'
-    : '';
-}
-document.querySelectorAll('#seasonMetricTabs button').forEach(btn => btn.addEventListener('click', () => {
-  seasonMetric = btn.dataset.metric;
-  document.querySelectorAll('#seasonMetricTabs button').forEach(b => b.classList.toggle('active', b === btn));
-  renderSeasonChart();
-}));
-document.querySelectorAll('#seasonPeriodSelect button').forEach(btn => btn.addEventListener('click', () => {
-  seasonWeeks = parseInt(btn.dataset.weeks, 10);
-  document.querySelectorAll('#seasonPeriodSelect button').forEach(b => b.classList.toggle('active', b === btn));
-  renderSeasonChart();
-}));
 
 function renderSummary() {
   const sessions = loadAllSessions();
@@ -491,10 +448,10 @@ renderGearAlert();
 renderKpis();
 renderThisWeek();
 renderInsight();
+renderTrendChart();
 renderLastActivity();
 renderNextObjective();
 renderLoadChart();
-renderSeasonChart();
 renderSummary();
 renderFcZones();
 </script>

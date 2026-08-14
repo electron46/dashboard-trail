@@ -770,11 +770,41 @@ function computeRaceReadiness(race) {
   return { overall, subs, weakest };
 }
 
-// Indice de charge d'entraînement : ratio entre la charge aiguë (7 derniers jours) et la charge chronique
-// (moyenne des 4 dernières semaines), normalisé en score 0-100. Zone optimale usuelle en littérature sport
-// (ACWR — acute:chronic workload ratio) : 0,8-1,3. Basé uniquement sur le volume (km) déjà suivi ; ce n'est
-// pas une mesure physiologique (pas de FC, pas de TRIMP) — à traiter comme un repère, pas un diagnostic.
-function computeTrainingLoadIndex() {
+// Statistiques de la semaine en cours (depuis lundi), comparées à la semaine précédente complète.
+// Pure fonction de calcul (aucun accès au DOM) — réutilisée par les KPI et la section "Cette semaine".
+// deltaPct vaut null quand il n'y a rien à comparer (semaine précédente vide) : à afficher comme "—",
+// jamais comme 0%, pour ne pas laisser croire à une stagnation mesurée.
+function getWeeklyStats() {
+  const sessions = loadAllSessions();
+  if (!sessions.length) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const weekStart = isoWeek(today);
+  const prevWeekStart = new Date(new Date(weekStart).getTime() - 7*86400000).toISOString().slice(0,10);
+  const current = sessions.filter(s => s.date >= weekStart && s.date <= today);
+  const previous = sessions.filter(s => s.date >= prevWeekStart && s.date < weekStart);
+  const sum = (arr, key) => arr.reduce((a,s) => a + (s[key] || 0), 0);
+  const deltaPct = (cur, prev) => prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
+  const distanceKm = sum(current, 'distanceKm'), prevDistanceKm = sum(previous, 'distanceKm');
+  const ascent = sum(current, 'ascent'), prevAscent = sum(previous, 'ascent');
+  const durationS = sum(current, 'durationS'), prevDurationS = sum(previous, 'durationS');
+  return {
+    distanceKm: +distanceKm.toFixed(1), distanceDeltaPct: deltaPct(distanceKm, prevDistanceKm),
+    ascent: Math.round(ascent), ascentDeltaPct: deltaPct(ascent, prevAscent),
+    durationS, durationDeltaPct: deltaPct(durationS, prevDurationS),
+    sessionsCount: current.length, sessionsDeltaPct: deltaPct(current.length, previous.length),
+  };
+}
+
+// Tendance de charge : compare la charge aiguë (7 derniers jours) à la charge chronique (moyenne glissante
+// des 4 dernières semaines), sur le volume (km) déjà suivi. Retourne un niveau QUALITATIF plutôt qu'un score
+// sur 100 — ce n'est pas une mesure physiologique (pas de FC, pas de TRIMP), juste un repère de lecture du
+// volume, à traiter comme une observation et non un diagnostic.
+// Seuils documentés et ajustables ici :
+const TREND_RISING_RATIO = 1.15;      // ratio au-dessus duquel la hausse de volume est jugée raisonnable
+const TREND_RISING_FAST_RATIO = 1.5;  // ratio au-dessus duquel la hausse est jugée rapide, à surveiller
+const TREND_FALLING_RATIO = 0.75;     // ratio en-dessous duquel le volume est jugé en net repli
+const TREND_LABELS = { rising: 'En hausse', rising_fast: 'Hausse rapide', stable: 'Stable', falling: 'En baisse' };
+function getTrainingTrend() {
   const sessions = loadAllSessions();
   if (sessions.length < 2) return null;
   const today = new Date().toISOString().slice(0,10);
@@ -788,42 +818,41 @@ function computeTrainingLoadIndex() {
   const acute = weeks[weeks.length-1];
   const chronic = weeks.reduce((a,b)=>a+b,0) / weeks.length;
   if (chronic <= 0) return null;
-  const ratio = acute / chronic;
-  let score;
-  if (ratio >= 0.8 && ratio <= 1.3) score = 100 - Math.abs(ratio - 1) * 40;
-  else if (ratio < 0.8) score = 92 - (0.8 - ratio) * 150;
-  else score = 88 - (ratio - 1.3) * 150;
-  score = Math.round(Math.max(0, Math.min(100, score)));
-  let level, label;
-  if (ratio < 0.8) { level = 'low'; label = 'Charge basse'; }
-  else if (ratio <= 1.3) { level = 'ok'; label = 'Charge optimale'; }
-  else if (ratio <= 1.5) { level = 'warn'; label = 'Charge élevée'; }
-  else { level = 'high'; label = 'Charge très élevée'; }
-  return { score, ratio: +ratio.toFixed(2), acute, chronic: +chronic.toFixed(1), level, label, weeks };
+  const ratio = +(acute / chronic).toFixed(2);
+  let level;
+  if (ratio >= TREND_RISING_FAST_RATIO) level = 'rising_fast';
+  else if (ratio >= TREND_RISING_RATIO) level = 'rising';
+  else if (ratio <= TREND_FALLING_RATIO) level = 'falling';
+  else level = 'stable';
+  return { level, label: TREND_LABELS[level], ratio, acute, chronic: +chronic.toFixed(1), weeks };
 }
 
-// Insight ELEV : traduit la charge et la tendance de volume en une phrase, à partir de règles explicites
-// et déterministes (pas d'IA, pas d'appel réseau). Priorité : signal de risque > tendance > stabilité.
-function computeTrainingInsight() {
-  const load = computeTrainingLoadIndex();
-  if (!load) return null;
-  const w = load.weeks; // [S-3, S-2, S-1, S courante], km, du plus ancien au plus récent
-  const last = w[w.length-1];
-  if (load.ratio >= 1.5) {
-    return { level: 'warn', text: 'Ta charge de la semaine (' + last.toFixed(1) + ' km) dépasse largement ta moyenne des 4 dernières semaines (' + load.chronic.toFixed(1) + ' km). Une hausse aussi rapide augmente le risque de blessure : une semaine plus légère peut être utile.' };
-  }
-  if (load.ratio <= 0.5 && load.chronic > 5) {
-    return { level: 'info', text: 'Volume nettement en retrait cette semaine (' + last.toFixed(1) + ' km, contre ' + load.chronic.toFixed(1) + ' km en moyenne). Repos voulu, blessure ou imprévu ? Pense à reprendre progressivement.' };
-  }
-  const rising = w.every((v,i) => i===0 || v >= w[i-1]-0.5);
-  const falling = w.every((v,i) => i===0 || v <= w[i-1]+0.5);
-  if (rising && last > w[0]*1.1) {
-    return { level: 'ok', text: 'Ton volume augmente progressivement depuis ' + w.length + ' semaines (' + w[0].toFixed(0) + ' → ' + last.toFixed(0) + ' km), avec une charge qui reste maîtrisée. Progression régulière.' };
-  }
-  if (falling && last < w[0]*0.9) {
-    return { level: 'info', text: 'Ton volume diminue depuis ' + w.length + ' semaines (' + w[0].toFixed(0) + ' → ' + last.toFixed(0) + ' km). Vérifie que c\'est bien une phase de récupération voulue et pas un simple relâchement.' };
-  }
-  return { level: 'ok', text: 'Ton volume est stable sur les ' + w.length + ' dernières semaines (autour de ' + load.chronic.toFixed(0) + ' km/semaine), avec une charge dans la zone optimale.' };
+// Insight ELEV : traduit la tendance de charge en une observation textuelle, à partir de règles explicites
+// et déterministes (pas d'IA, pas d'appel réseau). Ce sont des observations basées sur l'historique
+// d'entraînement — jamais un diagnostic médical ou physiologique.
+function generateElevInsight() {
+  const trend = getTrainingTrend();
+  if (!trend) return null;
+  const w = trend.weeks; // [S-3, S-2, S-1, S courante], km, du plus ancien au plus récent
+  const texts = {
+    rising: {
+      title: 'Progression régulière',
+      text: 'Ton volume augmente progressivement par rapport aux dernières semaines (' + w[0].toFixed(0) + ' → ' + trend.acute.toFixed(0) + ' km).',
+    },
+    rising_fast: {
+      title: 'Hausse importante du volume',
+      text: 'Ta charge récente augmente rapidement (' + trend.acute.toFixed(1) + ' km cette semaine, contre ' + trend.chronic.toFixed(1) + ' km en moyenne). Pense à surveiller la récupération avant d\'ajouter davantage de volume.',
+    },
+    stable: {
+      title: 'Entraînement stable',
+      text: 'Ton volume reste proche de ta moyenne récente (autour de ' + trend.chronic.toFixed(0) + ' km/semaine).',
+    },
+    falling: {
+      title: 'Volume en baisse',
+      text: 'Ton volume est inférieur aux semaines précédentes (' + trend.acute.toFixed(1) + ' km, contre ' + trend.chronic.toFixed(1) + ' km en moyenne).',
+    },
+  };
+  return Object.assign({ level: trend.level }, texts[trend.level]);
 }
 
 // Profil de performance à 6 axes, calculé à partir des séances des 12 dernières semaines (repères fixes
