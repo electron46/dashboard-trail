@@ -217,6 +217,37 @@ section.card h2 small{font-family:var(--font-sans);color:var(--muted);font-weigh
 .profile-identity .meta-row{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted-2);}
 .profile-identity .meta-row span{display:flex;align-items:center;gap:6px;}
 
+/* Page Équipements (refonte) */
+.equip-table-head{display:none;}
+.equip-list{display:flex;flex-direction:column;gap:8px;}
+.equip-row{display:grid;grid-template-columns:44px 1.6fr .9fr 1.3fr 1fr .9fr 20px;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel);cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;}
+.equip-row:hover{border-color:var(--muted-2);background:var(--panel-raised,var(--panel));}
+.equip-row .equip-icon{width:36px;height:36px;border-radius:var(--radius-md);background:var(--panel-raised,var(--panel));display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;}
+.equip-row .equip-icon img.photo{width:100%;height:100%;object-fit:cover;}
+.equip-row .equip-icon img.ic{width:18px;height:18px;opacity:.8;}
+.equip-row .equip-name{font-weight:600;}
+.equip-row .equip-sub{font-size:.72rem;color:var(--muted);margin-top:1px;}
+.equip-row .equip-km-val{font-variant-numeric:tabular-nums;font-size:.84rem;}
+.equip-row .equip-km-pct{font-size:.7rem;color:var(--muted);margin-left:4px;}
+.equip-row .equip-chevron{color:var(--muted-2);text-align:right;}
+@media (min-width:900px){
+  .equip-table-head{display:grid;grid-template-columns:44px 1.6fr .9fr 1.3fr 1fr .9fr 20px;gap:14px;padding:0 14px 8px;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2);}
+}
+@media (max-width:899px){
+  .equip-row{grid-template-columns:44px 1fr auto;grid-template-areas:"icon name state" "icon km km" "icon date date";row-gap:4px;}
+  .equip-row .equip-icon{grid-area:icon;}
+  .equip-row .equip-name{grid-area:name;}
+  .equip-row .equip-cat{display:none;}
+  .equip-row .equip-state{grid-area:state;justify-self:end;}
+  .equip-row .equip-km{grid-area:km;}
+  .equip-row .equip-date{grid-area:date;font-size:.74rem;color:var(--muted);}
+  .equip-row .equip-chevron{display:none;}
+}
+.equip-detect-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border:1px dashed var(--accent-light);border-radius:var(--radius-md);background:var(--accent-soft);font-size:.82rem;margin-bottom:12px;}
+.equip-status-row{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+.equip-status-line{display:flex;justify-content:space-between;font-size:.8rem;padding:4px 0;border-bottom:1px solid var(--border);}
+.equip-status-line:last-child{border-bottom:none;}
+
 .hr-zone-mode-toggle{display:flex;gap:6px;margin:10px 0;}
 .hr-zone-edit-row{display:grid;grid-template-columns:44px 1fr 1fr;align-items:center;gap:8px;margin-bottom:6px;}
 .hr-zone-edit-row .z-label{font-size:.8rem;font-weight:600;display:flex;align-items:center;}

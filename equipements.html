@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -25,26 +26,76 @@
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
-  <h1>Suivi de l'usure des chaussures</h1>
-  <button id="themeToggle" type="button">☀ Clair</button>
+  <div>
+    <h1>Mes équipements</h1>
+    <p class="hint" style="margin-top:2px;">Gérez votre matériel et suivez son usure.</p>
+  </div>
+  <div class="app-topbar-actions">
+    <button class="btn primary" id="addEquipBtn" type="button">+ Ajouter un équipement</button>
+    <button id="themeToggle" type="button">☀ Clair</button>
+  </div>
 </header>
 
 <main>
 
+  <section class="kpi-grid" id="kpiGrid"></section>
+
+  <div id="detectBannerBox"></div>
+
   <section class="card">
-    <h2>Chaussures <small>le kilométrage automatique vient des séances associées en page Historique</small></h2>
-    <div class="item-grid" id="gearGrid"></div>
-    <div class="row" style="margin-top:12px;">
-      <button class="btn" id="addGearBtn" type="button">+ Ajouter une paire</button>
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;">
+      <div class="tabs" id="equipTabs" style="border-bottom:none;">
+        <button type="button" data-tab="tous" class="active">Tous</button>
+        <button type="button" data-tab="chaussures">Chaussures</button>
+        <button type="button" data-tab="montre">Montres / GPS</button>
+        <button type="button" data-tab="accessoire">Accessoires</button>
+        <button type="button" data-tab="autre">Autres</button>
+      </div>
+      <label class="field" style="flex:0 0 auto;min-width:170px;">
+        <select id="equipSort">
+          <option value="utilises">Trier par : Plus utilisés</option>
+          <option value="recents">Plus récents</option>
+          <option value="km">Kilométrage</option>
+          <option value="etat">État</option>
+          <option value="nom">Nom</option>
+        </select>
+      </label>
+    </div>
+    <div class="equip-table-head">
+      <span></span><span>Équipement</span><span>Catégorie</span><span>Kilométrage / usage</span><span>État</span><span>Dernière utilisation</span><span></span>
+    </div>
+    <div class="equip-list" id="equipList"></div>
+  </section>
+
+  <section class="card" style="margin-top:14px;">
+    <div class="row" style="align-items:flex-start;justify-content:space-between;">
+      <p class="hint" style="margin:0;">Le kilométrage des chaussures est calculé automatiquement à partir des activités auxquelles elles sont associées (page Activités, détail de séance). Vous pouvez ajouter un kilométrage initial pour tenir compte de l'utilisation avant ELEV.</p>
     </div>
   </section>
+
+  <div class="analysis-charts-row" style="margin-top:14px;">
+    <section class="card card-compact">
+      <h2>Répartition par catégorie</h2>
+      <div id="catBreakdownBox"></div>
+    </section>
+    <section class="card card-compact">
+      <h2>État des équipements</h2>
+      <div id="statusBreakdownBox"></div>
+    </section>
+    <section class="card card-compact">
+      <h2>Dernières utilisations</h2>
+      <div id="lastUsedBox"></div>
+    </section>
+  </div>
 
 </main>
 
@@ -63,12 +114,26 @@
   <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
 </nav>
 
+<!-- ============ MODALE AJOUT / ÉDITION ============ -->
 <div class="modal-backdrop" id="gearModalBackdrop">
   <div class="modal">
-    <h3 id="gearModalTitle">Ajouter une paire</h3>
+    <h3 id="gearModalTitle">Ajouter un équipement</h3>
     <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
+      <h4 class="modal-section" style="border-top:none;padding-top:0;margin-top:0;">Identité</h4>
       <label class="field">Nom du modèle
         <input type="text" id="gearNom" placeholder="ex. Salomon Speedcross 6">
+      </label>
+      <div class="field-pair">
+        <label class="field">Marque (optionnel)<input type="text" id="gearMarque" placeholder="ex. Salomon"></label>
+        <label class="field">Modèle (optionnel)<input type="text" id="gearModele" placeholder="ex. Speedcross 6"></label>
+      </div>
+      <label class="field">Catégorie
+        <select id="gearCategorie">
+          <option value="chaussures">Chaussures</option>
+          <option value="montre">Montre / GPS</option>
+          <option value="accessoire">Accessoire</option>
+          <option value="autre">Autre</option>
+        </select>
       </label>
       <label class="field">Photo (optionnel)
         <div class="row">
@@ -78,17 +143,37 @@
         </div>
       </label>
       <div id="gearPhotoPreviewBox"></div>
+
+      <h4 class="modal-section">Usage</h4>
+      <label class="field">Type d'usage (optionnel)
+        <input type="text" id="gearTypeUsage" placeholder="ex. Trail, Compétition, Entraînement...">
+      </label>
       <label class="field">Date d'achat
         <input type="date" id="gearDate">
       </label>
-      <label class="field">Km déjà parcourus avant suivi (km de base)
-        <input type="number" id="gearKmInitial" min="0" step="1" value="0">
+      <div class="field-pair" id="gearKmFieldsRow">
+        <label class="field">Km déjà parcourus avant suivi
+          <input type="number" id="gearKmInitial" min="0" step="1" value="0">
+        </label>
+        <label class="field">Repère de remplacement (km)
+          <input type="number" id="gearSeuil" min="0" step="10" value="700">
+        </label>
+      </div>
+      <label class="field">État
+        <select id="gearManualStatus">
+          <option value="">Automatique (selon kilométrage)</option>
+          <option value="bon">Bon</option>
+          <option value="surveiller">À surveiller</option>
+          <option value="remplacer">À remplacer</option>
+        </select>
       </label>
-      <label class="field">Seuil d'alerte usure (km)
-        <input type="number" id="gearSeuil" min="0" step="10" value="700">
+
+      <h4 class="modal-section">Informations</h4>
+      <label class="field">Notes (optionnel)
+        <textarea id="gearNotes" rows="2" placeholder="Notes libres"></textarea>
       </label>
       <label class="field" style="flex-direction:row;align-items:center;gap:8px;">
-        <input type="checkbox" id="gearActif" style="width:auto;" checked> En service
+        <input type="checkbox" id="gearActif" style="width:auto;" checked> En service (décoché = archivé)
       </label>
     </div>
     <div class="row" style="margin-top:14px;justify-content:space-between;">
@@ -102,35 +187,153 @@
   </div>
 </div>
 
+<!-- ============ MODALE DÉTAIL ============ -->
+<div class="modal-backdrop" id="detailModalBackdrop">
+  <div class="modal">
+    <h3 id="detailModalTitle">Équipement</h3>
+    <div id="detailModalBody"></div>
+    <div class="row" style="margin-top:14px;justify-content:space-between;">
+      <button class="btn small" id="detailArchiveBtn" type="button"></button>
+      <div class="row">
+        <button class="btn" id="detailCloseBtn" type="button">Fermer</button>
+        <button class="btn primary" id="detailEditBtn" type="button">Modifier</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-function renderGear() {
-  const list = getGear().slice().sort((a,b) => (b.actif?1:0) - (a.actif?1:0));
-  const grid = document.getElementById('gearGrid');
-  if (!list.length) {
-    grid.innerHTML = '<div class="empty">Aucune paire enregistrée pour l\'instant.<br><button class="btn small" id="emptyAddGearBtn" type="button" style="margin-top:8px;">+ Ajouter ta première paire</button></div>';
+const CATEGORY_LABELS = { chaussures:'Chaussures', montre:'Montre / GPS', accessoire:'Accessoire', autre:'Autre' };
+const CATEGORY_ICONS = { chaussures:'footprints', montre:'watch', accessoire:'backpack', autre:'package' };
+const CATEGORY_COLORS = { chaussures:'var(--accent)', montre:'var(--accent-light)', accessoire:'var(--warn)', autre:'var(--muted-2)' };
+const STATUS_LABELS = { bon:'Bon', surveiller:'À surveiller', remplacer:'À remplacer', archive:'Archivé' };
+const STATUS_BADGE_CLASS = { bon:'ok-badge', surveiller:'warn-badge', remplacer:'danger-badge', archive:'na' };
+const ICON_E = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+
+let currentTab = 'tous';
+let currentSort = 'utilises';
+
+/* --------------------------- KPI --------------------------- */
+function renderKpis() {
+  const all = getGear();
+  const active = all.filter(g => g.actif !== false);
+  const usages = active.map(g => getEquipmentUsage(g));
+  const kmTotal = usages.filter(u => u.isDistanceTracked).reduce((s,u) => s + (u.km||0), 0);
+  const surveiller = usages.filter(u => u.status === 'surveiller').length;
+  const remplacer = usages.filter(u => u.status === 'remplacer').length;
+  const cards = [
+    { icon:'footprints', label:'Équipements actifs', value: String(active.length), sub: 'sur ' + all.length + ' au total' },
+    { icon:'route', label:'Kilométrage chaussures suivi', value: fmtNum(kmTotal,' km',0), sub: 'chaussures actives uniquement' },
+    { icon:'alert-triangle', label:'À surveiller', value: String(surveiller), sub: surveiller>1?'équipements':'équipement' },
+    { icon:'refresh-cw', label:'À remplacer bientôt', value: String(remplacer), sub: remplacer>1?'équipements':'équipement' },
+  ];
+  document.getElementById('kpiGrid').innerHTML = cards.map(c =>
+    '<div class="kpi-card"><div class="kpi-label"><img src="'+ICON_E(c.icon)+'" alt="">'+escapeHtml(c.label)+'</div>' +
+    '<div class="kpi-value-row"><div class="kpi-value">'+escapeHtml(c.value)+'</div></div>' +
+    '<div class="kpi-sub">'+escapeHtml(c.sub)+'</div></div>'
+  ).join('');
+}
+
+/* --------------------------- BANDEAU APPAREIL DÉTECTÉ --------------------------- */
+function renderDetectBanner() {
+  const box = document.getElementById('detectBannerBox');
+  const detected = getDetectedDevices(1);
+  if (!detected.length) { box.innerHTML = ''; return; }
+  const d = detected[0];
+  box.innerHTML = '<div class="equip-detect-banner"><span>Appareil détecté : <strong>' + escapeHtml(d.name) + '</strong></span>' +
+    '<button class="btn small" id="addDetectedBtn" type="button">+ Ajouter à mes équipements</button></div>';
+  document.getElementById('addDetectedBtn').addEventListener('click', () => openGearModal(null, { nom: d.name, categorie: 'montre' }));
+}
+
+/* --------------------------- LISTE --------------------------- */
+function equipIconHtml(item) {
+  if (item.photo) return '<img class="photo" src="' + item.photo + '" alt="">';
+  return '<img class="ic" src="' + ICON_E(CATEGORY_ICONS[item.category || 'chaussures']) + '" alt="">';
+}
+function equipRowHtml(item) {
+  const u = getEquipmentUsage(item);
+  const cat = item.category || 'chaussures';
+  const fillCls = u.status === 'remplacer' ? 'danger' : (u.status === 'surveiller' ? 'warn' : '');
+  const kmHtml = u.isDistanceTracked
+    ? '<div class="equip-km-val">' + Math.round(u.km) + ' / ' + (item.seuilKm||700) + ' km' + (u.pct!=null ? '<span class="equip-km-pct">'+u.pct+'%</span>' : '') + '</div>' +
+      '<div class="progress-track" style="margin-top:4px;max-width:140px;"><div class="progress-fill ' + fillCls + '" style="width:' + Math.min(100,u.pct||0) + '%"></div></div>'
+    : '<span class="hint">— · ' + u.sessionsCount + ' activité' + (u.sessionsCount>1?'s':'') + '</span>';
+  const sub = [item.typeUsage, item.dateAchat ? ('Achetée le '+fmtDate(item.dateAchat)) : null].filter(Boolean).join(' · ');
+  return '<button type="button" class="equip-row" data-id="' + item.id + '">' +
+    '<span class="equip-icon">' + equipIconHtml(item) + '</span>' +
+    '<span><span class="equip-name">' + escapeHtml(item.nom) + '</span>' + (sub ? '<div class="equip-sub">'+escapeHtml(sub)+'</div>' : '') + '</span>' +
+    '<span class="equip-cat"><span class="badge na">' + CATEGORY_LABELS[cat] + '</span></span>' +
+    '<span class="equip-km">' + kmHtml + '</span>' +
+    '<span class="equip-state"><span class="badge ' + STATUS_BADGE_CLASS[u.status] + '">' + STATUS_LABELS[u.status] + '</span></span>' +
+    '<span class="equip-date">' + (u.lastUsedDate ? fmtDate(u.lastUsedDate) : '—') + '</span>' +
+    '<span class="equip-chevron">›</span>' +
+  '</button>';
+}
+const STATUS_ORDER = { remplacer:0, surveiller:1, bon:2, archive:3 };
+function renderList() {
+  const box = document.getElementById('equipList');
+  let list = getGear().filter(g => currentTab === 'tous' || (g.category || 'chaussures') === currentTab);
+  const withUsage = list.map(g => ({ g, u: getEquipmentUsage(g) }));
+  withUsage.sort((a,b) => {
+    if (currentSort === 'utilises') return b.u.sessionsCount - a.u.sessionsCount;
+    if (currentSort === 'recents') return (b.u.lastUsedDate||'').localeCompare(a.u.lastUsedDate||'');
+    if (currentSort === 'km') return (b.u.km||0) - (a.u.km||0);
+    if (currentSort === 'etat') return STATUS_ORDER[a.u.status] - STATUS_ORDER[b.u.status];
+    return (a.g.nom||'').localeCompare(b.g.nom||'');
+  });
+  if (!withUsage.length) {
+    box.innerHTML = '<div class="empty">Aucun équipement dans cette catégorie.<br><button class="btn small" id="emptyAddGearBtn" type="button" style="margin-top:8px;">+ Ajouter un équipement</button></div>';
     document.getElementById('emptyAddGearBtn').addEventListener('click', () => openGearModal(null));
     return;
   }
-  grid.innerHTML = list.map(g => {
-    const km = (g.kmInitial || 0) + gearKmFromSessions(g.id);
-    const seuil = g.seuilKm || 700;
-    const pct = Math.min(100, Math.round((km / seuil) * 100));
-    const cls = pct >= 100 ? 'danger' : (pct >= 80 ? 'warn' : '');
-    const badge = !g.actif ? '<span class="badge na">Hors service</span>' : (pct >= 100 ? '<span class="badge danger-badge">À remplacer</span>' : (pct >= 80 ? '<span class="badge warn-badge">Bientôt</span>' : '<span class="badge ok-badge">OK</span>'));
-    return '<div class="item-card">' +
-      (g.photo ? '<img src="' + g.photo + '" alt="' + escapeHtml(g.nom) + '" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius-md);margin-bottom:8px;">' : '') +
-      '<div class="row" style="justify-content:space-between;align-items:flex-start;">' +
-        '<h3>' + escapeHtml(g.nom) + '</h3>' + badge +
-      '</div>' +
-      '<div class="hint">' + (g.dateAchat ? ('Achetée le ' + fmtDate(g.dateAchat)) : 'Date d\'achat non renseignée') + '</div>' +
-      '<div style="font-family:var(--font-mono);margin-top:8px;">' + km.toFixed(0) + ' km <span style="color:var(--muted);">/ ' + seuil + ' km</span></div>' +
-      '<div class="progress-track"><div class="progress-fill ' + cls + '" style="width:' + pct + '%"></div></div>' +
-      '<div class="actions"><button class="btn small" data-edit="' + g.id + '">Modifier</button></div>' +
-    '</div>';
-  }).join('');
-  grid.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openGearModal(btn.dataset.edit)));
+  box.innerHTML = withUsage.map(x => equipRowHtml(x.g)).join('');
+  box.querySelectorAll('[data-id]').forEach(el => el.addEventListener('click', () => openDetailModal(el.dataset.id)));
 }
 
+/* --------------------------- SYNTHÈSES DU BAS --------------------------- */
+function renderSummaries() {
+  const all = getGear();
+  const catCounts = {};
+  all.forEach(g => { const c = g.category || 'chaussures'; catCounts[c] = (catCounts[c]||0) + 1; });
+  const catEntries = Object.entries(catCounts);
+  const catBox = document.getElementById('catBreakdownBox');
+  if (!catEntries.length) catBox.innerHTML = '<div class="empty">Aucun équipement enregistré.</div>';
+  else {
+    const segments = catEntries.map(([cat,count]) => ({ pct: Math.round(count/all.length*100), color: CATEGORY_COLORS[cat] }));
+    const legend = catEntries.map(([cat,count]) => '<div class="mini-list-row"><span class="mini-list-lbl">' + escapeHtml(CATEGORY_LABELS[cat]) + '</span><span class="mini-list-val">' + count + '</span></div>').join('');
+    catBox.innerHTML = '<div class="analysis-donut-row">' + genericDonutSvg(segments, String(all.length), 'total') + '<div class="mini-list" style="flex:1;">' + legend + '</div></div>';
+  }
+
+  const active = all.filter(g => g.actif !== false);
+  const statusCounts = { bon:0, surveiller:0, remplacer:0 };
+  active.forEach(g => { const s = getEquipmentUsage(g).status; if (statusCounts[s] != null) statusCounts[s]++; });
+  const maxCount = Math.max(1, ...Object.values(statusCounts));
+  const statusBox = document.getElementById('statusBreakdownBox');
+  statusBox.innerHTML = '<div class="zone-bars">' + [['bon','Bon'],['surveiller','À surveiller'],['remplacer','À remplacer']].map(([key,label]) =>
+    '<div class="zone-row" style="grid-template-columns:110px 1fr 30px;"><span class="zone-label">' + label + '</span>' +
+    '<div class="zone-track"><div class="zone-fill" style="width:' + (statusCounts[key]/maxCount*100) + '%;background:' + (key==='remplacer'?'var(--danger)':key==='surveiller'?'var(--warn)':'var(--success)') + ';"></div></div>' +
+    '<span class="zone-pct">' + statusCounts[key] + '</span></div>'
+  ).join('') + '</div>';
+
+  const withDate = all.map(g => ({ g, u: getEquipmentUsage(g) })).filter(x => x.u.lastUsedDate).sort((a,b) => b.u.lastUsedDate.localeCompare(a.u.lastUsedDate)).slice(0,5);
+  const lastBox = document.getElementById('lastUsedBox');
+  if (!withDate.length) lastBox.innerHTML = '<div class="empty">Aucune utilisation enregistrée.</div>';
+  else {
+    lastBox.innerHTML = '<div class="mini-list">' + withDate.map(x =>
+      '<div class="mini-list-row"><span class="mini-list-lbl">' + escapeHtml(x.g.nom || '') + '</span><span class="mini-list-val">' + fmtDate(x.u.lastUsedDate) + '</span></div>'
+    ).join('') + '</div>';
+  }
+}
+
+/* --------------------------- TABS / TRI --------------------------- */
+document.querySelectorAll('#equipTabs button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('#equipTabs button').forEach(b => b.classList.toggle('active', b === btn));
+  currentTab = btn.dataset.tab;
+  renderList();
+}));
+document.getElementById('equipSort').addEventListener('change', e => { currentSort = e.target.value; renderList(); });
+
+/* --------------------------- MODALE AJOUT / ÉDITION --------------------------- */
 let editingGearId = null;
 let currentPhoto = null;
 
@@ -139,26 +342,38 @@ function renderPhotoPreview() {
     ? '<img src="' + currentPhoto + '" alt="Aperçu" style="max-width:160px;max-height:120px;border-radius:var(--radius-md);margin-top:6px;">' : '';
   document.getElementById('gearPhotoClearBtn').style.display = currentPhoto ? 'inline-block' : 'none';
 }
+function toggleKmFields() {
+  document.getElementById('gearKmFieldsRow').style.display = document.getElementById('gearCategorie').value === 'chaussures' ? 'flex' : 'none';
+}
+document.getElementById('gearCategorie').addEventListener('change', toggleKmFields);
 
-function openGearModal(id) {
+function openGearModal(id, prefill) {
   editingGearId = id || null;
   const g = id ? getGear().find(x => x.id === id) : null;
-  document.getElementById('gearModalTitle').textContent = g ? 'Modifier la paire' : 'Ajouter une paire';
-  document.getElementById('gearNom').value = g ? g.nom : '';
+  document.getElementById('gearModalTitle').textContent = g ? 'Modifier l\'équipement' : 'Ajouter un équipement';
+  document.getElementById('gearNom').value = g ? g.nom : (prefill && prefill.nom) || '';
+  document.getElementById('gearMarque').value = g ? (g.marque || '') : '';
+  document.getElementById('gearModele').value = g ? (g.modele || '') : '';
+  document.getElementById('gearCategorie').value = g ? (g.category || 'chaussures') : (prefill && prefill.categorie) || 'chaussures';
+  document.getElementById('gearTypeUsage').value = g ? (g.typeUsage || '') : '';
   document.getElementById('gearDate').value = g ? (g.dateAchat || '') : '';
   document.getElementById('gearKmInitial').value = g ? (g.kmInitial || 0) : 0;
   document.getElementById('gearSeuil').value = g ? (g.seuilKm || 700) : 700;
-  document.getElementById('gearActif').checked = g ? !!g.actif : true;
+  document.getElementById('gearManualStatus').value = g ? (g.manualStatus || '') : '';
+  document.getElementById('gearNotes').value = g ? (g.notes || '') : '';
+  document.getElementById('gearActif').checked = g ? g.actif !== false : true;
   document.getElementById('deleteGearBtn').style.display = g ? 'inline-block' : 'none';
   document.getElementById('gearModalMsg').innerHTML = '';
   document.getElementById('gearPhotoInput').value = '';
   currentPhoto = g ? (g.photo || null) : null;
   renderPhotoPreview();
+  toggleKmFields();
+  document.getElementById('detailModalBackdrop').classList.remove('open');
   document.getElementById('gearModalBackdrop').classList.add('open');
 }
 function closeGearModal() { document.getElementById('gearModalBackdrop').classList.remove('open'); editingGearId = null; }
 
-document.getElementById('addGearBtn').addEventListener('click', () => openGearModal(null));
+document.getElementById('addEquipBtn').addEventListener('click', () => openGearModal(null));
 document.getElementById('cancelGearBtn').addEventListener('click', closeGearModal);
 document.getElementById('gearModalBackdrop').addEventListener('click', e => { if (e.target.id === 'gearModalBackdrop') closeGearModal(); });
 document.getElementById('gearPhotoBtn').addEventListener('click', () => document.getElementById('gearPhotoInput').click());
@@ -179,30 +394,81 @@ document.getElementById('gearPhotoClearBtn').addEventListener('click', () => {
 });
 document.getElementById('saveGearBtn').addEventListener('click', () => {
   const nom = document.getElementById('gearNom').value.trim();
-  const kmInitial = parseFloat(document.getElementById('gearKmInitial').value) || 0;
-  const seuilKm = parseFloat(document.getElementById('gearSeuil').value) || 700;
-  if (!nom) { showMsg('gearModalMsg', 'Merci de donner un nom au modèle.', 'err'); return; }
+  if (!nom) { showMsg('gearModalMsg', 'Merci de donner un nom à cet équipement.', 'err'); return; }
   upsertGearItem({
     id: editingGearId,
     nom,
+    marque: document.getElementById('gearMarque').value.trim(),
+    modele: document.getElementById('gearModele').value.trim(),
+    category: document.getElementById('gearCategorie').value,
     photo: currentPhoto,
+    typeUsage: document.getElementById('gearTypeUsage').value.trim(),
     dateAchat: document.getElementById('gearDate').value || null,
-    kmInitial,
-    seuilKm,
+    kmInitial: parseFloat(document.getElementById('gearKmInitial').value) || 0,
+    seuilKm: parseFloat(document.getElementById('gearSeuil').value) || 700,
+    manualStatus: document.getElementById('gearManualStatus').value || null,
+    notes: document.getElementById('gearNotes').value.trim(),
     actif: document.getElementById('gearActif').checked,
   });
   closeGearModal();
-  renderGear();
+  renderAll();
 });
 document.getElementById('deleteGearBtn').addEventListener('click', () => {
   if (!editingGearId) return;
-  if (!confirm('Supprimer cette paire ? Les séances déjà associées ne seront pas supprimées.')) return;
+  if (!confirm('Supprimer cet équipement ? Les séances déjà associées ne seront pas supprimées.')) return;
   deleteGearItem(editingGearId);
   closeGearModal();
-  renderGear();
+  renderAll();
 });
 
-renderGear();
+/* --------------------------- MODALE DÉTAIL --------------------------- */
+let detailGearId = null;
+function openDetailModal(id) {
+  detailGearId = id;
+  const g = getGear().find(x => x.id === id);
+  if (!g) return;
+  const u = getEquipmentUsage(g);
+  document.getElementById('detailModalTitle').textContent = g.nom;
+  const sessions = loadAllSessions().filter(s => s.gearId === g.id).slice(-8).reverse();
+  const historyHtml = sessions.length
+    ? '<div class="mini-list">' + sessions.map(s => '<a class="mini-list-row" href="activite.html?id=' + encodeURIComponent(s.id) + '" style="text-decoration:none;color:inherit;"><span class="mini-list-lbl">' + fmtDate(s.date) + ' — ' + escapeHtml(s.sport||'Séance') + '</span><span class="mini-list-val">' + fmtNum(s.distanceKm,' km',1) + (s.ascent?' · '+Math.round(s.ascent)+' m D+':'') + '</span></a>').join('') + '</div>'
+    : '<p class="hint">Aucune activité associée pour l\'instant.</p>';
+  document.getElementById('detailModalBody').innerHTML =
+    (g.photo ? '<img src="' + g.photo + '" alt="" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius-md);margin-bottom:10px;">' : '') +
+    '<div class="equip-status-row">' +
+      '<div class="equip-status-line"><span>Catégorie</span><strong>' + CATEGORY_LABELS[g.category||'chaussures'] + '</strong></div>' +
+      (g.dateAchat ? '<div class="equip-status-line"><span>Date d\'achat</span><strong>' + fmtDate(g.dateAchat) + '</strong></div>' : '') +
+      (u.isDistanceTracked ? '<div class="equip-status-line"><span>Kilométrage</span><strong>' + Math.round(u.km) + ' / ' + (g.seuilKm||700) + ' km (' + (u.pct||0) + '%)</strong></div>' : '') +
+      (u.autoStatus ? '<div class="equip-status-line"><span>État automatique</span><strong>' + STATUS_LABELS[u.autoStatus] + '</strong></div>' : '') +
+      (g.manualStatus ? '<div class="equip-status-line"><span>État utilisateur</span><strong>' + STATUS_LABELS[g.manualStatus] + '</strong></div>' : '') +
+      '<div class="equip-status-line"><span>Dernière utilisation</span><strong>' + (u.lastUsedDate ? fmtDate(u.lastUsedDate) : 'Non disponible') + '</strong></div>' +
+      '<div class="equip-status-line"><span>Activités associées</span><strong>' + u.sessionsCount + '</strong></div>' +
+      (g.notes ? '<div class="equip-status-line"><span>Notes</span><strong>' + escapeHtml(g.notes) + '</strong></div>' : '') +
+    '</div>' +
+    '<p class="hint" style="margin:12px 0 4px;">Historique</p>' + historyHtml;
+  document.getElementById('detailArchiveBtn').textContent = g.actif === false ? 'Désarchiver' : 'Archiver';
+  document.getElementById('detailModalBackdrop').classList.add('open');
+}
+document.getElementById('detailCloseBtn').addEventListener('click', () => document.getElementById('detailModalBackdrop').classList.remove('open'));
+document.getElementById('detailModalBackdrop').addEventListener('click', e => { if (e.target.id === 'detailModalBackdrop') document.getElementById('detailModalBackdrop').classList.remove('open'); });
+document.getElementById('detailEditBtn').addEventListener('click', () => { if (detailGearId) openGearModal(detailGearId); });
+document.getElementById('detailArchiveBtn').addEventListener('click', () => {
+  const g = getGear().find(x => x.id === detailGearId);
+  if (!g) return;
+  upsertGearItem(Object.assign({}, g, { actif: g.actif === false ? true : false }));
+  document.getElementById('detailModalBackdrop').classList.remove('open');
+  renderAll();
+});
+
+/* --------------------------- ORCHESTRATION --------------------------- */
+function renderAll() {
+  renderKpis();
+  renderDetectBanner();
+  renderList();
+  renderSummaries();
+}
+renderAll();
+renderSidebarUser();
 </script>
 </body>
 </html>
