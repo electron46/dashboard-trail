@@ -1441,6 +1441,27 @@ function ringSvg(pct) {
   '</svg>';
 }
 
+// Donut de répartition (zones FC d'une séance) avec une valeur libre au centre (ex. durée totale).
+// Même technique que ringSvg (arcs superposés via stroke-dasharray/dashoffset) mais multi-segments.
+const ZONE_DONUT_COLORS = { z1:'var(--muted-2)', z2:'var(--accent-light)', z3:'var(--accent)', z4:'var(--warn)', z5:'var(--danger)' };
+function zoneDonutSvg(dist, centerValue, centerLabel) {
+  if (!dist || !dist.length) return '';
+  const size = 118, stroke = 15, r = (size - stroke) / 2, c = size / 2;
+  const circumference = 2 * Math.PI * r;
+  let cumulative = 0;
+  const arcs = dist.filter(z => z.pct > 0).map(z => {
+    const len = circumference * (z.pct / 100);
+    const arc = '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="' + (ZONE_DONUT_COLORS[z.key] || 'var(--accent)') + '" stroke-width="' + stroke + '" ' +
+      'stroke-dasharray="' + len.toFixed(1) + ' ' + (circumference - len).toFixed(1) + '" stroke-dashoffset="' + (-cumulative).toFixed(1) + '" transform="rotate(-90 ' + c + ' ' + c + ')"/>';
+    cumulative += len;
+    return arc;
+  }).join('');
+  return '<svg class="zone-donut" viewBox="0 0 ' + size + ' ' + size + '">' + arcs +
+    '<text x="' + c + '" y="' + (c - 3) + '" text-anchor="middle" font-family="var(--font-display)" font-weight="700" font-size="16" fill="var(--text)">' + escapeHtml(centerValue) + '</text>' +
+    '<text x="' + c + '" y="' + (c + 14) + '" text-anchor="middle" font-size="9" fill="var(--muted)">' + escapeHtml(centerLabel) + '</text>' +
+  '</svg>';
+}
+
 // Aperçu visuel d'une séance pour la carte "Dernière activité" : trace GPS si les coordonnées sont
 // disponibles, sinon profil altimétrique, sinon rien — jamais d'image générique. Fonction de rendu
 // pure, sans dépendance à un fond de carte externe (contrairement à la carte Leaflet du détail de séance).

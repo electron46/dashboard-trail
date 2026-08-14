@@ -44,18 +44,31 @@
 
 <main id="pageMain">
 
-  <div class="week-stats-inline" id="kpiRow"></div>
+  <div class="kpi-strip" id="kpiRow"></div>
 
-  <div class="dash-grid">
-    <div class="altitude-profile-box" id="mapCard" style="padding:0;overflow:hidden;height:340px;"></div>
-    <div class="card-compact" id="resumeCard">
-      <h2>Résumé</h2>
-      <div class="metrics-grid" id="quickMetrics"></div>
+  <div class="activity-detail-grid">
+    <div class="altitude-profile-box" id="mapCard" style="padding:0;overflow:hidden;height:420px;"></div>
+    <div class="analysis-col">
+      <div class="card-compact mini-card" id="resumeMiniCard">
+        <h2>Résumé</h2>
+        <div id="resumeMiniList"></div>
+      </div>
+      <div class="card-compact mini-card" id="zonesDonutCard" style="display:none;">
+        <h2>Répartition des zones FC</h2>
+        <div id="zonesDonutHost"></div>
+      </div>
+      <div class="card-compact mini-card" id="climbsMiniCard" style="display:none;">
+        <h2>Montées principales</h2>
+        <div id="climbsMiniList"></div>
+        <a class="link-arrow" href="#" id="seeAllClimbsLink">Voir toutes les montées →</a>
+      </div>
+      <div class="insight-card" id="sessionInsightBox"></div>
     </div>
   </div>
 
   <section class="card" id="profileSection">
     <h2>Profil altimétrique</h2>
+    <div class="profile-header-stats" id="profileHeaderStats"></div>
     <div id="altitudeProfileHost"></div>
   </section>
 
@@ -109,8 +122,6 @@
     </div>
   </section>
 
-  <div class="insight-card" id="sessionInsightBox"></div>
-
 </main>
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres) et les fonds de carte OpenStreetMap (tracé GPS).</footer>
@@ -141,10 +152,16 @@ function initActivityPage(s) {
   document.getElementById('pageSubtitle').textContent = fmtDayMonth(s.date) + ' ' + s.date.slice(0, 4) + (s.dateApprox ? ' (date approximative, non trouvée dans le fichier)' : '');
 
   renderKpiRow(s);
-  renderQuickMetrics(s);
+  renderResumeMini(s);
   renderMap(s);
 
   const withDist = (s.series || []).filter(p => p.distKm != null);
+  const altMinMax = computeAltMinMax(s);
+  document.getElementById('profileHeaderStats').innerHTML = withDist.length ?
+    [['D+', fmtNum(s.ascent, ' m', 0)], ['D-', fmtNum(s.descent, ' m', 0)],
+     ['Alt min', altMinMax.min != null ? Math.round(altMinMax.min) + ' m' : 'Non disponible'],
+     ['Alt max', altMinMax.max != null ? Math.round(altMinMax.max) + ' m' : 'Non disponible']]
+      .map(([l,v]) => '<span><strong>' + v + '</strong> ' + l + '</span>').join('') : '';
   const altHtml = altitudeProfileHtml(withDist);
   document.getElementById('altitudeProfileHost').innerHTML = altHtml ||
     '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
@@ -153,6 +170,8 @@ function initActivityPage(s) {
   const zones = karvonenZones(parseFloat(getProfile().fcMax), parseFloat(getProfile().fcRepos));
   const zoneDist = computeSessionZoneDistribution(s, zones);
   const climbs = detectClimbs(s.series);
+  renderZonesDonut(s, zoneDist);
+  renderClimbsMini(climbs);
 
   renderResumeTab(s);
   renderComparison(s, loadAllSessions());
@@ -199,33 +218,75 @@ function initActivityPage(s) {
   document.getElementById('aiGenBtn').addEventListener('click', () => generateAiFeedback(sessionId));
 }
 
-/* --------------------------- KPI + RÉSUMÉ RAPIDE --------------------------- */
+/* --------------------------- KPI + RÉSUMÉ RAPIDE ---------------------------
+   Rangée fine sans icônes (valeur en gras + libellé dessous, séparateur vertical discret) —
+   volontairement pas 8 grosses cartes KPI, juste les métriques principales d'un coup d'œil. */
 function renderKpiRow(s) {
   const stats = [
-    ['route', fmtNum(s.distanceKm, ' km', 1), 'Distance'],
-    ['mountain-snow', fmtNum(s.ascent, ' m D+', 0), 'Dénivelé'],
-    ['clock', fmtDuration(s.durationS), 'Durée'],
-    s.avgPaceSecPerKm != null ? ['gauge', fmtPace(s.avgPaceSecPerKm), 'Allure'] : null,
-    s.avgHr != null ? ['heart-pulse', s.avgHr + ' bpm', 'FC moy.'] : null,
+    [fmtNum(s.distanceKm, ' km', 1), 'Distance'],
+    [fmtNum(s.ascent, ' m D+', 0), 'Dénivelé positif'],
+    s.descent != null ? [fmtNum(s.descent, ' m D-', 0), 'Dénivelé négatif'] : null,
+    [fmtDuration(s.durationS), 'Durée'],
+    s.avgPaceSecPerKm != null ? [fmtPace(s.avgPaceSecPerKm), 'Allure moyenne'] : null,
+    s.avgHr != null ? [s.avgHr + ' bpm', 'FC moyenne'] : null,
   ].filter(Boolean);
-  document.getElementById('kpiRow').innerHTML = stats.map(([icon, v, l]) =>
-    '<div class="week-stat"><img src="' + ICON(icon) + '" alt=""><div><div class="l">' + l + '</div><div class="v">' + v + '</div></div></div>'
+  document.getElementById('kpiRow').innerHTML = stats.map(([v, l]) =>
+    '<div class="kpi-item"><span class="v">' + v + '</span><span class="l">' + l + '</span></div>'
   ).join('');
 }
 
-function renderQuickMetrics(s) {
-  const ratio = ratioDplusKm(s.ascent, s.distanceKm);
-  const metrics = [
+// Altitude min/max de la séance — extrait une fois, réutilisé par le résumé compact et l'en-tête
+// du profil altimétrique (évite de dupliquer le calcul).
+function computeAltMinMax(s) {
+  const altVals = (s.series || []).map(p => p.alt).filter(v => v != null);
+  return altVals.length ? { min: Math.min(...altVals), max: Math.max(...altVals) } : { min: null, max: null };
+}
+
+// Panneau "Résumé" compact de la colonne d'analyse (à côté de la carte GPS) — liste dense
+// label/valeur, distincte du détail plus complet de l'onglet Résumé plus bas sur la page.
+function renderResumeMini(s) {
+  const altMinMax = computeAltMinMax(s);
+  const rows = [
     ['Type', s.sport || 'Non disponible'],
-    ['D+ / D-', fmtNum(s.ascent, ' m', 0) + ' / ' + fmtNum(s.descent, ' m', 0)],
-    ['Ratio D+/km', ratio != null ? ratio + ' m/km' : 'Non disponible'],
+    ['Distance', fmtNum(s.distanceKm, ' km', 2)],
+    ['Durée', fmtDuration(s.durationS)],
+    ['Allure moyenne', fmtPace(s.avgPaceSecPerKm)],
+    ['FC moyenne', s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible'],
     ['FC max', s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible'],
-    ['Cadence', s.cadenceSpm != null ? s.cadenceSpm + ' pas/min' : 'Non disponible'],
-    ['Calories', s.calories != null ? s.calories + ' kcal' : 'Non disponible'],
+    ['D+ / D-', fmtNum(s.ascent, ' m', 0) + ' / ' + fmtNum(s.descent, ' m', 0)],
+    ['Altitude min / max', altMinMax.min != null ? Math.round(altMinMax.min) + ' m / ' + Math.round(altMinMax.max) + ' m' : 'Non disponible'],
+    ['Cadence moy.', s.cadenceSpm != null ? s.cadenceSpm + ' pas/min' : 'Non disponible'],
   ];
-  document.getElementById('quickMetrics').innerHTML = metrics.map(([lbl, val]) =>
-    '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>'
-  ).join('');
+  if (s.avgPower != null) rows.push(['Puissance moy.', s.avgPower + ' W']);
+  rows.push(['Calories', s.calories != null ? s.calories + ' kcal' : 'Non disponible']);
+  document.getElementById('resumeMiniList').innerHTML = '<div class="mini-list">' + rows.map(([lbl, val]) =>
+    '<div class="mini-list-row"><span class="mini-list-lbl">' + lbl + '</span><span class="mini-list-val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</span></div>'
+  ).join('') + '</div>';
+}
+
+// Donut de répartition du temps par zone FC, avec la durée totale au centre — version compacte
+// de l'onglet Zones plus bas (mêmes données, calculées une seule fois dans initActivityPage).
+function renderZonesDonut(s, zoneDist) {
+  const card = document.getElementById('zonesDonutCard');
+  if (!zoneDist) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  document.getElementById('zonesDonutHost').innerHTML =
+    '<div class="zone-donut-row">' + zoneDonutSvg(zoneDist, fmtDuration(s.durationS), 'Durée totale') +
+    '<div class="zone-donut-legend">' + zoneDist.map(z =>
+      '<span><i class="zone-dot ' + z.key + '"></i>' + z.label.replace(/ — .*/, '') + ' <strong>' + z.pct + '%</strong> ' + fmtDuration(z.sec) + '</span>'
+    ).join('') + '</div></div>';
+}
+
+// Aperçu des 3 montées les plus significatives — le détail complet (jusqu'à 6) reste dans
+// l'onglet Montées, atteint via le lien "Voir toutes les montées".
+function renderClimbsMini(climbs) {
+  const card = document.getElementById('climbsMiniCard');
+  if (!climbs.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  document.getElementById('climbsMiniList').innerHTML = '<div class="climbs-mini-table">' +
+    '<div class="climbs-mini-head"><span>#</span><span>Distance</span><span>D+</span><span>Pente</span><span>VAM</span></div>' +
+    climbs.slice(0, 3).map((c, i) => '<div class="climbs-mini-row"><span>' + (i+1) + '</span><span>' + c.distanceKm.toFixed(2) + ' km</span><span>' + c.gainM + ' m</span><span>' + c.gradePct + ' %</span><span>' + (c.vamMh != null ? c.vamMh + ' m/h' : '—') + '</span></div>').join('') +
+  '</div>';
 }
 
 /* --------------------------- CARTE GPS --------------------------- */
@@ -471,6 +532,11 @@ function activateTab(tab) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
 }
 document.querySelectorAll('#detailTabs button').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+document.getElementById('seeAllClimbsLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  activateTab('montees');
+  document.getElementById('detailTabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 /* --------------------------- RETOUR IA (identique au coach post-séance existant) --------------------------- */
 const AI_COACH_SYSTEM_PROMPT = `<persona>

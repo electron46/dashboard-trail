@@ -454,6 +454,49 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 .resume-group-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 8px;font-weight:700;}
 .resume-group-title:first-child{margin-top:0;}
 
+/* En-tête d'activité — rangée de KPI fine (valeur + libellé), séparateurs verticaux discrets,
+   pas de grosses cartes ni d'icônes (cf. planche de référence). */
+.kpi-strip{display:flex;flex-wrap:wrap;gap:0;margin:14px 0 18px;}
+.kpi-strip .kpi-item{display:flex;flex-direction:column;padding:0 18px;border-left:1px solid var(--border);}
+.kpi-strip .kpi-item:first-child{padding-left:0;border-left:none;}
+.kpi-strip .kpi-item .v{font-family:var(--font-display);font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;}
+.kpi-strip .kpi-item .l{font-size:.68rem;color:var(--muted);margin-top:1px;}
+
+/* Colonne GPS (large) + colonne d'analyse (résumé compact, zones, montées, insight) */
+.activity-detail-grid{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
+@media (min-width:1024px){
+  .activity-detail-grid{grid-template-columns:1.7fr 1fr;}
+}
+.analysis-col{display:flex;flex-direction:column;gap:14px;min-width:0;}
+.mini-card h2{margin-bottom:10px;}
+.mini-list{display:flex;flex-direction:column;gap:7px;}
+.mini-list-row{display:flex;justify-content:space-between;gap:10px;font-size:.82rem;padding-bottom:7px;border-bottom:1px solid var(--border);}
+.mini-list-row:last-child{border-bottom:none;padding-bottom:0;}
+.mini-list-lbl{color:var(--muted);}
+.mini-list-val{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;text-align:right;}
+.mini-list-val.na{color:var(--muted-2);font-weight:400;}
+
+/* Donut de répartition des zones FC (version compacte, colonne d'analyse) */
+.zone-donut-row{display:flex;align-items:center;gap:16px;}
+.zone-donut{flex-shrink:0;}
+.zone-donut-legend{display:flex;flex-direction:column;gap:6px;font-size:.76rem;color:var(--muted);min-width:0;}
+.zone-donut-legend strong{color:var(--text);}
+.zone-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;}
+.zone-dot.z1{background:var(--muted-2);} .zone-dot.z2{background:var(--accent-light);} .zone-dot.z3{background:var(--accent);}
+.zone-dot.z4{background:var(--warn);} .zone-dot.z5{background:var(--danger);}
+
+/* Aperçu "Montées principales" (colonne d'analyse) — mini-tableau, détail complet dans l'onglet Montées */
+.climbs-mini-table{display:flex;flex-direction:column;gap:2px;font-size:.78rem;}
+.climbs-mini-head,.climbs-mini-row{display:grid;grid-template-columns:16px 1fr .8fr .7fr .8fr;gap:6px;padding:5px 0;}
+.climbs-mini-head{color:var(--muted);font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);}
+.climbs-mini-row{border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text);}
+.climbs-mini-row:last-child{border-bottom:none;}
+#climbsMiniCard .link-arrow{display:inline-block;margin-top:10px;font-size:.78rem;}
+
+/* Stats d'en-tête du profil altimétrique (D+/D-/alt min/alt max) */
+.profile-header-stats{display:flex;gap:18px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-bottom:8px;}
+.profile-header-stats strong{color:var(--text);font-variant-numeric:tabular-nums;}
+
 /* Zones FC — barres compactes avec pourcentage + durée (page Activité, onglet Zones) */
 .zone-bars{display:flex;flex-direction:column;gap:9px;}
 .zone-row{display:grid;grid-template-columns:minmax(0,150px) 1fr 40px 56px;align-items:center;gap:10px;font-size:.8rem;}
