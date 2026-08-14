@@ -129,7 +129,15 @@ async function handleFiles(fileList) {
       summary.importedAt = new Date().toISOString();
       const idx = loadIndex();
       if (!idx.includes(id)) idx.push(id);
-      if (saveIndex(idx) && saveSession(id, summary)) ok++;
+      if (saveIndex(idx) && saveSession(id, summary)) {
+        ok++;
+        // Meilleur effort, non bloquant : si la synchro Supabase est configurée, on envoie aussi
+        // le fichier .fit original + une ligne détaillée dans la table `activities`. En son absence
+        // (pas de synchro activée), l'import local ci-dessus suffit et rien de plus ne se passe.
+        pushActivityRow(summary, buffer)
+          .then(res => { if (!res.ok) console.warn('Synchro activité (table `activities`) non effectuée :', res.reason); })
+          .catch(err => console.error('Synchro activité échouée :', err));
+      }
       else fail++;
     } catch (err) { fail++; errors.push(file.name + ' : ' + err.message); }
   }

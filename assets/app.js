@@ -29,7 +29,7 @@ applyTheme(getTheme()); // appliqué dès le chargement du script (avant le rend
 
 /* --------------------------- 2) PARSING .FIT --------------------------- */
 const FIT_EPOCH_MS = Date.UTC(1989, 11, 31, 0, 0, 0);
-const GLOBAL_MESSAGES = { 0:'file_id', 18:'session', 19:'lap', 20:'record', 21:'event', 23:'device_info', 34:'activity' };
+const GLOBAL_MESSAGES = { 0:'file_id', 18:'session', 19:'lap', 20:'record', 21:'event', 23:'device_info', 34:'activity', 206:'field_description', 207:'developer_data_id' };
 const BASE_TYPES = {
   0x00:{bsize:1,invalid:0xFF, read:(v,o)=>v.getUint8(o)},
   0x01:{bsize:1,invalid:0x7F, read:(v,o)=>v.getInt8(o)},
@@ -72,7 +72,25 @@ const LAP_FIELDS = {
   16:['avg_heart_rate',null,null], 17:['max_heart_rate',null,null],
   22:['total_ascent',null,null], 23:['total_descent',null,null],
 };
-const FIELD_MAPS = { record:RECORD_FIELDS, session:SESSION_FIELDS, lap:LAP_FIELDS };
+// Événements (pauses minuteur, sorties de parcours...) et infos appareils — ignorés jusqu'ici.
+const EVENT_FIELDS = { 253:['timestamp',null,null], 0:['event',null,null], 1:['event_type',null,null], 4:['event_group',null,null] };
+const DEVICE_INFO_FIELDS = {
+  253:['timestamp',null,null], 0:['device_index',null,null], 1:['device_type',null,null],
+  2:['manufacturer',null,null], 3:['serial_number',null,null], 4:['product',null,null],
+  5:['software_version',100,0], 10:['product_name',null,null], 25:['battery_status',null,null],
+};
+// Champs "développeur" (Developer Data Fields) : le fichier .fit décrit lui-même leur nom/échelle/unité
+// via ces deux messages — pas de table figée nécessaire, la résolution se fait après la première passe
+// (voir resolveDeveloperFields).
+const FIELD_DESCRIPTION_FIELDS = {
+  0:['developer_data_index',null,null], 1:['field_definition_number',null,null], 2:['fit_base_type_id',null,null],
+  3:['field_name',null,null], 6:['scale',null,null], 7:['offset',null,null], 8:['units',null,null],
+};
+const DEVELOPER_DATA_ID_FIELDS = { 3:['developer_data_index',null,null] };
+const FIELD_MAPS = {
+  record:RECORD_FIELDS, session:SESSION_FIELDS, lap:LAP_FIELDS, event:EVENT_FIELDS,
+  device_info:DEVICE_INFO_FIELDS, field_description:FIELD_DESCRIPTION_FIELDS, developer_data_id:DEVELOPER_DATA_ID_FIELDS,
+};
 const SPORT_LABELS = { 0:'Activité générique', 1:'Course à pied', 2:'Vélo', 4:'Renforcement / fitness', 5:'Natation', 11:'Randonnée', 254:'Activité' };
 
 class FitParseError extends Error {}
@@ -146,11 +164,51 @@ function parseFit(buffer) {
       offset += size;
       const info = fieldMap[fieldDefNum];
       if (info) { const [fname, scale, foffset] = info; record[fname] = applyScale(value, scale, foffset); }
+      // Champ non cartographié (message connu avec un champ rare, ou message inconnu) : on le
+      // garde quand même sous un nom générique plutôt que de le perdre silencieusement.
+      else if (value !== null) { record['field_' + fieldDefNum] = value; }
     }
-    for (const [, size] of def.devFields) offset += size;
+    if (def.devFields.length) {
+      record.dev = [];
+      for (const [devFieldNum, size, devDataIndex] of def.devFields) {
+        const bytes = Array.from(new Uint8Array(view.buffer, view.byteOffset + offset, size));
+        record.dev.push({ devDataIndex, devFieldNum, bytes });
+        offset += size;
+      }
+    }
     (messages[def.msgName] = messages[def.msgName] || []).push(record);
   }
+  resolveDeveloperFields(messages);
   return messages;
+}
+// Résout les champs développeur bruts collectés pendant le décodage à l'aide des messages
+// field_description présents dans le même fichier (nom, échelle, offset, type réel). Un champ dont
+// la description est absente ou non reconnue reste tout de même conservé (valeur brute), jamais jeté.
+function resolveDeveloperFields(messages) {
+  const resolver = {};
+  (messages.field_description || []).forEach(d => {
+    if (d.developer_data_index == null || d.field_definition_number == null) return;
+    resolver[d.developer_data_index + '_' + d.field_definition_number] = d;
+  });
+  Object.keys(messages).forEach(msgName => {
+    messages[msgName].forEach(record => {
+      if (!record.dev || !record.dev.length) return;
+      record.dev.forEach(({ devDataIndex, devFieldNum, bytes }) => {
+        const desc = resolver[devDataIndex + '_' + devFieldNum];
+        const view = new DataView(new Uint8Array(bytes).buffer);
+        let value;
+        if (desc && desc.fit_base_type_id != null && BASE_TYPES[desc.fit_base_type_id]) {
+          value = applyScale(decodeField(view, 0, bytes.length, desc.fit_base_type_id), desc.scale, desc.offset);
+        } else if (bytes.length === 1) { value = view.getUint8(0); }
+        else if (bytes.length === 2) { value = view.getUint16(0, true); }
+        else if (bytes.length === 4) { value = view.getUint32(0, true); }
+        else { value = bytes.map(b => b.toString(16).padStart(2, '0')).join(''); }
+        const key = desc && desc.field_name ? 'dev_' + desc.field_name : 'dev_unresolved_' + devDataIndex + '_' + devFieldNum;
+        record[key] = value;
+      });
+      delete record.dev;
+    });
+  });
 }
 function fitTimestampToDate(ts) { if (ts === null || ts === undefined) return null; return new Date(FIT_EPOCH_MS + ts * 1000); }
 
@@ -208,7 +266,10 @@ function summarizeFit(messages, fileMeta) {
   let series = [];
   if (withTs.length >= 2) {
     const t0 = withTs[0].timestamp;
-    const maxPoints = 120;
+    // 300 points (au lieu de 120) : courbes un peu plus fines, tout en restant léger pour
+    // localStorage. Le détail complet reste récupérable via le fichier .fit original conservé
+    // en Storage quand la synchro est active (voir étape C).
+    const maxPoints = 300;
     const step = Math.max(1, Math.ceil(withTs.length / maxPoints));
     for (let i = 0; i < withTs.length; i += step) {
       const r = withTs[i];
@@ -220,6 +281,7 @@ function summarizeFit(messages, fileMeta) {
         hr: r.heart_rate ?? null,
         alt: r.enhanced_altitude ?? r.altitude ?? null,
         cadenceSpm: r.cadence != null ? Math.round(r.cadence * 2) : null,
+        power: r.power ?? null,
         lat: r.position_lat != null ? r.position_lat * SEMICIRCLE_TO_DEG : null,
         lon: r.position_long != null ? r.position_long * SEMICIRCLE_TO_DEG : null,
       });
@@ -242,6 +304,43 @@ function summarizeFit(messages, fileMeta) {
     };
   }).filter(l => l.distanceKm != null && l.distanceKm > 0);
 
+  // Événements (démarrage/arrêt minuteur, sorties de parcours...) — horodatage relatif au début
+  // de la séance, comme pour la série. Pas encore exploités dans l'interface (reconstruction des
+  // pauses prévue à une étape suivante), mais conservés dès maintenant pour ne rien perdre.
+  const events = (messages.event || []).filter(e => e.timestamp != null).slice(0, 500).map(e => ({
+    t: e.timestamp - (records.find(r => r.timestamp != null)?.timestamp ?? e.timestamp),
+    event: e.event ?? null,
+    eventType: e.event_type ?? null,
+  }));
+
+  // Appareils ayant enregistré la séance (montre, ceinture FC, capteur de puissance externe...).
+  const devices = [];
+  const seenDevices = new Set();
+  (messages.device_info || []).forEach(d => {
+    if (d.manufacturer == null && d.product_name == null) return;
+    const key = (d.device_index ?? '') + '_' + (d.manufacturer ?? '') + '_' + (d.serial_number ?? '');
+    if (seenDevices.has(key)) return;
+    seenDevices.add(key);
+    devices.push({
+      manufacturer: d.manufacturer ?? null,
+      product: d.product ?? null,
+      productName: d.product_name ?? null,
+      serialNumber: d.serial_number ?? null,
+      softwareVersion: d.software_version ?? null,
+      batteryStatus: d.battery_status ?? null,
+    });
+  });
+
+  // Inventaire brut : quels types de messages contenait réellement ce fichier .fit (y compris les
+  // types inconnus/propriétaires), et quels champs développeur ont été détectés — utile pour l'audit
+  // et pour le futur FIT Import Inspector, sans avoir à réanalyser le fichier original.
+  const messageInventory = {};
+  Object.keys(messages).forEach(name => { messageInventory[name] = messages[name].length; });
+  const developerFieldNames = new Set();
+  Object.values(messages).forEach(list => list.forEach(r => {
+    Object.keys(r).forEach(k => { if (k.startsWith('dev_')) developerFieldNames.add(k); });
+  }));
+
   return {
     date: startDate.toISOString().slice(0,10),
     dateApprox,
@@ -260,6 +359,12 @@ function summarizeFit(messages, fileMeta) {
     calories: session.total_calories != null ? Math.round(session.total_calories) : null,
     series: series,
     laps: laps,
+    events: events,
+    devices: devices,
+    raw: {
+      messageInventory: messageInventory,
+      developerFields: Array.from(developerFieldNames),
+    },
   };
 }
 
@@ -644,6 +749,58 @@ async function autoPullIfNewer() {
   if (sessionStorage.getItem(guardKey) === data.updated_at) return; // évite une boucle de rechargement
   const res = await syncPull();
   if (res.ok) { sessionStorage.setItem(guardKey, data.updated_at); location.reload(); }
+}
+
+/* --------------------------- SYNCHRO PAR SÉANCE (table `activities` + fichiers .fit) ---------------------------
+   S'ajoute à la synchro globale ci-dessus (`trail_data`, qui reste le mécanisme principal de secours
+   entre appareils). Ici : une ligne par séance dans Supabase + le fichier .fit original conservé en
+   Storage, pour ne plus jamais avoir à redemander une réimportation si l'analyse s'améliore plus tard.
+   Entièrement silencieux si la synchro n'est pas configurée ou l'utilisateur non connecté — l'import
+   local (localStorage) fonctionne toujours, avec ou sans ceci. */
+async function uploadFitFile(client, userId, clientId, arrayBuffer) {
+  const path = userId + '/' + clientId + '.fit';
+  const { error } = await client.storage.from('fit-files').upload(path, arrayBuffer, {
+    contentType: 'application/octet-stream', upsert: true,
+  });
+  if (error) { console.error('Upload du fichier .fit échoué :', error.message); return null; }
+  return path;
+}
+async function pushActivityRow(session, fitArrayBuffer) {
+  const client = getSupabaseClient();
+  if (!client) return { ok:false, reason:'not-configured' };
+  const user = await supaGetUser();
+  if (!user) return { ok:false, reason:'not-logged-in' };
+  let fitFilePath = null;
+  if (fitArrayBuffer) fitFilePath = await uploadFitFile(client, user.id, session.id, fitArrayBuffer);
+  const row = {
+    user_id: user.id,
+    client_id: session.id,
+    date: session.date,
+    sport: session.sport,
+    distance_km: session.distanceKm,
+    duration_s: session.durationS,
+    ascent_m: session.ascent,
+    descent_m: session.descent,
+    avg_hr: session.avgHr,
+    max_hr: session.maxHr,
+    avg_pace_sec_km: session.avgPaceSecPerKm,
+    avg_power: session.avgPower,
+    max_power: session.maxPower,
+    avg_temp: session.avgTemp,
+    calories: session.calories,
+    cadence_spm: session.cadenceSpm,
+    gear_id: session.gearId || null,
+    context: session.context || null,
+    ai_feedback: session.aiFeedback || null,
+    series: session.series || null,
+    laps: session.laps || null,
+    raw: Object.assign({ events: session.events || [], devices: session.devices || [] }, session.raw || {}),
+    fit_file_path: fitFilePath,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await client.from('activities').upsert(row, { onConflict: 'user_id,client_id' });
+  if (error) return { ok:false, reason: error.message };
+  return { ok:true };
 }
 
 /* --------------------------- ANALYSE D'UNE SÉANCE (page Activité) --------------------------- */

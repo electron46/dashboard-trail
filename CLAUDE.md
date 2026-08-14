@@ -281,6 +281,7 @@ Décisions importantes :
 - VAM calculée uniquement sur les segments de montée détectés (jamais sur l'ensemble de la sortie), affichée en m/h
 - Le tracé GPS ↔ profil altimétrique est synchronisé (survol du profil = repère déplacé sur la carte + tooltip distance/altitude/allure/FC) ; les courbes des onglets Allure et Fréquence cardiaque restent volontairement indépendantes (pas synchronisées à la carte), pour limiter la complexité de cette phase
 - Puissance et température ne sont disponibles qu'en moyenne de séance dans les fichiers .fit traités (pas point par point) : pas de courbe dédiée à ces deux métriques, seulement une valeur moyenne si présente
+- Correctif : `assets/logo-full.png` (1254×1254px) n'était limité par aucune règle CSS sur les 7 pages hors Accueil, s'affichait donc à sa taille native et cassait toute la mise en page de la sidebar — bug préexistant, révélé par la nouvelle page `activite.html` qui réutilise la même sidebar, corrigé par une règle `.sidebar-brand > img{width:100%;height:auto}`
 
 Choix refusés :
 - Métriques génériques « état de forme », « récupération », « charge sur 100 » vues sur des maquettes de référence : non implémentées telles quelles, faute de données réelles pour les calculer honnêtement (voir décisions ci-dessus)
@@ -296,7 +297,7 @@ Claude doit expliquer les options simplement, recommander une option, puis atten
 
 Questions à clarifier :
 - Synchronisation Supabase : disponible et fonctionnelle, mais à confirmer à l'usage si elle reste pertinente une fois testée sur plusieurs appareils, ou si l'export/import JSON manuel suffit dans la pratique.
-- Logo `assets/logo-full.png` (800 Ko) : fonctionne bien en l'état (mis en cache après le premier chargement), mais pourrait être compressé si la taille devient gênante.
+- Logo `assets/logo-full.png` (800 Ko, 1254×1254px) : l'affichage est désormais correctement contraint en CSS (voir section 14), mais le poids du fichier reste élevé pour une icône de sidebar ; pourrait être recompressé/redimensionné si cela devient gênant en chargement mobile.
 - `design-system/` reste un dossier non suivi par Git (comme avant la refonte), y compris son `readme.md` mis à jour : à confirmer si l'utilisateur souhaite l'inclure dans le dépôt maintenant qu'il documente la charte réelle.
 - La sidebar de `index.html` a divergé des 7 autres pages lors de la refonte : icône montagne + texte « ELEV » au lieu de `logo-full.png`, séparateur visuel entre navigation produit/compte, bloc utilisateur (avatar + prénom) en bas — à harmoniser si une prochaine refonte touche ces pages.
 
