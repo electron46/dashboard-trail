@@ -94,6 +94,12 @@ section.card h2 small{font-family:var(--font-sans);color:var(--muted);font-weigh
 .plan-session.done .hint{color:inherit;opacity:.8;}
 .plan-compare-diff{font-size:.72rem;margin-top:3px;font-weight:600;}
 
+/* Filtres rapides (chips) — page Activités */
+.chip-filters{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;}
+.chip-btn{font:inherit;font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-pill);padding:5px 12px;cursor:pointer;}
+.chip-btn:hover{color:var(--text);border-color:var(--muted-2);}
+.chip-btn.active{background:var(--accent);border-color:var(--accent);color:var(--accent-text);}
+
 #dropzone{border:2px dashed var(--border);border-radius:var(--radius-md);padding:26px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color 120ms,background 120ms;}
 #dropzone.drag{border-color:var(--accent);background:var(--bg);color:var(--text);}
 #dropzone strong{color:var(--text);}

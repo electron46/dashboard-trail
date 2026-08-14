@@ -68,6 +68,14 @@
         <input type="date" id="dateTo">
       </label>
     </div>
+    <div class="chip-filters" id="sportFilterRow"></div>
+    <div class="chip-filters" id="periodFilterRow">
+      <button type="button" class="chip-btn" data-period="7">7 jours</button>
+      <button type="button" class="chip-btn" data-period="30">30 jours</button>
+      <button type="button" class="chip-btn" data-period="90">3 mois</button>
+      <button type="button" class="chip-btn" data-period="season" title="Depuis le 1er janvier de l'année en cours">Saison</button>
+      <button type="button" class="chip-btn active" data-period="all">Toutes</button>
+    </div>
     <table>
       <thead>
         <tr><th>Date</th><th>Type</th><th>Distance</th><th>D+</th><th>Durée</th><th>Allure</th><th>FC moy.</th></tr>
@@ -162,6 +170,42 @@ document.getElementById('searchInput').addEventListener('input', renderHistory);
 document.getElementById('dateFrom').addEventListener('change', renderHistory);
 document.getElementById('dateTo').addEventListener('change', renderHistory);
 
+// Filtre rapide par type de sport — les options sont construites à partir des types réellement
+// présents dans l'historique importé (pas une liste figée, pour coller aux vraies données .fit).
+let sportFilterVal = 'all';
+function renderSportFilterChips() {
+  const sessions = loadAllSessions();
+  const sports = Array.from(new Set(sessions.map(s => s.sport).filter(Boolean))).sort();
+  const row = document.getElementById('sportFilterRow');
+  if (!sports.length) { row.innerHTML = ''; return; }
+  const chips = [{ key:'all', label:'Tous les types' }].concat(sports.map(s => ({ key:s, label:s })));
+  row.innerHTML = chips.map(c => '<button type="button" class="chip-btn' + (sportFilterVal===c.key?' active':'') + '" data-sport="' + escapeHtml(c.key) + '">' + escapeHtml(c.label) + '</button>').join('');
+  row.querySelectorAll('[data-sport]').forEach(btn => btn.addEventListener('click', () => {
+    sportFilterVal = btn.dataset.sport;
+    renderSportFilterChips();
+    renderHistory();
+  }));
+}
+
+// Filtre rapide par période — remplit simplement les champs "Du / Au" existants, qui restent
+// modifiables librement ensuite.
+document.querySelectorAll('#periodFilterRow [data-period]').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('#periodFilterRow [data-period]').forEach(b => b.classList.toggle('active', b === btn));
+  const period = btn.dataset.period;
+  if (period === 'all') {
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+  } else if (period === 'season') {
+    document.getElementById('dateFrom').value = new Date().getFullYear() + '-01-01';
+    document.getElementById('dateTo').value = '';
+  } else {
+    const d = new Date(); d.setDate(d.getDate() - parseInt(period, 10));
+    document.getElementById('dateFrom').value = d.toISOString().slice(0,10);
+    document.getElementById('dateTo').value = '';
+  }
+  renderHistory();
+}));
+
 function renderHistory() {
   const sessions = loadAllSessions();
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
@@ -171,6 +215,7 @@ function renderHistory() {
     if (search && !((s.sport||'').toLowerCase().includes(search) || (s.fileName||'').toLowerCase().includes(search))) return false;
     if (from && s.date < from) return false;
     if (to && s.date > to) return false;
+    if (sportFilterVal !== 'all' && s.sport !== sportFilterVal) return false;
     return true;
   }).sort((a,b) => b.date.localeCompare(a.date));
 
@@ -641,7 +686,7 @@ function renderCharts() {
   initChartTooltips(grid);
 }
 
-function refreshAll() { renderHistory(); renderCharts(); }
+function refreshAll() { renderSportFilterChips(); renderHistory(); renderCharts(); }
 refreshAll();
 </script>
 </body>

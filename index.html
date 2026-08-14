@@ -57,6 +57,18 @@
   </section>
 
   <section class="card">
+    <h2>Profil de la saison <small>(semaine par semaine, depuis ta première séance importée)</small></h2>
+    <div class="tabs" id="seasonMetricTabs">
+      <button type="button" data-metric="distance" class="active">Distance</button>
+      <button type="button" data-metric="dplus">D+</button>
+      <button type="button" data-metric="temps">Temps</button>
+      <button type="button" data-metric="charge">Charge</button>
+    </div>
+    <div id="seasonChartBox" style="margin-top:10px;"></div>
+    <p class="hint" id="seasonChartHint"></p>
+  </section>
+
+  <section class="card">
     <h2>Résumé rapide</h2>
     <div class="metrics-grid" id="summaryGrid"></div>
   </section>
@@ -192,6 +204,49 @@ function renderLoadChart() {
   initChartTooltips(box);
 }
 
+/* --------------------------- PROFIL DE SAISON (togglable) --------------------------- */
+const SEASON_METRICS = {
+  distance: { label:'Distance', get:w=>w.km, decimals:1, unit:' km' },
+  dplus:    { label:'D+',       get:w=>w.dplus, decimals:0, unit:' m' },
+  temps:    { label:'Temps',    get:w=>w.hours, decimals:1, unit:' h' },
+  charge:   { label:'Charge',   get:w=>w.charge, decimals:1, unit:'' },
+};
+let seasonMetric = 'distance';
+function renderSeasonChart() {
+  const box = document.getElementById('seasonChartBox');
+  const sessions = loadAllSessions();
+  if (sessions.length < 2) { box.innerHTML = svgEmpty('Profil de la saison'); document.getElementById('seasonChartHint').textContent = ''; return; }
+  const firstWeek = isoWeek(sessions[0].date);
+  const lastWeek = isoWeek(new Date().toISOString().slice(0,10));
+  const weeks = [];
+  let cursor = firstWeek;
+  while (cursor <= lastWeek && weeks.length < 104) { // 2 ans de garde-fou, évite une boucle interminable sur une date aberrante
+    const weekEndDate = new Date(cursor); weekEndDate.setDate(weekEndDate.getDate() + 6);
+    const weekEndISO = weekEndDate.toISOString().slice(0,10);
+    const inWeek = sessions.filter(s => s.date >= cursor && s.date <= weekEndISO);
+    const km = inWeek.reduce((a,s) => a + (s.distanceKm||0), 0);
+    const dplus = inWeek.reduce((a,s) => a + (s.ascent||0), 0);
+    const hours = inWeek.reduce((a,s) => a + (s.durationS||0), 0) / 3600;
+    weeks.push({ startISO: cursor, km, dplus, hours, charge: km + dplus/100, shortLabel: cursor.slice(8,10)+'/'+cursor.slice(5,7) });
+    cursor = new Date(new Date(cursor).getTime() + 7*86400000).toISOString().slice(0,10);
+  }
+  const metric = SEASON_METRICS[seasonMetric];
+  const points = weeks.map((w,i) => ({
+    x: i, y: +metric.get(w).toFixed(2), xLabel: w.shortLabel,
+    label: 'Semaine du ' + fmtDate(w.startISO) + ' : ' + metric.get(w).toFixed(metric.decimals) + metric.unit,
+  }));
+  box.innerHTML = lineChartSvg(metric.label + ' par semaine', points, { decimals: metric.decimals });
+  initChartTooltips(box);
+  document.getElementById('seasonChartHint').textContent = seasonMetric === 'charge'
+    ? 'Charge = distance (km) + dénivelé positif / 100 — un repère simple combinant volume et dénivelé, pas une mesure physiologique.'
+    : '';
+}
+document.querySelectorAll('#seasonMetricTabs button').forEach(btn => btn.addEventListener('click', () => {
+  seasonMetric = btn.dataset.metric;
+  document.querySelectorAll('#seasonMetricTabs button').forEach(b => b.classList.toggle('active', b === btn));
+  renderSeasonChart();
+}));
+
 function renderSummary() {
   const sessions = loadAllSessions();
   const grid = document.getElementById('summaryGrid');
@@ -277,6 +332,7 @@ renderGearAlert();
 renderNextObjective();
 renderPeriodCompare();
 renderLoadChart();
+renderSeasonChart();
 renderSummary();
 renderFcZones();
 </script>
