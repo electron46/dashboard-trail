@@ -51,6 +51,8 @@
 
   <section class="card" id="goalHeroCard"></section>
 
+  <div id="goalInsightRow"></div>
+
   <div id="goalSecondaryBox"></div>
 
   <div class="tabs" id="goalTabs">
@@ -82,7 +84,7 @@
 
   <div class="tab-panel" data-panel="charge">
     <section class="card">
-      <h2>Volume &amp; charge de la préparation <small>(12 dernières semaines)</small></h2>
+      <h2>Volume &amp; charge de la préparation <small id="goalChargeWindowLabel">(12 dernières semaines)</small></h2>
       <div class="metrics-grid" id="goalChargeKpiBox"></div>
     </section>
     <div class="analysis-charts-row" style="margin-top:14px;">
@@ -94,7 +96,7 @@
 
   <div class="tab-panel" data-panel="longues">
     <section class="card">
-      <h2>Sorties longues de la préparation <small>(12 dernières semaines)</small></h2>
+      <h2>Sorties longues de la préparation <small id="goalLonguesWindowLabel">(12 dernières semaines)</small></h2>
       <p class="hint" id="goalLongTargetHint"></p>
       <div class="activities-table-head">
         <span>Date</span><span>Activité</span><span>Distance</span><span>D+</span>
@@ -106,14 +108,14 @@
 
   <div class="tab-panel" data-panel="intensite">
     <section class="card">
-      <h2>Répartition des zones FC <small>(12 dernières semaines)</small></h2>
+      <h2>Répartition des zones FC <small id="goalIntensiteWindowLabel">(12 dernières semaines)</small></h2>
       <div id="goalIntensityBox"></div>
     </section>
   </div>
 
   <div class="tab-panel" data-panel="vam">
     <section class="card">
-      <h2>VAM moyenne par semaine <small>(12 dernières semaines)</small></h2>
+      <h2>VAM moyenne par semaine <small id="goalVamWindowLabel">(12 dernières semaines)</small></h2>
       <div id="goalVamChartBox"></div>
       <p class="provenance-tag">Calcul ELEV — moyenne pondérée des montées détectées, jamais sur la sortie entière.</p>
     </section>
@@ -164,21 +166,26 @@
   <div class="modal">
     <h3 id="raceModalTitle">Ajouter une course</h3>
     <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
+      <h4 class="modal-section" style="border-top:none;padding-top:0;margin-top:0;">Course</h4>
       <label class="field">Nom de la course
         <input type="text" id="raceName" placeholder="ex. Trail des Cascades">
       </label>
       <label class="field">Date
         <input type="date" id="raceDate">
       </label>
-      <label class="field">Distance (km)
-        <input type="number" id="raceDistance" min="0" step="0.1">
-      </label>
-      <label class="field">Dénivelé positif (m)
-        <input type="number" id="raceDenivele" min="0" step="10">
-      </label>
+      <div class="field-pair">
+        <label class="field">Distance (km)
+          <input type="number" id="raceDistance" min="0" step="0.1">
+        </label>
+        <label class="field">Dénivelé positif (m)
+          <input type="number" id="raceDenivele" min="0" step="10">
+        </label>
+      </div>
       <label class="field">Type de course (optionnel)
         <input type="text" id="raceType" placeholder="ex. Ultra Trail, Trail court, Kilomètre vertical...">
       </label>
+
+      <h4 class="modal-section">Objectif</h4>
       <label class="field">Statut
         <select id="raceStatut">
           <option value="principal">Objectif principal</option>
@@ -189,7 +196,9 @@
       <label class="field">Temps visé (optionnel)
         <input type="text" id="raceTempsVise" placeholder="ex. 12h00">
       </label>
-      <h4 class="modal-section">Conditions de course (pour l'estimation IA)</h4>
+
+      <h4 class="modal-section">Conditions de course</h4>
+      <p class="hint" style="margin:-4px 0 4px;">Utilisées pour l'estimation IA du temps de course, ci-dessous.</p>
       <label class="field">Technicité du terrain (optionnel)
         <textarea id="raceTechnicite" rows="2" placeholder="ex. sentiers techniques, pierriers, single tracks, portage"></textarea>
       </label>
@@ -271,11 +280,28 @@ function renderGoalSelector() {
   document.addEventListener('click', e => { if (!box.contains(e.target)) document.getElementById('goalSelectorMenu').classList.remove('open'); }, { once: true });
 }
 
-/* --------------------------- FENÊTRE D'ANALYSE (12 dernières semaines, cohérente avec l'indice) --------------------------- */
+/* --------------------------- FENÊTRE D'ANALYSE (12 dernières semaines, cohérente avec l'indice) ---------------------------
+   `flooredFrom`/`weeksCovered` distinguent "historique indisponible" (avant la toute première
+   séance connue, jamais compté comme des semaines à zéro) de "vraie semaine à zéro" (à l'intérieur
+   de l'historique connu) — même philosophie que la page Analyse (floorToKnownHistory, app.js),
+   volontairement partagée pour ne jamais diverger entre les deux pages (voir CLAUDE.md). */
 function goalWindow() {
   const today = new Date().toISOString().slice(0,10);
   const windowStart = new Date(new Date(today).getTime() - READINESS_WEEKS * 7 * 86400000).toISOString().slice(0,10);
-  return { fromISO: windowStart, toISO: today, sessions: loadAllSessions().filter(s => s.date >= windowStart && s.date <= today) };
+  const sessions = loadAllSessions();
+  const flooredFrom = floorToKnownHistory(windowStart, sessions);
+  return {
+    fromISO: windowStart, toISO: today, flooredFrom,
+    weeksCovered: countIsoWeeksBetween(flooredFrom, today),
+    sessions: sessions.filter(s => s.date >= windowStart && s.date <= today),
+  };
+}
+// Libellé de fenêtre honnête : "12 dernières semaines" seulement si l'historique les couvre
+// réellement, sinon précise le nombre de semaines effectivement disponibles (voir CLAUDE.md).
+function goalWindowLabel(win) {
+  return win.weeksCovered < READINESS_WEEKS
+    ? ('(historique disponible — ' + win.weeksCovered + ' semaine' + (win.weeksCovered>1?'s':'') + ')')
+    : '(12 dernières semaines)';
 }
 function goalCountdown(dateISO) {
   const todayISO = new Date().toISOString().slice(0,10);
@@ -315,8 +341,10 @@ function renderGoalHero() {
     ['Date cible', fmtDate(race.date)],
   ].filter(Boolean).map(([l,v]) => '<div class="goal-hero-pill"><span class="l">' + escapeHtml(l) + '</span><span class="v">' + escapeHtml(v) + (l==='Distance'&&ratio ? ' <span class="badge brand-badge" title="Ratio dénivelé/distance">'+ratio+' m/km</span>' : '') + '</span></div>').join('');
 
-  // KPI spécifiques : volume/D+ hebdo moyens (12 sem.) + sortie longue, comparés aux 4 semaines
-  // précédentes (même logique que comparePeriods, réutilisée telle quelle).
+  // KPI spécifiques : volume/D+ hebdo moyens + sortie longue, comparés aux 4 semaines précédentes.
+  // Moyenne "sur historique disponible" (win.weeksCovered) plutôt que /READINESS_WEEKS fixe : sinon
+  // un utilisateur avec 2 semaines de données voit sa moyenne artificiellement écrasée par 10
+  // semaines "sans historique" traitées à tort comme des semaines à zéro (voir CLAUDE.md).
   const today = new Date().toISOString().slice(0,10);
   const c4From = new Date(); c4From.setDate(c4From.getDate() - 28);
   const p4From = new Date(); p4From.setDate(p4From.getDate() - 56);
@@ -324,22 +352,27 @@ function renderGoalHero() {
   const sessions = loadAllSessions();
   const last4 = filterSessionsByRange(sessions, c4From.toISOString().slice(0,10), today);
   const prev4 = filterSessionsByRange(sessions, p4From.toISOString().slice(0,10), p4To.toISOString().slice(0,10));
-  const cmp4 = comparePeriods(aggregatePeriod(last4), aggregatePeriod(prev4));
+  // La comparaison n'a de sens que si la période précédente de 4 semaines est ENTIÈREMENT couverte
+  // par l'historique connu — sinon "comparer" reviendrait à comparer à un historique partiel tronqué.
+  const prev4FullyCovered = sessions.length > 0 && sessions[0].date <= p4From.toISOString().slice(0,10);
+  const cmp4 = prev4FullyCovered ? comparePeriods(aggregatePeriod(last4), aggregatePeriod(prev4)) : null;
   const win = goalWindow();
-  const avgVolume = win.sessions.length ? (win.sessions.reduce((a,s)=>a+(s.distanceKm||0),0) / READINESS_WEEKS) : null;
-  const avgDplus = win.sessions.length ? (win.sessions.reduce((a,s)=>a+(s.ascent||0),0) / READINESS_WEEKS) : null;
+  const avgVolume = win.sessions.length ? (win.sessions.reduce((a,s)=>a+(s.distanceKm||0),0) / win.weeksCovered) : null;
+  const avgDplus = win.sessions.length ? (win.sessions.reduce((a,s)=>a+(s.ascent||0),0) / win.weeksCovered) : null;
   const longestRecent = win.sessions.length ? Math.max(...win.sessions.map(s => s.distanceKm || 0)) : null;
   const longSpark = weeklyMaxDistance(win.sessions, 8);
   const volSpark = getRecentWeeklyVolumes(8).map(w => w.km);
   const dplusSpark = getRecentWeeklyVolumes(8).map(w => w.dplus);
+  const shortHistoryNote = win.weeksCovered < READINESS_WEEKS ? (win.weeksCovered + ' semaine' + (win.weeksCovered>1?'s':'') + ' de données') : null;
 
   const kpiCell = (label, value, spark, deltaPct) => {
     const arrow = deltaPct == null ? '' : '<span class="arrow">' + (deltaPct >= 0 ? '▲' : '▼') + '</span>';
-    const deltaTxt = deltaPct == null ? 'Comparaison indisponible' : (arrow + (deltaPct>=0?'+':'') + deltaPct + '% vs 4 sem. précédentes');
-    return '<div class="metric"><div class="lbl">' + escapeHtml(label) + '</div>' +
+    const deltaTxt = !prev4FullyCovered ? 'Pas assez d\'historique' : (deltaPct == null ? 'Comparaison indisponible' : (arrow + (deltaPct>=0?'+':'') + deltaPct + '% vs 4 sem. précédentes'));
+    return '<div class="metric" title="Moyenne calculée sur les semaines couvertes par l\'historique ELEV — les semaines antérieures à la première activité connue ne sont pas comptées.">' +
+      '<div class="lbl">' + escapeHtml(label) + '</div>' +
       '<div class="val">' + (value != null ? escapeHtml(value) : 'Non disponible') + '</div>' +
       (spark && spark.length >= 3 ? '<div class="kpi-spark" style="width:80px;height:24px;margin-top:4px;">' + sparklineSvg(spark) + '</div>' : '') +
-      '<div class="hint" style="margin-top:4px;">' + deltaTxt + '</div>' +
+      '<div class="hint" style="margin-top:4px;">' + deltaTxt + (shortHistoryNote ? ' · ' + shortHistoryNote : '') + '</div>' +
     '</div>';
   };
 
@@ -353,9 +386,9 @@ function renderGoalHero() {
     '</div>' +
     '<div class="metrics-grid" style="grid-template-columns:auto repeat(3,minmax(140px,1fr));margin-top:18px;">' +
       '<div class="goal-hero-score">' +
-        '<div class="goal-ring-big">' + (readiness.overall != null ? ringSvg(readiness.overall, 88) : '') + '</div>' +
+        '<div class="goal-ring-big">' + ringSvg(readiness.overall || 0, 96, readiness.overall != null ? readiness.overall + '%' : '—') + '</div>' +
         '<div class="goal-score-meta">' +
-          '<div class="pct">' + (readiness.overall != null ? readiness.overall + '%' : '—') + '</div>' +
+          '<div class="goal-score-eyebrow">Préparation</div>' +
           '<div class="lbl">' + (readinessLevelLabel(readiness.overall) || 'Pas assez de données') + '</div>' +
           '<div class="countdown">' + escapeHtml(countdown.main) + '<small>' + escapeHtml(countdown.sub) + '</small></div>' +
         '</div>' +
@@ -373,6 +406,21 @@ function renderGoalHero() {
     '</div>';
   initChartTooltips(card);
 }
+
+/* --------------------------- INSIGHT ELEV (objectif) --------------------------- */
+function renderGoalInsight() {
+  const row = document.getElementById('goalInsightRow');
+  const race = currentRace();
+  if (!race) { row.innerHTML = ''; return; }
+  const readiness = computeRaceReadiness(race);
+  const bullets = generateGoalInsight(readiness, race);
+  if (!bullets.length) { row.innerHTML = ''; return; }
+  row.innerHTML = '<div class="insight-card">' +
+    '<p class="insight-eyebrow"><img src="'+ICON_G('zap')+'" alt="">Insight ELEV</p>' +
+    bullets.map(b => '<div class="insight-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+  '</div>';
+}
+const ICON_G = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
 
 /* --------------------------- AUTRES OBJECTIFS --------------------------- */
 function renderGoalSecondary() {
@@ -401,9 +449,9 @@ function renderApercu() {
   const race = currentRace();
   if (!race) return;
   const win = goalWindow();
-  const weeks = groupByWeek(win.sessions, win.fromISO, win.toISO);
+  const weeks = groupByWeek(win.sessions, win.flooredFrom, win.toISO);
   const plan = getPlan();
-  const planMap = groupPlanByWeek(plan, win.fromISO, win.toISO);
+  const planMap = groupPlanByWeek(plan, win.flooredFrom, win.toISO);
 
   // Aucune activité du tout sur la fenêtre : un vrai état vide plutôt qu'un graphique à 12 barres
   // nulles (voir CLAUDE.md — objectif sans activité).
@@ -425,7 +473,7 @@ function renderApercu() {
   if (!zones) zonesBox.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a>.</div>';
   else if (!zoneDist) zonesBox.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette fenêtre.</div>';
   else {
-    const donut = genericDonutSvg(zoneDist.map(z => ({ pct: z.pct, color: ZONE_DONUT_COLORS[z.key] || 'var(--accent)' })), READINESS_WEEKS + ' sem.', 'fenêtre');
+    const donut = genericDonutSvg(zoneDist.map(z => ({ pct: z.pct, color: ZONE_DONUT_COLORS[z.key] || 'var(--accent)' })), win.weeksCovered + ' sem.', 'fenêtre');
     const legend = zoneDist.map(z => '<div class="zdl-row"><span class="zone-dot ' + z.key + '"></span><span class="zdl-label">' + escapeHtml(z.label) + '</span><span class="zdl-pct">' + z.pct + '%</span><span class="zdl-time">' + fmtDuration(z.sec) + '</span></div>').join('');
     zonesBox.innerHTML = '<div class="analysis-donut-row">' + donut + '<div class="zone-donut-legend">' + legend + '</div></div>';
   }
@@ -434,14 +482,17 @@ function renderApercu() {
   const longest = getLongestRuns(win.sessions, 1)[0];
   if (!longest) longestBox.innerHTML = '<div class="empty">Aucune activité enregistrée pour cette préparation.<br><a class="link-arrow" href="historique.html">Importer une activité →</a></div>';
   else {
-    const visual = sessionPreviewSvg(longest);
+    // Profil altimétrique forcé (jamais le tracé GPS ici) : cette carte veut montrer le relief de la
+    // sortie, pas sa forme sur la carte — même langage visuel que le reste du site (voir sessionPreviewSvg).
+    const visual = sessionPreviewSvg(longest, { forceAltitude: true });
     longestBox.innerHTML = '<a href="activite.html?id=' + encodeURIComponent(longest.id) + '" style="text-decoration:none;color:inherit;display:block;">' +
-      (visual ? '<div class="activity-visual" style="height:110px;margin-bottom:10px;">' + visual + '</div>' : '') +
+      (visual ? '<div class="activity-visual" style="height:100px;margin-bottom:10px;">' + visual + '</div>' : '') +
       '<div class="metrics-grid" style="grid-template-columns:1fr 1fr;">' +
         '<div class="metric"><div class="lbl">Distance</div><div class="val">' + fmtNum(longest.distanceKm,' km',1) + '</div></div>' +
         '<div class="metric"><div class="lbl">D+</div><div class="val">' + fmtNum(longest.ascent,' m',0) + '</div></div>' +
       '</div>' +
-      '<p class="hint">' + fmtDuration(longest.durationS) + ' · ' + fmtDate(longest.date) + '</p>' +
+      '<p class="hint" style="margin:8px 0 0;">' + fmtDuration(longest.durationS) + ' · ' + fmtDate(longest.date) + '</p>' +
+      '<span class="link-arrow" style="margin-top:8px;display:inline-block;">Voir l\'activité →</span>' +
     '</a>';
   }
 
@@ -459,16 +510,25 @@ function renderApercu() {
   const readiness = computeRaceReadiness(race);
   if (readiness.overall == null) stateBox.innerHTML = '<div class="empty">Pas encore assez de données pour évaluer ta préparation.</div>';
   else {
+    // Même score que le hero, réutilisé dans un anneau compact : mieux occuper l'espace de la carte
+    // qu'un simple pourcentage isolé, sans créer un nouveau calcul (voir CLAUDE.md).
     const level = readinessLevelLabel(readiness.overall);
-    const badgeCls = readiness.overall >= 85 ? 'ok-badge' : (readiness.overall >= 60 ? 'ok-badge' : 'warn-badge');
-    stateBox.innerHTML = '<div class="goal-score-meta"><div class="pct">' + readiness.overall + '%</div><div class="lbl">' + level + '</div></div>' +
-      '<div class="hint" style="margin-top:10px;">' + (readiness.weakest ? 'Point faible actuel : ' + escapeHtml(readiness.weakest.label) + ' (' + readiness.weakest.score + '%)' : '') + '</div>';
+    stateBox.innerHTML = '<div class="goal-hero-score" style="gap:16px;">' +
+      '<div class="goal-ring-big" style="width:76px;height:76px;">' + ringSvg(readiness.overall, 76, readiness.overall + '%') + '</div>' +
+      '<div class="goal-score-meta">' +
+        '<div class="lbl">' + escapeHtml(level) + '</div>' +
+        (readiness.weakest ? '<div class="hint" style="margin-top:10px;">Point faible<br><strong style="color:var(--text);">' + escapeHtml(readiness.weakest.label) + ' — ' + readiness.weakest.score + '%</strong></div>' : '') +
+      '</div>' +
+    '</div>';
   }
 
   const recBox = document.getElementById('goalRecommendationsBox');
   const recs = getGoalRecommendations(readiness);
   if (!recs.length) recBox.innerHTML = '<div class="empty">' + (readiness.overall != null ? 'Toutes les dimensions suivies sont bien couvertes pour le moment.' : 'Pas encore assez de données pour proposer des recommandations.') + '</div>';
-  else recBox.innerHTML = '<div class="coach-cards-grid">' + recs.map(r =>
+  // Grille auto-fit (pas .coach-cards-grid, qui a des paliers fixes 1/2/4 colonnes partagés avec le
+  // Détail activité) : le nombre de colonnes suit le nombre réel de recommandations, jamais de
+  // colonnes vides pour "remplir" la ligne (2 recommandations → 2 colonnes, pas 4).
+  else recBox.innerHTML = '<div class="goal-rec-grid">' + recs.map(r =>
     '<div class="coach-card"><h4>' + escapeHtml(r.title) + '</h4><p>' + escapeHtml(r.text) + '</p><ul><li>' + escapeHtml(r.detail) + '</li></ul></div>'
   ).join('') + '</div>';
 }
@@ -477,17 +537,20 @@ function renderApercu() {
 /* --------------------------- ONGLET CHARGE & VOLUME --------------------------- */
 function renderChargeVolume() {
   const win = goalWindow();
-  const weeks = groupByWeek(win.sessions, win.fromISO, win.toISO);
+  document.getElementById('goalChargeWindowLabel').textContent = goalWindowLabel(win);
+  const weeks = groupByWeek(win.sessions, win.flooredFrom, win.toISO);
   const plan = getPlan();
-  const planMap = groupPlanByWeek(plan, win.fromISO, win.toISO);
+  const planMap = groupPlanByWeek(plan, win.flooredFrom, win.toISO);
   const agg = aggregatePeriod(win.sessions);
   const weeksWithSession = new Set(win.sessions.map(s => isoWeek(s.date))).size;
+  const regLabel = weeksWithSession + '/' + win.weeksCovered + ' semaines actives' + (win.weeksCovered < READINESS_WEEKS ? ' (historique disponible)' : '');
 
   document.getElementById('goalChargeKpiBox').innerHTML = [
-    ['Volume hebdomadaire', agg ? fmtNum(agg.distanceKm / READINESS_WEEKS, ' km', 1) : 'Non disponible'],
+    // Moyenne sur l'historique réellement disponible (win.weeksCovered), pas /READINESS_WEEKS fixe — voir renderGoalHero.
+    ['Volume hebdomadaire', agg ? fmtNum(agg.distanceKm / win.weeksCovered, ' km', 1) : 'Non disponible'],
     ['Durée totale', agg ? fmtDuration(agg.durationS) : 'Non disponible'],
     ['D+ total', agg ? fmtNum(agg.ascent, ' m', 0) : 'Non disponible'],
-    ['Régularité', weeksWithSession + '/' + READINESS_WEEKS + ' semaines actives'],
+    ['Régularité', regLabel],
     [!plan ? 'Plan associé' : 'Évolution vs plan', !plan ? 'Aucun plan associé' : 'Voir graphiques ci-dessous'],
   ].map(([l,v]) => '<div class="metric"><div class="lbl">' + l + '</div><div class="val' + (v==='Non disponible'?' na':'') + '">' + v + '</div></div>').join('');
 
@@ -517,6 +580,7 @@ function renderChargeVolume() {
 function renderLongRuns() {
   const race = currentRace();
   const win = goalWindow();
+  document.getElementById('goalLonguesWindowLabel').textContent = goalWindowLabel(win);
   const hintEl = document.getElementById('goalLongTargetHint');
   if (race) {
     const target = race.distanceKm * READINESS_LONG_RUN_RATIO;
@@ -548,6 +612,7 @@ function renderLongRuns() {
 function renderIntensite() {
   const box = document.getElementById('goalIntensityBox');
   const win = goalWindow();
+  document.getElementById('goalIntensiteWindowLabel').textContent = goalWindowLabel(win);
   const profile = getProfile();
   const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
   if (!zones) { box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>'; return; }
@@ -565,7 +630,8 @@ function renderIntensite() {
 /* --------------------------- ONGLET VAM --------------------------- */
 function renderVamTab() {
   const win = goalWindow();
-  const weeks = groupByWeek(win.sessions, win.fromISO, win.toISO);
+  document.getElementById('goalVamWindowLabel').textContent = goalWindowLabel(win);
+  const weeks = groupByWeek(win.sessions, win.flooredFrom, win.toISO);
   const withVam = weeks.filter(w => w.vamAvg != null);
   const box = document.getElementById('goalVamChartBox');
   if (withVam.length < 2) box.innerHTML = '<div class="empty">Pas assez de montées fiables détectées sur cette fenêtre pour une tendance hebdomadaire.</div>';
@@ -647,6 +713,7 @@ function renderGoalPage() {
   if (!selectedRaceId || !getRaces().find(r => r.id === selectedRaceId)) selectedRaceId = defaultRaceId();
   renderGoalSelector();
   renderGoalHero();
+  renderGoalInsight();
   renderGoalSecondary();
   const race = currentRace();
   if (race) {

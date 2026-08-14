@@ -392,7 +392,7 @@ function renderAnalysis() {
 
   // Semaines à zéro comblées uniquement à l'intérieur de l'historique réellement connu (jamais
   // avant la toute première séance) : une période "hors historique" reste absente, pas un 0 fabriqué.
-  const flooredFrom = sessions.length && fromISO < sessions[0].date ? sessions[0].date : fromISO;
+  const flooredFrom = floorToKnownHistory(fromISO, sessions);
   const weeks = groupByWeek(current, flooredFrom, toISO);
   renderVolumeChart(weeks);
   renderDplusChart(weeks);

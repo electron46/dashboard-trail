@@ -694,16 +694,19 @@ main.analysis-main{max-width:1440px;}
 
 .goal-hero-top{display:flex;flex-wrap:wrap;gap:22px;justify-content:space-between;align-items:flex-start;}
 .goal-hero-identity{flex:1 1 260px;min-width:0;}
-.goal-hero-eyebrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
-.goal-hero-identity h2{margin:0;font-size:1.5rem;}
+.goal-hero-eyebrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+/* Nom de la course : plus de présence typographique (priorité n°1 du hero, voir CLAUDE.md). */
+.goal-hero-identity h2{margin:0;font-family:var(--font-display);font-size:1.75rem;font-weight:800;letter-spacing:-.01em;line-height:1.15;}
 .goal-hero-pills{display:flex;flex-wrap:wrap;gap:20px;margin-top:14px;}
 .goal-hero-pill{display:flex;flex-direction:column;gap:2px;}
 .goal-hero-pill .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
 .goal-hero-pill .v{font-family:var(--font-display);font-weight:700;font-size:.98rem;font-variant-numeric:tabular-nums;}
 .goal-hero-score{display:flex;align-items:center;gap:16px;flex:0 0 auto;}
-.goal-ring-big{width:88px;height:88px;flex-shrink:0;}
-.goal-score-meta .pct{font-family:var(--font-display);font-size:1.9rem;font-weight:800;line-height:1;}
-.goal-score-meta .lbl{font-size:.78rem;color:var(--muted);margin-top:3px;}
+.goal-ring-big{width:96px;height:96px;flex-shrink:0;}
+/* Score et jauge réunis : le pourcentage est désormais dessiné au centre de l'anneau (voir ringSvg,
+   paramètre centerText) plutôt qu'affiché séparément à côté — évite l'effet "deux blocs disjoints". */
+.goal-score-eyebrow{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;}
+.goal-score-meta .lbl{font-size:.82rem;color:var(--text);font-weight:600;margin-top:4px;}
 .goal-score-meta .countdown{margin-top:10px;font-size:.84rem;color:var(--text);font-weight:700;}
 .goal-score-meta .countdown small{display:block;font-weight:400;color:var(--muted);font-size:.7rem;margin-top:1px;}
 
@@ -715,6 +718,20 @@ main.analysis-main{max-width:1440px;}
 .goal-subscore-val.na{color:var(--muted-2);}
 
 .goal-secondary-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 10px;font-weight:700;}
+
+/* Recommandations (page Objectifs) : grille qui suit le nombre réel de cartes (auto-fit) plutôt que
+   les paliers fixes 1/2/4 colonnes de .coach-cards-grid (partagée avec le Détail activité, non
+   modifiée) — 2 recommandations remplissent proprement leur ligne en 50/50 au lieu de laisser un
+   vide à droite d'une grille à 4 colonnes. */
+.goal-rec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+
+/* Formulaire "Ajouter une course" : deux champs côte à côte quand logique (Distance/D+). Sélecteur
+   plus spécifique que ".modal-form .field{flex:none}" pour gagner sur cette seule paire. */
+.modal-form .field-pair{display:flex;gap:10px;}
+.modal-form .field-pair .field{flex:1 1 0;}
+@media (max-width:480px){
+  .modal-form .field-pair{flex-direction:column;}
+}
 
 @media (min-width:768px){
   .goal-hero-score{flex-direction:row-reverse;}

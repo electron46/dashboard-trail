@@ -1524,6 +1524,23 @@ function isoWeek(dateISO) {
   return d.toISOString().slice(0,10);
 }
 
+// Borne basse d'une fenêtre d'analyse ramenée à l'historique réellement connu : une période avant la
+// toute première séance importée n'est jamais traitée comme une succession de semaines à zéro (voir
+// CLAUDE.md — distinction "historique indisponible" / "vraie semaine à zéro"). `sessions` doit être
+// trié par date croissante (comme le retour de loadAllSessions()). Réutilisée par Analyse et
+// Objectifs pour ne jamais diverger sur cette définition.
+function floorToKnownHistory(fromISO, sessions) {
+  if (!sessions.length) return fromISO;
+  return fromISO < sessions[0].date ? sessions[0].date : fromISO;
+}
+// Nombre de semaines ISO (lundi-dimanche) entre deux dates, bornes incluses — dénominateur honnête
+// d'une moyenne hebdomadaire "sur historique disponible" plutôt qu'un nombre de semaines fixe.
+function countIsoWeeksBetween(fromISO, toISO) {
+  const a = new Date(isoWeek(fromISO) + 'T00:00:00Z');
+  const b = new Date(isoWeek(toISO) + 'T00:00:00Z');
+  return Math.max(1, Math.round((b - a) / (7 * 86400000)) + 1);
+}
+
 // État de préparation d'une course : compare le volume réalisé au volume planifié sur les 28 derniers jours
 // (ou depuis le début du plan si plus récent). Retourne null si aucun plan n'est enregistré.
 function computePrepStatus(raceDateISO) {
@@ -1676,6 +1693,22 @@ function getGoalRecommendations(readiness) {
     const meta = GOAL_REC_TEXT[s.key] || { title: s.label, text: '' };
     return { key: s.key, title: meta.title, text: meta.text, detail: s.detail, score: s.score };
   });
+}
+
+// Insight ELEV court pour la page Objectifs (1 à 2 observations max) — déterministe, réutilise
+// uniquement le point faible déjà identifié par computeRaceReadiness et le repère de sortie longue
+// déjà utilisé pour ce sous-score, sans nouvelle métrique ni appel réseau.
+function generateGoalInsight(readiness, race) {
+  const bullets = [];
+  if (readiness && readiness.weakest) {
+    bullets.push({ title: 'Priorité', text: readiness.weakest.label + ' reste actuellement la dimension la plus faible de ta préparation (' + readiness.weakest.score + '%).' });
+  }
+  const longuesSub = readiness && readiness.subs.find(s => s.key === 'longues');
+  if (longuesSub && longuesSub.score != null && race && race.distanceKm) {
+    const target = race.distanceKm * READINESS_LONG_RUN_RATIO;
+    bullets.push({ title: 'Sorties longues', text: 'Ta plus longue sortie récente représente ' + Math.min(999, longuesSub.score) + '% du repère actuel (' + target.toFixed(0) + ' km).' });
+  }
+  return bullets.slice(0, 2);
 }
 
 // Statistiques de la semaine en cours (depuis lundi), comparées à la semaine précédente complète.
@@ -1881,15 +1914,19 @@ function sparklineSvg(values) {
 // est déjà affichée en grand à côté).
 // `size` optionnel (défaut 44px, utilisé par les KPI de l'Accueil) — la page Objectifs passe une
 // taille plus grande (voir `.goal-ring-big`) pour son score de préparation en position de hero.
-function ringSvg(pct, size) {
+// `centerText` optionnel : dessine une valeur au centre de l'anneau (ex. "75%") pour réunir
+// visuellement le score et sa jauge plutôt que de les afficher côte à côte (voir CLAUDE.md).
+function ringSvg(pct, size, centerText) {
   size = size || 44;
   const stroke = Math.max(4, Math.round(size * 0.09)), r = (size - stroke) / 2, c = size / 2;
   const circumference = 2 * Math.PI * r;
   const offset = circumference * (1 - Math.max(0, Math.min(100, pct)) / 100);
+  const text = centerText ? '<text x="'+c+'" y="'+(c + size*0.09)+'" text-anchor="middle" font-family="var(--font-display)" font-weight="800" font-size="'+(size*0.24).toFixed(1)+'" fill="var(--text)">'+escapeHtml(centerText)+'</text>' : '';
   return '<svg class="kpi-ring" viewBox="0 0 '+size+' '+size+'">' +
     '<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="rgba(244,247,245,.09)" stroke-width="'+stroke+'"/>' +
     '<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="var(--accent)" stroke-width="'+stroke+'" stroke-linecap="round" ' +
       'stroke-dasharray="'+circumference.toFixed(1)+'" stroke-dashoffset="'+offset.toFixed(1)+'" transform="rotate(-90 '+c+' '+c+')"/>' +
+    text +
   '</svg>';
 }
 
@@ -2014,10 +2051,15 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
 // Aperçu visuel d'une séance pour la carte "Dernière activité" : trace GPS si les coordonnées sont
 // disponibles, sinon profil altimétrique, sinon rien — jamais d'image générique. Fonction de rendu
 // pure, sans dépendance à un fond de carte externe (contrairement à la carte Leaflet du détail de séance).
-function sessionPreviewSvg(session) {
+// `opts.forceAltitude` : ignore le tracé GPS même s'il est disponible et rend directement le profil
+// altimétrique (utilisé par la carte "Sortie longue" de la page Objectifs, qui veut spécifiquement
+// le relief de la sortie plutôt que sa forme sur la carte — voir CLAUDE.md). Comportement par défaut
+// inchangé pour l'Accueil/Activités (GPS en priorité).
+function sessionPreviewSvg(session, opts) {
+  opts = opts || {};
   const series = Array.isArray(session.series) ? session.series : [];
   const w = 160, h = 100, pad = 10;
-  const withGps = series.filter(p => p.lat != null && p.lon != null);
+  const withGps = opts.forceAltitude ? [] : series.filter(p => p.lat != null && p.lon != null);
   if (withGps.length >= 2) {
     const lats = withGps.map(p=>p.lat), lons = withGps.map(p=>p.lon);
     const minLat=Math.min(...lats), maxLat=Math.max(...lats), minLon=Math.min(...lons), maxLon=Math.max(...lons);
