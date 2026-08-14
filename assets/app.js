@@ -665,7 +665,7 @@ const PROFILE_FIELD_GROUPS = [
   ]},
 ];
 const DEFAULT_PROFILE = Object.assign(
-  { nom:'', naissance:'', sante:'', records:[], objectifsAutres:'', apropos:'', createdAt:null },
+  { nom:'', naissance:'', sante:'', records:[], objectifsAutres:'', apropos:'', createdAt:null, hrZoneMode:'karvonen', customHrZones:null },
   ...PROFILE_FIELD_GROUPS.flatMap(g => g.fields.map(([key]) => ({ [key]: '' })))
 );
 function getProfile() { try { const raw = localStorage.getItem(PROFILE_KEY); return raw ? Object.assign({}, DEFAULT_PROFILE, JSON.parse(raw)) : Object.assign({}, DEFAULT_PROFILE); } catch (e) { return Object.assign({}, DEFAULT_PROFILE); } }
@@ -696,6 +696,20 @@ function karvonenZones(fcMax, fcRepos) {
     low: Math.round(fcRepos + reserve * z.low),
     high: Math.round(fcRepos + reserve * z.high),
   }));
+}
+// Zones de FC réellement actives pour tout ELEV (Accueil, Objectifs, Analyse, Plan, Détail séance,
+// Profil) : personnalisées si `hrZoneMode === 'custom'` et des bornes existent, sinon calcul Karvonen
+// habituel — substitut direct de karvonenZones(fcMax, fcRepos) partout où les zones étaient lues
+// depuis FC max/repos seules. Jamais d'ambiguïté sur la source active (voir CLAUDE.md, passe
+// simplification Profil).
+function getActiveHrZones(profile) {
+  if (profile && profile.hrZoneMode === 'custom' && profile.customHrZones) {
+    return KARVONEN_ZONES.map(z => {
+      const c = profile.customHrZones[z.key];
+      return c ? { key: z.key, label: z.label, low: c.low, high: c.high } : null;
+    }).filter(Boolean);
+  }
+  return karvonenZones(parseFloat(profile && profile.fcMax), parseFloat(profile && profile.fcRepos));
 }
 
 // Repère RPE (perception d'effort, échelle de Borg 1-10) — table FIXE et informative, volontairement
@@ -1668,7 +1682,7 @@ function computeRaceReadiness(race) {
   // Intensité : part du temps passé en zone FC 3+ (tempo/seuil/VMA) sur la fenêtre — nécessite FC max
   // et FC repos renseignées en page Accueil pour calculer les zones Karvonen.
   const profile = getProfile();
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zones = getActiveHrZones(profile);
   if (zones) {
     let z3PlusSec = 0, totalSec = 0;
     recent.forEach(s => {
