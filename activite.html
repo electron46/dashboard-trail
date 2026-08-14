@@ -289,11 +289,25 @@ function renderClimbsMini(climbs) {
   '</div>';
 }
 
-/* --------------------------- CARTE GPS --------------------------- */
-let detailMap = null, detailMapLine = null, detailMapCursor = null;
+/* --------------------------- CARTE GPS ---------------------------
+   Tracé coloré selon l'altitude relative de la séance (vert → jaune → rouge, palette ELEV) plutôt
+   qu'un trait uni : donne une lecture immédiate du relief sur le tracé, comme le profil altimétrique
+   juste en dessous. Leaflet ne permet pas un dégradé continu sur une seule polyline, donc le tracé
+   est découpé en petits segments colorés individuellement (~300 points max par séance, sans impact
+   de performance notable). */
+let detailMap = null, detailMapCursor = null;
+// Vert (accent ELEV) → jaune (--warn) → rouge (--danger), mêmes couleurs que la charte existante.
+const ROUTE_COLOR_STOPS = [[107,142,78],[217,184,91],[226,131,108]];
+function altitudeRouteColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  const seg = t < 0.5 ? [ROUTE_COLOR_STOPS[0], ROUTE_COLOR_STOPS[1], t*2] : [ROUTE_COLOR_STOPS[1], ROUTE_COLOR_STOPS[2], (t-0.5)*2];
+  const [a, b, f] = seg;
+  const rgb = a.map((v,i) => Math.round(v + (b[i]-v)*f));
+  return 'rgb(' + rgb.join(',') + ')';
+}
 function renderMap(s) {
   const mapEl = document.getElementById('mapCard');
-  const pts = (s.series || []).filter(p => p.lat != null && p.lon != null).map(p => [p.lat, p.lon]);
+  const pts = (s.series || []).filter(p => p.lat != null && p.lon != null);
   if (pts.length < 2 || typeof L === 'undefined') {
     mapEl.style.display = 'flex';
     mapEl.style.alignItems = 'center';
@@ -305,11 +319,24 @@ function renderMap(s) {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(detailMap);
-  detailMapLine = L.polyline(pts, { color: '#6B8E4E', weight: 4 }).addTo(detailMap);
-  L.circleMarker(pts[0], { radius: 5, color: '#fff', weight: 2, fillColor: '#6B8E4E', fillOpacity: 1 }).addTo(detailMap);
+  L.control.scale({ imperial: false, position: 'bottomright' }).addTo(detailMap);
+
+  const alts = pts.map(p => p.alt).filter(v => v != null);
+  const minAlt = alts.length ? Math.min(...alts) : null, maxAlt = alts.length ? Math.max(...alts) : null;
+  const spanAlt = (maxAlt - minAlt) || 1;
+  for (let i = 1; i < pts.length; i++) {
+    const p0 = pts[i-1], p1 = pts[i];
+    const color = (p0.alt != null && p1.alt != null)
+      ? altitudeRouteColor(((p0.alt + p1.alt) / 2 - minAlt) / spanAlt)
+      : '#6B8E4E';
+    L.polyline([[p0.lat,p0.lon],[p1.lat,p1.lon]], { color, weight: 4, lineCap: 'round', lineJoin: 'round' }).addTo(detailMap);
+  }
+  L.circleMarker([pts[0].lat, pts[0].lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#6B8E4E', fillOpacity: 1 }).addTo(detailMap).bindTooltip('Départ');
+  L.circleMarker([pts[pts.length-1].lat, pts[pts.length-1].lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#1C2420', fillOpacity: 1 }).addTo(detailMap).bindTooltip('Arrivée');
+
   requestAnimationFrame(() => {
     detailMap.invalidateSize();
-    detailMap.fitBounds(detailMapLine.getBounds(), { padding: [16, 16] });
+    detailMap.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])), { padding: [16, 16] });
   });
 }
 function moveMapCursor(lat, lon) {
