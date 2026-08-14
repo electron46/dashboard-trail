@@ -67,10 +67,16 @@
         </div>
       </div>
       <div id="trendChartBox" style="margin-top:8px;"></div>
-      <a class="trend-link" href="historique.html">Voir toute l'analyse de tendance →</a>
+      <a class="link-arrow trend-link" href="historique.html">Voir toute l'analyse de tendance →</a>
     </section>
 
-    <div id="insightBox"></div>
+    <div class="dash-col-stack">
+      <div id="insightBox"></div>
+      <section class="card card-compact">
+        <h2>Prochaine séance</h2>
+        <div id="nextPlannedBox"></div>
+      </section>
+    </div>
 
     <section class="card">
       <h2>Dernière activité</h2>
@@ -86,10 +92,6 @@
       <section class="card card-compact">
         <h2>Charge d'entraînement <small>(12 sem.)</small></h2>
         <div id="loadChartBox"></div>
-      </section>
-      <section class="card card-compact">
-        <h2>Prochaine séance</h2>
-        <div id="nextPlannedBox"></div>
       </section>
       <section class="card card-compact">
         <h2>Intensité <small>(30 derniers jours)</small></h2>
@@ -211,7 +213,9 @@ function renderKpis() {
   }
 
   grid.innerHTML = cards.map(c => {
-    const spark = c.spark && c.spark.length >= 2 ? sparklineSvg(c.spark) : '';
+    // Une sparkline sur 2 points n'est qu'une diagonale sans intérêt visuel : masquée tant que
+    // l'historique réel ne fournit pas au moins 3 semaines de recul.
+    const spark = c.spark && c.spark.length >= 3 ? sparklineSvg(c.spark) : '';
     const rightVisual = c.ring != null ? ringSvg(c.ring) : spark;
     return '<div class="kpi-card">' +
       '<div class="kpi-label">' + (c.dot ? '<span class="kpi-status-dot status-' + c.dot + '"></span>' : '<img src="' + ICON(c.icon) + '" alt="">') + escapeHtml(c.label) + '</div>' +
@@ -308,8 +312,8 @@ function renderLastActivity() {
       '<div class="hint">' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + '</div>' +
       '<h3>' + escapeHtml(label) + '</h3>' +
       '<div class="activity-stats">' + stats.map(([icon,v,l]) => '<div class="activity-stat"><img src="' + ICON(icon) + '" alt=""><strong>' + v + '</strong><span>' + l + '</span></div>').join('') + '</div>' +
+      '<span class="link-arrow" style="margin-top:12px;">Voir l\'analyse →</span>' +
     '</div>' +
-    '<span class="btn small">Voir l\'analyse →</span>' +
   '</div></a>';
 }
 
