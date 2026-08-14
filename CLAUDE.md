@@ -58,7 +58,7 @@ Fonctionnalités ajoutées après le MVP initial (à la demande de l'utilisateur
 - Profil de performance (page Profil) : radar à 6 axes (endurance, montée, descente, vitesse, résistance, régularité) calculé depuis l'historique des séances, sur des repères fixes documentés
 - Indice de préparation détaillé par course (page Objectifs) : décomposé en 5 sous-scores (volume, dénivelé, sorties longues, intensité, régularité) avec point faible identifié automatiquement, remplace l'ancien pourcentage unique
 - Page Plan en calendrier hebdomadaire : séances planifiées et réalisées côte à côte, jour par jour, avec écart de volume
-- Refonte de la page Accueil en « cockpit de progression » (2 passes UX/UI, voir section 14) : 4 KPI (volume hebdo, dénivelé hebdo, tendance de charge qualitative, préparation de l'objectif principal), section « Cette semaine » fusionnée avec un graphique de tendance (volume/D+ togglable, 12 semaines), Insight ELEV (interprétation déterministe et explicable du volume récent, pas d'IA), carte « Dernière activité » cliquable avec aperçu du tracé GPS ou du profil altimétrique, carte « Objectif principal » avec sous-scores de préparation en points, grille 2 colonnes sur desktop (≥1024px) pour limiter le scroll
+- Page Accueil refaite en « cockpit de progression » (voir section 14) : 4 KPI (volume hebdo, dénivelé hebdo, tendance de charge qualitative, préparation de l'objectif principal), section « Cette semaine » fusionnée avec le graphique de tendance (volume/D+ togglable, 12 semaines), Insight ELEV (interprétation déterministe du volume récent, pas d'IA) suivi de la carte « Prochaine séance », carte « Dernière activité » cliquable avec aperçu du tracé GPS ou du profil altimétrique (bandeau horizontal), carte « Objectif principal » avec sous-scores de préparation en petites barres, cartes secondaires Charge/Intensité en bas — grille 2 colonnes alignée sur desktop (≥1024px) pour limiter le scroll
 
 Version souhaitée :
 - [x] MVP simple mais utilisable
@@ -103,7 +103,7 @@ Claude doit proposer une solution simple et adaptée au besoin, en expliquant br
 ## 6. Structure du projet
 
 Dossiers ou fichiers importants :
-- `index.html` — page d'accueil / cockpit de progression : 4 KPI (volume hebdo, dénivelé hebdo, tendance de charge, préparation objectif principal), Cette semaine + tendance 12 semaines, Insight ELEV, dernière activité, objectif principal, et en cartes secondaires plus discrètes : charge aiguë/chronique, prochaine séance planifiée, répartition FC (lecture seule — édition FC max/repos en page Profil)
+- `index.html` — page d'accueil / cockpit de progression : 4 KPI (volume hebdo, dénivelé hebdo, tendance de charge, préparation objectif principal), Cette semaine + tendance 12 semaines, Insight ELEV + prochaine séance planifiée (colonne de droite), dernière activité, objectif principal, et en cartes secondaires plus discrètes : charge aiguë/chronique et répartition FC (lecture seule — édition FC max/repos en page Profil)
 - `historique.html` — import des séances .fit, historique, détail de séance (carte GPS, graphiques allure/FC/altitude synchronisés, comparaison au plan, retour IA structuré)
 - `analyse.html` — comparaison de séances de même distance dans le temps, graphique d'efficacité allure/FC
 - `objectifs.html` — gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (5 sous-scores), estimation IA du temps de course
@@ -114,7 +114,7 @@ Dossiers ou fichiers importants :
 - `assets/style.css` — styles partagés par toutes les pages (identité ELEV : palette sombre par défaut + vert de marque, Raleway/Inter, sidebar de navigation compacte, grille 2 colonnes du cockpit Accueil sur desktop)
 - `assets/app.js` — logique partagée : parsing des fichiers .fit (dont position GPS), parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation / indice de préparation / profil de performance / tendance de charge (qualitative, ratio aiguë/chronique) / Insight ELEV (règles déterministes), rendu SVG partagé (courbes, barres, sparklines, aperçu de tracé GPS/altitude)
 - `assets/icon.svg`, `manifest.json` — icône et manifeste PWA (site installable sur écran d'accueil mobile)
-- `assets/logo-full.png` — logo officiel ELEV (affiché dans la sidebar)
+- `assets/logo-full.png` — logo officiel ELEV, affiché dans la sidebar des 7 pages hors Accueil (sur `index.html`, la sidebar utilise une icône montagne + le mot « ELEV » en texte — voir question ouverte section 15)
 - `dashboard-trail.html` — ancienne page unique, conservée uniquement comme redirection vers `index.html` (compatibilité d'anciens liens)
 - Toutes les données (séances, plan, courses, profil, équipements, clé API) sont stockées dans le navigateur (`localStorage`), rien n'est envoyé sur un serveur sauf appel volontaire à l'API Claude, synchro Supabase explicitement configurée, ou chargement des fonds de carte OpenStreetMap (carte GPS d'une séance)
 
@@ -156,7 +156,7 @@ Objectif de l'interface :
 Donner une vue d'ensemble claire de la saison de courses et de l'état de préparation par rapport à chaque échéance, en priorisant visuellement les objectifs principaux.
 
 Pages ou écrans nécessaires :
-- Accueil : cockpit de progression — KPI (volume/D+ hebdo, tendance de charge, préparation objectif principal), Insight ELEV, tendance de volume 12 semaines, dernière activité, objectif principal avec sous-scores, plus en secondaire : charge aiguë/chronique, prochaine séance, répartition FC en lecture seule
+- Accueil : cockpit de progression — KPI (volume/D+ hebdo, tendance de charge, préparation objectif principal), tendance de volume 12 semaines, Insight ELEV + prochaine séance, dernière activité, objectif principal avec sous-scores, plus en secondaire : charge aiguë/chronique et répartition FC en lecture seule
 - Activités (historique) : import des séances, historique filtrable, graphiques de progression (dont allure par type de terrain), détail de séance (carte GPS, courbes allure/FC/altitude synchronisées, comparaison au plan, retour IA structuré, contexte du jour)
 - Analyse : comparaison de séances de même distance dans le temps, graphique d'efficacité allure vs FC
 - Objectifs : gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (volume, dénivelé, sorties longues, intensité, régularité), estimation IA du temps de course
@@ -268,15 +268,18 @@ Décisions importantes :
 - Carte GPS du parcours via Leaflet + fond OpenStreetMap (gratuit, sans clé API) plutôt qu'un tracé SVG sans fond de carte — accepté que la zone géographique de la séance soit transmise aux serveurs OSM à chaque affichage (seule entorse au fonctionnement 100% local du site)
 - Radar de performance et indice de préparation détaillé calculés sur des repères fixes documentés dans le code (ex. 60 km/semaine, 2200 m D+/semaine), pas sur une comparaison à d'autres coureurs ni sur un service externe — à ajuster si les repères se révèlent irréalistes à l'usage
 - Site à 8 pages (Accueil, Activités, Analyse, Objectifs, Plan, Profil, Équipements, Paramètres), toutes reliées par la même sidebar / barre de navigation mobile
-- Refonte de l'Accueil en « cockpit de progression » (2 passes) : les métriques génériques type « état de forme / charge sur 100 / récupération » vues sur des maquettes de référence n'ont pas été implémentées telles quelles — aucune donnée de récupération n'est suivie (pas de sommeil, pas de FC repos dans le temps), et la charge d'entraînement est affichée en tendance qualitative (Stable / En hausse / Hausse rapide / En baisse, seuils documentés dans `app.js`) plutôt qu'en faux score sur 100
+- Refonte de l'Accueil en « cockpit de progression » : la charge d'entraînement est affichée en tendance qualitative (Stable / En hausse / Hausse rapide / En baisse, seuils documentés dans `app.js`) plutôt qu'en score sur 100 — aucune donnée de récupération n'est suivie (pas de sommeil, pas de FC repos dans le temps), donc pas de métrique « récupération » sur le dashboard
 - L'Insight ELEV est entièrement déterministe (règles explicites sur le ratio charge aiguë/chronique), sans appel IA ni réseau — à ne pas confondre avec le retour IA post-séance ou l'estimation IA de temps de course, qui restent de vrais appels à l'API Claude
-- FC max / FC repos ne se règlent qu'en page Profil (source unique) ; la page Accueil n'affiche plus qu'une répartition Z1-Z5 en lecture seule sur les 30 derniers jours
-- Palette resserrée vers un thème plus sombre et plus contrasté (« Mountain Performance Intelligence ») en gardant le vert de marque existant plutôt que le vert plus fluorescent vu sur les maquettes de référence, jugé moins cohérent avec l'identité déjà en place
-- Aperçu visuel de la dernière activité basé sur les données réelles de la séance (tracé GPS simplifié ou profil altimétrique en SVG), jamais une photo générique de montagne
-- `design-system/readme.md` documente désormais la charte réellement appliquée (palette, typographies, décisions de couleur) plutôt que la proposition initiale, qui divergeait sur plusieurs points (accent, police)
+- FC max / FC repos ne se règlent qu'en page Profil (source unique) ; la page Accueil n'affiche qu'une répartition Z1-Z5 en lecture seule sur les 30 derniers jours
+- Palette resserrée vers un thème plus sombre et plus contrasté (« Mountain Performance Intelligence », voir section 8) en gardant le vert de marque existant `#6B8E4E`
+- Aperçu visuel de la dernière activité basé sur les données réelles de la séance (tracé GPS simplifié ou profil altimétrique en SVG, en bandeau horizontal pleine largeur), jamais une photo générique de montagne
+- `design-system/readme.md` documente la charte réellement appliquée (palette, typographies, décisions de couleur) plutôt que la proposition initiale, qui divergeait sur plusieurs points (accent, police) — le reste de `design-system/` sert uniquement de référence historique
 
 Choix refusés :
-- Aucun à ce jour.
+- Métriques génériques « état de forme », « récupération », « charge sur 100 » vues sur des maquettes de référence : non implémentées telles quelles, faute de données réelles pour les calculer honnêtement (voir décisions ci-dessus)
+- Vert d'accent plus fluorescent vu sur certaines maquettes de référence : jugé moins cohérent avec l'identité déjà en place, le vert de marque existant a été conservé
+- Sélecteur de période décoratif dans le header ("7 derniers jours") et lien "Comprendre pourquoi" sur l'Insight : proposés par une maquette mais sans fonction réelle derrière, donc non ajoutés
+- Égaliser la hauteur des cartes via des hacks (`margin-top`, hauteurs fixes, `position:absolute`) : l'alignement de grille sur l'Accueil utilise `CSS Grid` + `align-items: stretch` natif
 
 Si une décision technique importante doit être prise :
 Claude doit expliquer les options simplement, recommander une option, puis attendre validation si l'impact est important.
@@ -287,7 +290,7 @@ Questions à clarifier :
 - Synchronisation Supabase : disponible et fonctionnelle, mais à confirmer à l'usage si elle reste pertinente une fois testée sur plusieurs appareils, ou si l'export/import JSON manuel suffit dans la pratique.
 - Logo `assets/logo-full.png` (800 Ko) : fonctionne bien en l'état (mis en cache après le premier chargement), mais pourrait être compressé si la taille devient gênante.
 - `design-system/` reste un dossier non suivi par Git (comme avant la refonte), y compris son `readme.md` mis à jour : à confirmer si l'utilisateur souhaite l'inclure dans le dépôt maintenant qu'il documente la charte réelle.
-- Le regroupement visuel « navigation produit / compte » dans la sidebar (léger séparateur) n'a été ajouté qu'à la page Accueil lors de la refonte ; les 7 autres pages gardent l'ancien menu sans ce séparateur — à harmoniser si une prochaine refonte touche ces pages.
+- La sidebar de `index.html` a divergé des 7 autres pages lors de la refonte : icône montagne + texte « ELEV » au lieu de `logo-full.png`, séparateur visuel entre navigation produit/compte, bloc utilisateur (avatar + prénom) en bas — à harmoniser si une prochaine refonte touche ces pages.
 
 Si une information manque :
 Claude doit faire une hypothèse raisonnable, l'indiquer clairement, puis avancer si le risque est faible. Si le risque est élevé, Claude doit demander validation avant d'agir.
