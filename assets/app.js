@@ -12,7 +12,13 @@ function getTheme() { try { return localStorage.getItem(THEME_KEY) || 'dark'; } 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   const btn = document.getElementById('themeToggle');
-  if (btn) btn.textContent = theme === 'dark' ? '☀ Clair' : '● Sombre';
+  if (btn) {
+    // Bascule discrète et iconique dans le header — le libellé complet reste disponible
+    // en page Paramètres (#themeToggleBig) pour l'action explicite.
+    btn.textContent = theme === 'dark' ? '☀' : '☾';
+    btn.setAttribute('aria-label', theme === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre');
+    btn.title = btn.getAttribute('aria-label');
+  }
 }
 function toggleTheme() {
   const next = getTheme() === 'dark' ? 'light' : 'dark';
@@ -531,6 +537,8 @@ function fmtPace(secPerKm) {
   return m + ':' + String(s).padStart(2,'0') + ' /km';
 }
 function fmtNum(v, unit, digits) { if (v == null || isNaN(v)) return 'Non disponible'; return v.toFixed(digits ?? 0) + (unit || ''); }
+const FR_MONTHS_SHORT = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+function fmtDayMonth(iso) { const [,m,d] = iso.split('-'); return parseInt(d,10) + ' ' + FR_MONTHS_SHORT[parseInt(m,10)-1]; }
 
 /* --------------------------- SYNCHRO SUPABASE (multi-appareils, optionnelle) --------------------------- */
 const SUPA_URL_KEY = STORAGE_PREFIX + 'supabaseUrl';
@@ -929,14 +937,87 @@ function computePerformanceRadar(sessions) {
   return { scores: { endurance, montee, descente, vitesse, resistance, regularite }, notes };
 }
 
+// Volume et D+ par semaine sur une fenêtre récente, limitée à l'historique réellement disponible :
+// si l'utilisateur a moins de nWeeks semaines de séances, retourne moins de semaines plutôt que de
+// compléter avec des zéros — une semaine sans donnée n'est pas une semaine à 0 km.
+function getRecentWeeklyVolumes(nWeeks) {
+  const sessions = loadAllSessions();
+  if (!sessions.length) return [];
+  const today = new Date().toISOString().slice(0,10);
+  const firstWeek = isoWeek(sessions[0].date);
+  const weeks = [];
+  for (let i = nWeeks - 1; i >= 0; i--) {
+    const ws = isoWeek(new Date(new Date(today).getTime() - i*7*86400000).toISOString().slice(0,10));
+    if (ws < firstWeek) continue;
+    const weEnd = new Date(ws); weEnd.setDate(weEnd.getDate() + 6);
+    const inWeek = sessions.filter(s => s.date >= ws && s.date <= weEnd.toISOString().slice(0,10));
+    weeks.push({
+      startISO: ws,
+      km: inWeek.reduce((a,s) => a + (s.distanceKm||0), 0),
+      dplus: inWeek.reduce((a,s) => a + (s.ascent||0), 0),
+      shortLabel: ws.slice(8,10)+'/'+ws.slice(5,7),
+    });
+  }
+  return weeks;
+}
+
 /* --------------------------- 7) GRAPHIQUES SVG PARTAGÉS --------------------------- */
 function svgEmpty(title) { return '<div class="chart-box"><h3>' + title + '</h3><div class="empty">Pas encore assez de séances pour ce graphique (2 minimum).</div></div>'; }
+
+// Sparkline minimaliste (sans axes ni légende) pour les KPI — juste la forme de la tendance récente.
+function sparklineSvg(values) {
+  if (!values || values.length < 2) return '';
+  const w = 100, h = 28;
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = (max - min) || 1;
+  const stepX = w / (values.length - 1);
+  const pts = values.map((v,i) => [i*stepX, h - 3 - ((v-min)/span)*(h-6)]);
+  const path = pts.map((p,i) => (i===0?'M':'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  return '<svg class="kpi-spark" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none"><path d="'+path+'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
+
+// Aperçu visuel d'une séance pour la carte "Dernière activité" : trace GPS si les coordonnées sont
+// disponibles, sinon profil altimétrique, sinon rien — jamais d'image générique. Fonction de rendu
+// pure, sans dépendance à un fond de carte externe (contrairement à la carte Leaflet du détail de séance).
+function sessionPreviewSvg(session) {
+  const series = Array.isArray(session.series) ? session.series : [];
+  const w = 160, h = 100, pad = 10;
+  const withGps = series.filter(p => p.lat != null && p.lon != null);
+  if (withGps.length >= 2) {
+    const lats = withGps.map(p=>p.lat), lons = withGps.map(p=>p.lon);
+    const minLat=Math.min(...lats), maxLat=Math.max(...lats), minLon=Math.min(...lons), maxLon=Math.max(...lons);
+    const spanLat=(maxLat-minLat)||1, spanLon=(maxLon-minLon)||1;
+    const pts = withGps.map(p => [
+      pad + (p.lon-minLon)/spanLon*(w-2*pad),
+      (h-pad) - (p.lat-minLat)/spanLat*(h-2*pad),
+    ]);
+    const pointsAttr = pts.map(p => p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+    return '<svg class="activity-trace" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet">' +
+      '<polyline points="'+pointsAttr+'" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="'+pts[pts.length-1][0].toFixed(1)+'" cy="'+pts[pts.length-1][1].toFixed(1)+'" r="3" fill="var(--accent)"/>' +
+    '</svg>';
+  }
+  const withAlt = series.filter(p => p.alt != null);
+  if (withAlt.length >= 2) {
+    const alts = withAlt.map(p=>p.alt);
+    const minA=Math.min(...alts), maxA=Math.max(...alts), span=(maxA-minA)||1;
+    const stepX = w / (withAlt.length-1);
+    const pts = withAlt.map((p,i) => [i*stepX, (h-4) - ((p.alt-minA)/span)*(h-8)]);
+    const path = pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+    const area = path + ' L'+w+','+h+' L0,'+h+' Z';
+    return '<svg class="activity-trace" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">' +
+      '<path d="'+area+'" fill="var(--chart-fill-top)" stroke="none"/>' +
+      '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' +
+    '</svg>';
+  }
+  return '';
+}
 
 let _chartGradientId = 0;
 function lineChartSvg(title, points, opts) {
   opts = opts || {};
   if (points.length < 2) return svgEmpty(title);
-  const w = 620, h = 280, padL = 54, padR = 18, padT = 20, padB = 36;
+  const w = 620, h = opts.height || 280, padL = 54, padR = 18, padT = 20, padB = 36;
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = opts.yMin ?? Math.min(...ys), maxY = opts.yMax ?? Math.max(...ys);
@@ -954,7 +1035,7 @@ function lineChartSvg(title, points, opts) {
       '<circle cx="'+cx+'" cy="'+cy+'" r="4" fill="var(--accent)" style="pointer-events:none;"/>';
   }).join('');
   const firstLabel = points[0].xLabel, lastLabel = points[points.length-1].xLabel;
-  return '<div class="chart-box"><h3>' + title + '</h3><svg viewBox="0 0 '+w+' '+h+'">' +
+  return '<div class="chart-box' + (opts.hideTitle ? ' no-title' : '') + '">' + (opts.hideTitle ? '' : '<h3>' + title + '</h3>') + '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<defs><linearGradient id="'+gradId+'" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/>' +
     '</linearGradient></defs>' +
@@ -970,9 +1051,10 @@ function lineChartSvg(title, points, opts) {
     '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' + dots +
   '</svg></div>';
 }
-function groupedBarChartSvg(title, weeks, series) {
+function groupedBarChartSvg(title, weeks, series, opts) {
+  opts = opts || {};
   if (!weeks.length) return svgEmpty(title);
-  const w = 620, h = 290, padL = 54, padR = 18, padT = 20, padB = 44;
+  const w = 620, h = opts.height || 290, padL = 54, padR = 18, padT = 20, padB = 44;
   const maxV = Math.max(1, ...series.flatMap(s => s.values));
   const groupW = (w - padL - padR) / weeks.length;
   const barW = (groupW * 0.7) / series.length;
@@ -992,7 +1074,7 @@ function groupedBarChartSvg(title, weeks, series) {
     }
   });
   const legend = '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>';
-  return '<div class="chart-box"><h3>' + title + '</h3>' + legend + '<svg viewBox="0 0 '+w+' '+h+'">' +
+  return '<div class="chart-box' + (opts.hideTitle ? ' no-title' : '') + '">' + (opts.hideTitle ? '' : '<h3>' + title + '</h3>') + legend + '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
     bars +

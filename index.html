@@ -25,6 +25,7 @@
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
@@ -37,8 +38,8 @@
     <p class="hint" id="greetingSub" style="margin-top:2px;">Voici ton résumé d'entraînement.</p>
   </div>
   <div class="app-topbar-actions">
-    <a class="btn small accent" href="historique.html">+ Importer une activité</a>
-    <button id="themeToggle" type="button">☀ Clair</button>
+    <a class="btn accent" href="historique.html">+ Importer une activité</a>
+    <button id="themeToggle" type="button">☀</button>
   </div>
 </header>
 
@@ -48,61 +49,52 @@
 
   <section class="kpi-grid" aria-label="Indicateurs principaux" id="kpiGrid"></section>
 
-  <section class="card">
-    <h2>Cette semaine <small id="thisWeekRange"></small></h2>
-    <div class="metrics-grid" id="thisWeekGrid"></div>
-  </section>
+  <div class="dash-grid">
 
-  <section class="card">
-    <h2>À retenir — Insight ELEV</h2>
+    <section class="card">
+      <h2>Cette semaine</h2>
+      <div class="week-stats-inline" id="thisWeekGrid"></div>
+      <div class="trend-subhead">
+        <div>
+          <h3>Évolution du volume</h3>
+          <p class="hint">12 dernières semaines</p>
+        </div>
+        <div class="period-select" id="trendMetricSelect">
+          <button type="button" data-metric="km" class="active">Volume</button>
+          <button type="button" data-metric="dplus">D+</button>
+        </div>
+      </div>
+      <div id="trendChartBox" style="margin-top:8px;"></div>
+    </section>
+
     <div id="insightBox"></div>
-  </section>
 
-  <section class="card">
-    <h2>Tendance principale <small>(volume hebdomadaire, 12 dernières semaines)</small></h2>
-    <div class="period-select" id="trendMetricSelect">
-      <button type="button" data-metric="km" class="active">Volume (km)</button>
-      <button type="button" data-metric="dplus">D+ (m)</button>
+    <section class="card">
+      <h2>Dernière activité</h2>
+      <div id="lastActivityBox"></div>
+    </section>
+
+    <section class="card">
+      <h2>Objectif principal</h2>
+      <div id="nextObjectiveBox"></div>
+    </section>
+
+    <div class="dash-secondary-grid dash-full">
+      <section class="card card-compact">
+        <h2>Charge d'entraînement <small>(12 sem.)</small></h2>
+        <div id="loadChartBox"></div>
+      </section>
+      <section class="card card-compact">
+        <h2>Prochaine séance</h2>
+        <div id="nextPlannedBox"></div>
+      </section>
+      <section class="card card-compact">
+        <h2>Intensité <small>(30 derniers jours)</small></h2>
+        <div id="fcSummaryBox"></div>
+      </section>
     </div>
-    <div id="trendChartBox" style="margin-top:10px;"></div>
-  </section>
 
-  <section class="card">
-    <h2>Dernière activité</h2>
-    <div id="lastActivityBox"></div>
-  </section>
-
-  <section class="card">
-    <h2>Objectif principal</h2>
-    <div id="nextObjectiveBox"></div>
-  </section>
-
-  <section class="card">
-    <h2>Détail de la charge <small>(charge aiguë vs chronique, 12 dernières semaines)</small></h2>
-    <div id="loadChartBox"></div>
-    <p class="hint">Charge aiguë = volume de la semaine. Charge chronique = moyenne des 4 dernières semaines. C'est la base de la tendance de charge affichée en haut de page.</p>
-  </section>
-
-  <section class="card">
-    <h2>Résumé rapide</h2>
-    <div class="metrics-grid" id="summaryGrid"></div>
-  </section>
-
-  <section class="card">
-    <h2>Zones de fréquence cardiaque (méthode Karvonen)</h2>
-    <div class="row" style="align-items:flex-end;">
-      <label class="field" style="max-width:160px;">FC max (bpm)
-        <input type="number" id="fcZoneMax">
-      </label>
-      <label class="field" style="max-width:160px;">FC repos (bpm)
-        <input type="number" id="fcZoneRepos">
-      </label>
-    </div>
-    <p class="hint">Calcul indicatif à partir de la réserve cardiaque (FC max − FC repos). Ces deux valeurs sont celles de ton profil ; les modifier ici les met aussi à jour là-bas.</p>
-    <div id="fcZonesBox" style="margin-top:10px;"></div>
-    <h3 style="margin:16px 0 6px;font-size:.9rem;color:var(--muted);">Répartition du temps passé par zone <small style="font-weight:400;">(30 derniers jours)</small></h3>
-    <div id="fcDistributionBox"></div>
-  </section>
+  </div>
 
 </main>
 
@@ -155,21 +147,24 @@ function mainObjectiveRace() {
 }
 function renderKpis() {
   const grid = document.getElementById('kpiGrid');
-  const cards = [];
   const stats = getWeeklyStats();
-
+  const recentWeeks = getRecentWeeklyVolumes(8);
   const fmtDelta = pct => pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%');
+  const cards = [];
+
   cards.push({
     label: 'Volume hebdomadaire',
     value: stats ? fmtNum(stats.distanceKm, ' km', 1) : null,
     sub: stats ? (fmtDelta(stats.distanceDeltaPct) + ' vs semaine précédente') : 'Pas de séance enregistrée',
-    status: stats && stats.distanceDeltaPct != null ? (stats.distanceDeltaPct >= 0 ? 'ok' : null) : null,
+    status: stats && stats.distanceDeltaPct != null && stats.distanceDeltaPct >= 0 ? 'ok' : null,
+    spark: recentWeeks.map(w => w.km),
   });
   cards.push({
     label: 'Dénivelé hebdomadaire',
     value: stats ? fmtNum(stats.ascent, ' m D+', 0) : null,
     sub: stats ? (fmtDelta(stats.ascentDeltaPct) + ' vs semaine précédente') : 'Pas de séance enregistrée',
-    status: stats && stats.ascentDeltaPct != null ? (stats.ascentDeltaPct >= 0 ? 'ok' : null) : null,
+    status: stats && stats.ascentDeltaPct != null && stats.ascentDeltaPct >= 0 ? 'ok' : null,
+    spark: recentWeeks.map(w => w.dplus),
   });
 
   const trend = getTrainingTrend();
@@ -179,57 +174,63 @@ function renderKpis() {
     stable: 'Proche de ta moyenne des 4 dernières semaines.',
     falling: 'Inférieur à tes semaines précédentes.',
   };
-  const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: null, falling: null };
+  // Vert = stable ou progression cohérente, orange = hausse rapide à surveiller. Une baisse de
+  // volume n'est pas automatiquement négative (repos voulu) : couleur neutre, jamais rouge ici.
+  const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: 'ok', falling: null };
   cards.push({
     label: 'Tendance de charge',
     value: trend ? trend.label : null,
     sub: trend ? trendSubs[trend.level] : 'Pas assez de séances récentes',
     status: trend ? trendStatus[trend.level] : null,
+    dot: trend ? trendStatus[trend.level] : null,
   });
 
   const race = mainObjectiveRace();
   if (race) {
     const readiness = computeRaceReadiness(race);
     const overall = readiness.overall;
-    let status;
-    if (overall == null) status = null;
-    else if (overall >= 75) status = 'ok';
-    else if (overall >= 50) status = 'warn';
-    else status = 'danger';
     cards.push({
       label: 'Objectif principal',
       value: overall != null ? overall + '%' : null,
-      sub: overall != null ? ('Préparation · ' + escapeHtml(race.name)) : 'Pas assez de données pour ' + escapeHtml(race.name),
-      status,
+      sub: overall != null ? escapeHtml(race.name) : 'Pas assez de données pour ' + escapeHtml(race.name),
+      bar: overall,
     });
   } else {
-    cards.push({ label: 'Objectif principal', value: null, sub: 'Aucune course à venir', status: null });
+    cards.push({ label: 'Objectif principal', value: null, sub: 'Aucune course à venir', bar: null });
   }
 
-  grid.innerHTML = cards.map(c =>
-    '<div class="kpi-card"><div class="kpi-label">' + escapeHtml(c.label) + '</div>' +
-    '<div class="kpi-value' + (c.value == null ? ' na' : '') + '">' + (c.value != null ? escapeHtml(c.value) : 'Non disponible') + '</div>' +
-    '<div class="kpi-sub' + (c.status ? ' status-' + c.status : '') + '">' + c.sub + '</div></div>'
-  ).join('');
+  grid.innerHTML = cards.map(c => {
+    const spark = c.spark && c.spark.length >= 2 ? sparklineSvg(c.spark) : '';
+    return '<div class="kpi-card">' +
+      '<div class="kpi-label">' + (c.dot ? '<span class="kpi-status-dot status-' + c.dot + '"></span>' : '') + escapeHtml(c.label) + '</div>' +
+      '<div class="kpi-value-row">' +
+        '<div class="kpi-value' + (c.value == null ? ' na' : '') + '">' + (c.value != null ? escapeHtml(c.value) : 'Non disponible') + '</div>' +
+        (spark ? '<div class="kpi-spark' + (c.status ? ' status-' + c.status : '') + '">' + spark + '</div>' : '') +
+      '</div>' +
+      '<div class="kpi-sub' + (c.status ? ' status-' + c.status : '') + '">' + c.sub + '</div>' +
+      (c.bar != null ? '<div class="kpi-mini-bar"><div class="kpi-mini-bar-fill" style="width:' + c.bar + '%"></div></div>' : '') +
+    '</div>';
+  }).join('');
 }
 
-/* --------------------------- CETTE SEMAINE --------------------------- */
+/* --------------------------- CETTE SEMAINE + TENDANCE (carte fusionnée) --------------------------- */
 function renderThisWeek() {
   const grid = document.getElementById('thisWeekGrid');
-  document.getElementById('thisWeekRange').textContent = '(depuis lundi, vs semaine précédente)';
   const stats = getWeeklyStats();
   if (!stats) {
     grid.innerHTML = '<div class="empty">Importe des séances (page Activités) pour voir ce résumé.</div>';
     return;
   }
-  const fmtDelta = pct => (pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%')) + ' vs semaine dernière';
+  const fmtDelta = pct => (pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%'));
   const items = [
     ['Distance', fmtNum(stats.distanceKm, ' km', 1), fmtDelta(stats.distanceDeltaPct)],
     ['D+', fmtNum(stats.ascent, ' m', 0), fmtDelta(stats.ascentDeltaPct)],
     ['Durée', fmtDuration(stats.durationS), fmtDelta(stats.durationDeltaPct)],
     ['Sorties', String(stats.sessionsCount), fmtDelta(stats.sessionsDeltaPct)],
   ];
-  grid.innerHTML = items.map(([lbl,val,delta]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="hint" style="margin-top:2px;">'+delta+'</div></div>').join('');
+  grid.innerHTML = items.map(([lbl,val,delta]) =>
+    '<div class="week-stat"><div class="l">'+lbl+'</div><div class="v">'+val+'</div><div class="d' + (delta.startsWith('+') ? ' status-ok' : '') + '">'+delta+' vs sem. dernière</div></div>'
+  ).join('');
 }
 
 /* --------------------------- INSIGHT ELEV --------------------------- */
@@ -237,41 +238,31 @@ function renderInsight() {
   const box = document.getElementById('insightBox');
   const insight = generateElevInsight();
   if (!insight) {
-    box.innerHTML = '<div class="empty">Importe au moins deux semaines de séances pour obtenir un insight.</div>';
+    box.innerHTML = '<section class="card"><h2>À retenir</h2><div class="empty">Importe au moins deux semaines de séances pour obtenir un insight.</div></section>';
     return;
   }
-  const icon = insight.level === 'rising_fast' ? '⚠' : '💡';
-  box.innerHTML = '<div class="insight-card status-' + insight.level + '"><span class="insight-icon">' + icon + '</span>' +
-    '<div><p class="insight-title">' + escapeHtml(insight.title) + '</p><p>' + escapeHtml(insight.text) + '</p></div></div>';
+  box.innerHTML = '<div class="insight-card status-' + insight.level + '">' +
+    '<p class="insight-eyebrow">✦ Insight ELEV</p>' +
+    '<p class="insight-title">' + escapeHtml(insight.title) + '</p>' +
+    '<p>' + escapeHtml(insight.text) + '</p>' +
+  '</div>';
 }
 
-/* --------------------------- TENDANCE PRINCIPALE --------------------------- */
+/* --------------------------- TENDANCE PRINCIPALE (dans la carte "Cette semaine") --------------------------- */
 // Un seul graphique de tendance sur la page : volume hebdomadaire par défaut, avec bascule D+.
-// Fenêtre fixe de 12 semaines — volontairement simple, pas de sélecteur de période supplémentaire.
+// Fenêtre limitée à l'historique réellement disponible (getRecentWeeklyVolumes) : une semaine
+// sans séance importée avant le début du suivi n'est jamais affichée comme "0 km".
 let trendMetric = 'km';
 function renderTrendChart() {
   const box = document.getElementById('trendChartBox');
-  const sessions = loadAllSessions();
-  if (sessions.length < 2) { box.innerHTML = svgEmpty('Tendance principale'); return; }
-  const weeks = [];
-  const today = new Date();
-  for (let i = 11; i >= 0; i--) {
-    const ws = isoWeek(new Date(today.getTime() - i*7*86400000).toISOString().slice(0,10));
-    const weEnd = new Date(ws); weEnd.setDate(weEnd.getDate() + 6);
-    const inWeek = sessions.filter(s => s.date >= ws && s.date <= weEnd.toISOString().slice(0,10));
-    weeks.push({
-      startISO: ws,
-      km: inWeek.reduce((a,s) => a + (s.distanceKm||0), 0),
-      dplus: inWeek.reduce((a,s) => a + (s.ascent||0), 0),
-      shortLabel: ws.slice(8,10)+'/'+ws.slice(5,7),
-    });
-  }
+  const weeks = getRecentWeeklyVolumes(12);
+  if (weeks.length < 2) { box.innerHTML = svgEmpty('Évolution du volume'); return; }
   const isKm = trendMetric === 'km';
   const points = weeks.map((w,i) => ({
     x: i, y: +(isKm ? w.km : w.dplus).toFixed(1), xLabel: w.shortLabel,
     label: 'Semaine du ' + fmtDate(w.startISO) + ' : ' + (isKm ? w.km.toFixed(1) + ' km' : Math.round(w.dplus) + ' m D+'),
   }));
-  box.innerHTML = lineChartSvg(isKm ? 'Volume (km) par semaine' : 'Dénivelé positif (m) par semaine', points, { decimals: isKm ? 1 : 0 });
+  box.innerHTML = lineChartSvg('', points, { decimals: isKm ? 1 : 0, height: 220, hideTitle: true });
   initChartTooltips(box);
 }
 document.querySelectorAll('#trendMetricSelect button').forEach(btn => btn.addEventListener('click', () => {
@@ -285,24 +276,28 @@ function renderLastActivity() {
   const box = document.getElementById('lastActivityBox');
   const sessions = loadAllSessions();
   if (!sessions.length) {
-    box.innerHTML = '<div class="empty-state"><div class="empty-title">Pas encore d\'activité</div>' +
-      '<p>Importe ton premier fichier .fit pour commencer à analyser ton entraînement.</p>' +
+    box.innerHTML = '<div class="empty-state"><div class="empty-title">Commence ton suivi</div>' +
+      '<p>Importe une première activité .fit pour découvrir tes statistiques et tendances.</p>' +
       '<a class="btn small accent" href="historique.html">Importer une activité</a></div>';
     return;
   }
   const s = sessions[sessions.length - 1];
+  // Libellé d'affichage déterministe (sport + date) — jamais le nom de fichier brut de la montre.
+  const label = (s.sport || 'Séance') + ' — ' + fmtDayMonth(s.date);
   const stats = [
     fmtNum(s.distanceKm, ' km', 1),
     fmtNum(s.ascent, ' m D+', 0),
     fmtDuration(s.durationS),
-    s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) + '/km' : null,
+    s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : null,
     s.avgHr != null ? s.avgHr + ' bpm' : null,
   ].filter(Boolean);
+  const visual = sessionPreviewSvg(s);
   box.innerHTML = '<a class="activity-card-link" href="historique.html#s=' + encodeURIComponent(s.id) + '"><div class="activity-card">' +
+    (visual ? '<div class="activity-visual">' + visual + '</div>' : '') +
     '<div class="activity-info">' +
-      '<div class="hint">' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + (s.sport ? ' — ' + escapeHtml(s.sport) : '') + '</div>' +
-      '<h3>' + escapeHtml(s.fileName ? s.fileName.replace(/\.(fit|FIT)$/,'') : 'Séance du ' + fmtDate(s.date)) + '</h3>' +
-      '<div class="activity-stats">' + stats.map(v => '<strong>' + v + '</strong>').join('<span>·</span>') + '</div>' +
+      '<div class="hint">' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + '</div>' +
+      '<h3>' + escapeHtml(label) + '</h3>' +
+      '<div class="activity-stats">' + stats.map(v => '<strong>' + v + '</strong>').join('') + '</div>' +
     '</div>' +
     '<span class="btn small">Voir l\'analyse →</span>' +
   '</div></a>';
@@ -325,8 +320,12 @@ function renderNextObjective() {
   let prepHtml = '';
   if (readiness.overall != null) {
     prepHtml = '<div class="prep">Indice de préparation : <strong>' + readiness.overall + '%</strong>' +
-      (readiness.weakest ? ' · point faible : ' + escapeHtml(readiness.weakest.label) : '') +
-      '<div class="bar-track"><div class="bar-fill" style="width:' + readiness.overall + '%"></div></div></div>';
+      '<div class="bar-track"><div class="bar-fill" style="width:' + readiness.overall + '%"></div></div></div>' +
+      '<div class="readiness-dots">' + readiness.subs.map(sub => {
+        const filled = sub.score != null ? Math.round(sub.score / 20) : 0;
+        const dots = Array.from({length:5}, (_,i) => '<span class="dot' + (i < filled ? ' filled' : '') + '"></span>').join('');
+        return '<div class="readiness-dot-row" title="' + escapeHtml(sub.detail) + '"><span>' + escapeHtml(sub.label) + '</span><span class="dots">' + dots + '</span></div>';
+      }).join('') + '</div>';
   } else {
     prepHtml = '<div class="prep" style="opacity:.75;">Pas encore assez de données pour calculer l\'indice de préparation.</div>';
   }
@@ -342,68 +341,53 @@ function renderNextObjective() {
     '<div class="row" style="margin-top:10px;"><a class="btn small" href="objectifs.html">Voir mon objectif →</a></div>';
 }
 
+/* --------------------------- ANALYSES SECONDAIRES --------------------------- */
 function renderLoadChart() {
   const box = document.getElementById('loadChartBox');
-  const sessions = loadAllSessions();
-  if (sessions.length < 2) { box.innerHTML = svgEmpty('Charge d\'entraînement'); return; }
-  const weeks = [];
-  const today = new Date();
-  for (let i = 11; i >= 0; i--) {
-    const weekStartISO = isoWeek(new Date(today.getTime() - i*7*86400000).toISOString().slice(0,10));
-    const weekEndDate = new Date(weekStartISO); weekEndDate.setDate(weekEndDate.getDate() + 6);
-    const weekEndISO = weekEndDate.toISOString().slice(0,10);
-    const km = sessions.filter(s => s.date >= weekStartISO && s.date <= weekEndISO).reduce((a,s) => a + (s.distanceKm||0), 0);
-    weeks.push({ startISO: weekStartISO, km, shortLabel: weekStartISO.slice(8,10)+'/'+weekStartISO.slice(5,7), tooltipLabel: 'semaine du ' + fmtDate(weekStartISO) });
-  }
+  const weeks = getRecentWeeklyVolumes(12);
+  if (weeks.length < 2) { box.innerHTML = svgEmpty('Charge d\'entraînement'); return; }
   weeks.forEach((w, i) => {
     const windowVals = weeks.slice(Math.max(0,i-3), i+1).map(x => x.km);
     w.chronic = +(windowVals.reduce((a,b)=>a+b,0) / windowVals.length).toFixed(1);
   });
   const series = [
-    { name: 'Charge aiguë (semaine)', color: 'var(--accent)', values: weeks.map(w => +w.km.toFixed(1)) },
-    { name: 'Charge chronique (moy. 4 sem.)', color: 'var(--secondary)', values: weeks.map(w => w.chronic) },
+    { name: 'Aiguë (semaine)', color: 'var(--accent)', values: weeks.map(w => +w.km.toFixed(1)) },
+    { name: 'Chronique (moy. 4 sem.)', color: 'var(--secondary)', values: weeks.map(w => w.chronic) },
   ];
-  box.innerHTML = groupedBarChartSvg('Kilomètres par semaine', weeks, series);
+  box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 170, hideTitle: true });
   initChartTooltips(box);
 }
 
-function renderSummary() {
-  const sessions = loadAllSessions();
-  const grid = document.getElementById('summaryGrid');
+function renderNextPlanned() {
+  const box = document.getElementById('nextPlannedBox');
   const today = new Date().toISOString().slice(0,10);
   const plan = getPlan();
   const nextPlanned = plan ? plan.filter(p => p.date >= today).sort((a,b)=>a.date.localeCompare(b.date))[0] : null;
-  const bloc = getCurrentBloc();
-  const items = [
-    ['Séances enregistrées', String(sessions.length)],
-    ['Prochaine séance planifiée', nextPlanned ? (fmtDate(nextPlanned.date) + ' — ' + nextPlanned.type + (nextPlanned.distanceKm ? ' (' + nextPlanned.distanceKm + ' km / ' + nextPlanned.deniveleM + ' m D+)' : '')) : 'Non disponible'],
-    ['Bloc de plan actuel', bloc || 'Non disponible'],
-  ];
-  grid.innerHTML = items.map(([lbl,val]) => '<div class="metric"><div class="lbl">'+lbl+'</div><div class="val'+(val==='Non disponible'?' na':'')+'">'+escapeHtml(val)+'</div></div>').join('');
-}
-
-function renderFcZones() {
-  const profile = getProfile();
-  document.getElementById('fcZoneMax').value = profile.fcMax || '';
-  document.getElementById('fcZoneRepos').value = profile.fcRepos || '';
-
-  const box = document.getElementById('fcZonesBox');
-  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
-  if (!zones) {
-    box.innerHTML = '<div class="hint">Renseigne ta FC max et ta FC repos ci-dessus pour voir tes zones.</div>';
-    document.getElementById('fcDistributionBox').innerHTML = '';
+  if (!nextPlanned) {
+    box.innerHTML = '<div class="empty">Importe un plan (page Paramètres) pour voir ta prochaine séance.</div>';
     return;
   }
-  box.innerHTML = '<div class="metrics-grid">' + zones.map(z =>
-    '<div class="metric"><div class="lbl">' + escapeHtml(z.label) + '</div><div class="val">' + z.low + '–' + z.high + ' bpm</div></div>'
-  ).join('') + '</div>';
-  renderFcDistribution(zones);
+  const bloc = getCurrentBloc();
+  box.innerHTML = '<h3 style="margin:0 0 4px;font-family:var(--font-display);font-size:1rem;font-weight:700;">' + escapeHtml(nextPlanned.type || 'Séance') + '</h3>' +
+    '<div class="activity-stats" style="margin:8px 0;">' +
+      (nextPlanned.distanceKm ? '<strong>' + fmtNum(nextPlanned.distanceKm, ' km', 1) + '</strong>' : '') +
+      (nextPlanned.deniveleM ? '<strong>' + fmtNum(nextPlanned.deniveleM, ' m D+', 0) + '</strong>' : '') +
+      '<strong>' + fmtDate(nextPlanned.date) + '</strong>' +
+    '</div>' +
+    (bloc ? '<p class="hint" style="margin:0 0 10px;">' + escapeHtml(bloc) + '</p>' : '') +
+    '<a class="btn small" href="plan.html">Voir le plan →</a>';
 }
 
-// Estime le temps passé dans chaque zone FC sur les 30 derniers jours, à partir des séries de séance
-// (poids de chaque intervalle = son écart de temps réel entre deux points de mesure, pas un simple compte de points).
-function renderFcDistribution(zones) {
-  const box = document.getElementById('fcDistributionBox');
+// Répartition du temps passé par zone FC sur les 30 derniers jours — lecture seule sur l'Accueil
+// (FC max / FC repos se règlent en page Profil, qui reste la source unique de ces deux valeurs).
+function renderFcSummary() {
+  const box = document.getElementById('fcSummaryBox');
+  const profile = getProfile();
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  if (!zones) {
+    box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>';
+    return;
+  }
   const today = new Date().toISOString().slice(0,10);
   const d30 = new Date(); d30.setDate(d30.getDate() - 30);
   const c30 = d30.toISOString().slice(0,10);
@@ -428,20 +412,12 @@ function renderFcDistribution(zones) {
   }
   box.innerHTML = zones.map((z, i) => {
     const pct = Math.round((zoneSeconds[i] / totalSeconds) * 100);
-    return '<div style="margin-bottom:8px;">' +
-      '<div class="row" style="justify-content:space-between;font-size:.82rem;"><span>' + escapeHtml(z.label) + '</span><span>' + pct + '%</span></div>' +
+    return '<div style="margin-bottom:7px;">' +
+      '<div class="row" style="justify-content:space-between;font-size:.78rem;"><span>' + escapeHtml(z.label) + '</span><span>' + pct + '%</span></div>' +
       '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%;"></div></div>' +
     '</div>';
   }).join('');
 }
-function saveFcZoneField(key, value) {
-  const profile = getProfile();
-  profile[key] = value === '' ? '' : value;
-  saveProfile(profile);
-  renderFcZones();
-}
-document.getElementById('fcZoneMax').addEventListener('change', e => saveFcZoneField('fcMax', e.target.value));
-document.getElementById('fcZoneRepos').addEventListener('change', e => saveFcZoneField('fcRepos', e.target.value));
 
 renderGreeting();
 renderGearAlert();
@@ -452,8 +428,8 @@ renderTrendChart();
 renderLastActivity();
 renderNextObjective();
 renderLoadChart();
-renderSummary();
-renderFcZones();
+renderNextPlanned();
+renderFcSummary();
 </script>
 </body>
 </html>
