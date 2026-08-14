@@ -1521,10 +1521,25 @@ function lineChartSvg(title, points, opts) {
       '<circle cx="'+cx+'" cy="'+cy+'" r="4" fill="var(--accent)" style="pointer-events:none;"/>';
   }).join('');
   const firstLabel = points[0].xLabel, lastLabel = points[points.length-1].xLabel;
+  // Silhouette de terrain optionnelle en arrière-plan (ex. altitude derrière l'allure ou la FC) —
+  // normalisée sur sa propre échelle Y (jamais affichée, pas d'axe) pour rester un simple repère
+  // visuel du relief, sans laisser croire à un second axe superposé au même repère que la donnée
+  // principale (cf. "évite les doubles axes illisibles").
+  let backgroundPath = '';
+  if (opts.background && opts.background.length >= 2) {
+    const bgYs = opts.background.map(p => p.y);
+    const bgMinY = Math.min(...bgYs), bgMaxY = Math.max(...bgYs);
+    const bgSpanY = (bgMaxY - bgMinY) || 1;
+    const bgSy = y => (h - padB) - (y - bgMinY) / bgSpanY * (h - padT - padB);
+    const bgLine = opts.background.map((p,i) => (i===0?'M':'L') + sx(p.x).toFixed(1) + ',' + bgSy(p.y).toFixed(1)).join(' ');
+    const bgArea = bgLine + ' L' + sx(opts.background[opts.background.length-1].x).toFixed(1) + ',' + (h-padB) + ' L' + sx(opts.background[0].x).toFixed(1) + ',' + (h-padB) + ' Z';
+    backgroundPath = '<path d="' + bgArea + '" fill="var(--muted-2)" opacity="0.18" stroke="none"/>';
+  }
   return '<div class="chart-box' + (opts.hideTitle ? ' no-title' : '') + '">' + (opts.hideTitle ? '' : '<h3>' + title + '</h3>') + '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<defs><linearGradient id="'+gradId+'" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/>' +
     '</linearGradient></defs>' +
+    backgroundPath +
     '<path d="'+areaPath+'" fill="url(#'+gradId+')" stroke="none"/>' +
     '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +

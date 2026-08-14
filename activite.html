@@ -480,14 +480,20 @@ function renderComparison(s, allSessions) {
     rows.map(([lbl, val]) => '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>').join('') + '</div>';
 }
 
+// Silhouette d'altitude réutilisée en arrière-plan des onglets Allure et FC — permet de voir
+// directement "l'allure chute parce que la pente monte" sans changer d'onglet.
+function altitudeBackgroundSeries(s) {
+  return (s.series || []).filter(p => p.distKm != null && p.alt != null).map(p => ({ x: p.distKm, y: p.alt }));
+}
+
 /* --------------------------- ONGLET ALLURE --------------------------- */
 function renderAllureTab(s) {
   const box = document.getElementById('allureTabBox');
   const withDist = (s.series || []).filter(p => p.distKm != null && p.paceSecKm != null);
   if (withDist.length < 2) { box.innerHTML = '<div class="empty">Pas de donnée d\'allure disponible pour cette activité.</div>'; return; }
   const points = withDist.map(p => ({ x: p.distKm, y: p.paceSecKm, label: p.distKm.toFixed(2) + ' km : ' + fmtPace(p.paceSecKm), xLabel: p.distKm.toFixed(1) + ' km' }));
-  box.innerHTML = '<p class="hint">Le profil altimétrique ci-dessus reste visible pendant la lecture de ce graphique, pour repérer l\'effet du relief sur l\'allure. Plus la courbe descend, plus l\'allure est rapide.</p>' +
-    lineChartSvg('Allure au fil de la sortie (min/km)', points, { decimals: 0 });
+  box.innerHTML = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre) pour repérer l\'effet de la pente sur l\'allure. Plus la courbe descend, plus l\'allure est rapide.</p>' +
+    lineChartSvg('Allure au fil de la sortie (min/km)', points, { decimals: 0, background: altitudeBackgroundSeries(s) });
   initChartTooltips(box);
 }
 
@@ -497,7 +503,8 @@ function renderFcTab(s) {
   const withDist = (s.series || []).filter(p => p.distKm != null && p.hr != null);
   if (withDist.length < 2) { box.innerHTML = '<div class="empty">Cette activité ne contient pas de données de fréquence cardiaque.</div>'; return; }
   const points = withDist.map(p => ({ x: p.distKm, y: p.hr, label: p.distKm.toFixed(2) + ' km : ' + p.hr + ' bpm', xLabel: p.distKm.toFixed(1) + ' km' }));
-  let html = lineChartSvg('Fréquence cardiaque (bpm)', points);
+  let html = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre).</p>' +
+    lineChartSvg('Fréquence cardiaque (bpm)', points, { background: altitudeBackgroundSeries(s) });
   html += '<div class="metrics-grid" style="margin-top:12px;">' +
     '<div class="metric"><div class="lbl">FC moyenne</div><div class="val">' + (s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible') + '</div></div>' +
     '<div class="metric"><div class="lbl">FC max</div><div class="val">' + (s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible') + '</div></div>' +
