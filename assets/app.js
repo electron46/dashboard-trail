@@ -1244,8 +1244,12 @@ function filterSessionsByRange(sessions, fromISO, toISO) {
 
 // Regroupe des séances par semaine ISO (lundi-dimanche) : distance/D+/D-/durée/nb de séances, plus
 // une VAM moyenne pondérée par le D+ des montées détectées (voir detectClimbs) — jamais calculée sur
-// la sortie entière. Une semaine sans séance n'apparaît simplement pas (pas de 0 fabriqué).
-function groupByWeek(sessions) {
+// la sortie entière. `fromISO`/`toISO` (optionnels) étendent le résultat à TOUTES les semaines de cet
+// intervalle, pas seulement celles où une séance existe : une semaine sans séance À L'INTÉRIEUR d'une
+// période réellement suivie est une vraie donnée à 0 (voir CLAUDE.md — distinction donnée absente /
+// donnée à zéro), affichée comme telle plutôt que silencieusement omise. Sans bornes, comportement
+// inchangé (une semaine sans séance n'apparaît pas).
+function groupByWeek(sessions, fromISO, toISO) {
   const map = new Map();
   sessions.forEach(s => {
     const ws = isoWeek(s.date);
@@ -1258,6 +1262,15 @@ function groupByWeek(sessions) {
     w.count += 1;
     if (Array.isArray(s.series) && s.series.length > 2) w.climbs.push(...detectClimbs(s.series));
   });
+  if (fromISO && toISO) {
+    let cursor = new Date(isoWeek(fromISO) + 'T00:00:00Z');
+    const last = new Date(isoWeek(toISO) + 'T00:00:00Z');
+    while (cursor <= last) {
+      const ws = cursor.toISOString().slice(0,10);
+      if (!map.has(ws)) map.set(ws, { startISO: ws, km: 0, durationS: 0, ascent: 0, descent: 0, count: 0, climbs: [] });
+      cursor.setUTCDate(cursor.getUTCDate() + 7);
+    }
+  }
   return [...map.values()].sort((a,b) => a.startISO.localeCompare(b.startISO)).map(w => {
     const withVam = w.climbs.filter(c => c.vamMh != null && c.gainM);
     const totalGain = withVam.reduce((a,c) => a + c.gainM, 0);
@@ -1406,48 +1419,61 @@ function bestByKey(sessions, key, better) {
   if (!withVal.length) return null;
   return withVal.reduce((a,b) => better(a[key], b[key]) ? a : b);
 }
-// "Meilleurs personnels — période" : volontairement pas des "records" au sens absolu (l'allure et la
-// FC dépendent trop du terrain d'une sortie à l'autre pour être comparées comme une performance
-// sportive, voir CLAUDE.md). Chaque entrée garde l'id de la séance source pour pouvoir l'ouvrir.
+// "Repères de la période" (jamais "records") : volontairement pas des performances comparables au
+// sens absolu — l'allure et la FC dépendent trop du terrain d'une sortie à l'autre pour ça (voir
+// CLAUDE.md). Chaque entrée garde l'id de la séance source pour pouvoir l'ouvrir.
 function computePeriodBests(sessions) {
   if (!sessions.length) return [];
   const out = [];
   const longest = bestByKey(sessions, 'distanceKm', (a,b) => a > b);
   if (longest) out.push({ label: 'Plus longue sortie', value: fmtNum(longest.distanceKm, ' km', 1), date: fmtDate(longest.date), activityId: longest.id });
   const mostAscent = bestByKey(sessions, 'ascent', (a,b) => a > b);
-  if (mostAscent) out.push({ label: 'Plus gros dénivelé', value: fmtNum(mostAscent.ascent, ' m D+', 0), date: fmtDate(mostAscent.date), activityId: mostAscent.id });
+  if (mostAscent) out.push({ label: 'Plus gros D+', value: fmtNum(mostAscent.ascent, ' m', 0), date: fmtDate(mostAscent.date), activityId: mostAscent.id });
   let bestVam = null;
   sessions.forEach(s => {
     if (!Array.isArray(s.series) || s.series.length < 3) return;
     detectClimbs(s.series).forEach(c => { if (c.vamMh != null && (!bestVam || c.vamMh > bestVam.vamMh)) bestVam = { vamMh: c.vamMh, session: s }; });
   });
-  if (bestVam) out.push({ label: 'Meilleure VAM', value: bestVam.vamMh + ' m/h', date: fmtDate(bestVam.session.date), activityId: bestVam.session.id });
+  if (bestVam) out.push({ label: 'VAM la plus élevée', value: bestVam.vamMh + ' m/h', date: fmtDate(bestVam.session.date), activityId: bestVam.session.id });
   const fastestPace = bestByKey(sessions, 'avgPaceSecPerKm', (a,b) => a < b);
-  if (fastestPace) out.push({ label: 'Allure moyenne la plus rapide (période)', value: fmtPace(fastestPace.avgPaceSecPerKm), date: fmtDate(fastestPace.date), activityId: fastestPace.id });
+  if (fastestPace) out.push({ label: 'Allure moyenne la plus rapide', value: fmtPace(fastestPace.avgPaceSecPerKm), date: fmtDate(fastestPace.date), activityId: fastestPace.id });
   const lowestHr = bestByKey(sessions, 'avgHr', (a,b) => a < b);
-  if (lowestHr) out.push({ label: 'FC moyenne la plus basse (période)', value: lowestHr.avgHr + ' bpm', date: fmtDate(lowestHr.date), activityId: lowestHr.id });
+  if (lowestHr) out.push({ label: 'FC moyenne la plus basse', value: lowestHr.avgHr + ' bpm', date: fmtDate(lowestHr.date), activityId: lowestHr.id });
   return out;
 }
 
 // Insight ELEV de la page Analyse (tendance multi-séances) — distinct de generateElevInsight()
 // (Accueil, charge aiguë/chronique) et generateSessionInsight() (une séance). Déterministe, aucun
-// appel réseau, ne conclut que ce que les données permettent réellement d'établir.
-function generateGlobalAnalysisInsight(deltas, runWalkByGrade) {
-  const bullets = [];
+// appel réseau, ne conclut que ce que les données permettent réellement d'établir. Jusqu'à 5
+// candidats possibles (volume, VAM/montées, locomotion, verticalité, intensité) sont évalués puis
+// classés par un poids indicatif (grandeur de l'écart ou pertinence du signal) : les 3 plus forts
+// sont retenus, jamais deux fois la même catégorie — pour éviter de toujours répéter les mêmes.
+function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zoneDist) {
+  const candidates = [];
   if (deltas.distanceKm != null && Math.abs(deltas.distanceKm) >= 8) {
-    bullets.push({ title: deltas.distanceKm > 0 ? 'Volume en progression' : 'Volume en retrait',
+    candidates.push({ weight: Math.abs(deltas.distanceKm), title: deltas.distanceKm > 0 ? 'Volume en progression' : 'Volume en retrait',
       text: 'Ton volume total a ' + (deltas.distanceKm > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.distanceKm) + '% par rapport à la période précédente de même durée.' });
   }
   if (deltas.ascent != null && deltas.vamAvg != null && deltas.ascent >= 8 && Math.abs(deltas.vamAvg) <= 5) {
-    bullets.push({ title: 'Montées', text: 'Ta VAM moyenne reste stable malgré une hausse du D+ de ' + deltas.ascent + '% sur la période.' });
+    candidates.push({ weight: 55, title: 'Montées', text: 'Ta VAM moyenne reste stable malgré une hausse du D+ de ' + deltas.ascent + '% sur la période.' });
   } else if (deltas.vamAvg != null && Math.abs(deltas.vamAvg) >= 8) {
-    bullets.push({ title: deltas.vamAvg > 0 ? 'VAM en progression' : 'VAM en retrait', text: 'Ta VAM moyenne a ' + (deltas.vamAvg > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.vamAvg) + '% par rapport à la période précédente.' });
+    candidates.push({ weight: Math.abs(deltas.vamAvg), title: deltas.vamAvg > 0 ? 'VAM en progression' : 'VAM en retrait', text: 'Ta VAM moyenne a ' + (deltas.vamAvg > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.vamAvg) + '% par rapport à la période précédente.' });
   }
   if (runWalkByGrade && runWalkByGrade.length) {
     const tip = runWalkByGrade.find(b => b.walkPct != null && b.walkPct >= b.runPct);
-    if (tip) bullets.push({ title: 'Locomotion', text: 'La marche devient majoritaire à partir de ' + tip.label + ' de pente (estimation ELEV, basée cadence).' });
+    if (tip) candidates.push({ weight: 45, title: 'Locomotion', text: 'La marche devient majoritaire à partir de ' + tip.label + ' de pente (estimation ELEV, basée cadence).' });
   }
-  return bullets.slice(0, 3);
+  if (gradeBuckets) {
+    const steepPct = gradeBuckets.filter(b => b.key === 'g15' || b.key === 'g20').reduce((a,b) => a + b.pct, 0);
+    if (steepPct >= 15) candidates.push({ weight: 40 + steepPct, title: 'Verticalité', text: steepPct + '% du temps en mouvement a été passé sur des pentes de plus de 15%.' });
+  }
+  if (zoneDist) {
+    const z3plus = zoneDist.slice(2).reduce((a,z) => a + z.pct, 0);
+    const z1z2 = zoneDist.slice(0,2).reduce((a,z) => a + z.pct, 0);
+    if (z3plus >= 55) candidates.push({ weight: 35 + z3plus, title: 'Intensité', text: z3plus + '% du temps avec FC disponible a été passé en zones Z3 à Z5.' });
+    else if (z1z2 >= 65) candidates.push({ weight: 35 + z1z2, title: 'Intensité', text: z1z2 + '% du temps avec FC disponible a été passé en zones Z1-Z2 : période orientée endurance fondamentale.' });
+  }
+  return candidates.sort((a,b) => b.weight - a.weight).slice(0, 3).map(({ title, text }) => ({ title, text }));
 }
 
 /* --------------------------- 6) UTILITAIRES DOM --------------------------- */
@@ -1860,7 +1886,7 @@ function volumeChartSvg(weeks, opts) {
   const maxKm = Math.max(1, ...weeks.map(x => x.km));
   const maxDurH = Math.max(1, ...weeks.map(x => x.durationS / 3600));
   const groupW = (w - padL - padR) / weeks.length;
-  const barW = groupW * 0.55;
+  const barW = Math.min(groupW * 0.55, 46);
   const syDur = v => (h - padB) - (v / maxDurH) * (h - padT - padB);
   let bars = '';
   weeks.forEach((wk, i) => {

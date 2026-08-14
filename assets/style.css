@@ -621,9 +621,17 @@ main.activities-main{max-width:1600px;}
    activity-row) plutôt que d'en recréer des variantes — seuls les éléments propres à cette page
    (grilles de mise en page, run/walk par pente) sont ajoutés ici. */
 main.analysis-main{max-width:1440px;}
-.analysis-period-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-4px 0 4px;}
-.analysis-custom-dates{display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted);}
+.analysis-period-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:-4px 0 4px;}
+.analysis-custom-dates{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--muted);}
 .analysis-custom-dates input[type=date]{width:auto;padding:5px 8px;font-size:.78rem;}
+@media (max-width:640px){
+  /* Les filtres rapides restent la voie principale (plus visibles que les dates manuelles, voir
+     CLAUDE.md) : ils défilent horizontalement plutôt que de se compresser ou de faire déborder la
+     page. Scopé à cette page — .period-select reste inchangé sur l'Accueil. */
+  .analysis-period-row .period-select{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;max-width:100%;}
+  .analysis-period-row .period-select button{flex:0 0 auto;}
+  .analysis-custom-dates{width:100%;flex-wrap:wrap;}
+}
 .analysis-period-label{font-size:.78rem;color:var(--muted);margin:0 0 2px;}
 .analysis-charts-row{display:grid;grid-template-columns:1fr;gap:14px;}
 .analysis-secondary-row{display:grid;grid-template-columns:1fr;gap:14px;}
@@ -633,11 +641,29 @@ main.analysis-main{max-width:1440px;}
 }
 @media (min-width:1024px){
   .analysis-charts-row{grid-template-columns:repeat(3,1fr);}
-  .analysis-secondary-row{grid-template-columns:repeat(4,1fr);}
   .analysis-bottom-row{grid-template-columns:1.4fr 1fr;align-items:start;}
+}
+/* Les 4 cartes trail (locomotion/zones/pente/run-walk) ne repassent à 4 colonnes qu'à partir de
+   1280px : en dessous, chaque carte devient trop étroite pour rester lisible (labels/barres/%
+   collés), voir passe de finition du 2026-08-14 — 2 colonnes (déjà réglé ci-dessus) le temps que
+   la largeur redevienne confortable. */
+@media (min-width:1280px){
+  .analysis-secondary-row{grid-template-columns:repeat(4,1fr);}
 }
 .analysis-donut-row{display:flex;align-items:center;gap:16px;}
 .provenance-tag{font-size:.68rem;color:var(--muted-2);margin-top:10px;font-style:italic;}
+/* Un peu plus d'air que le .zone-row par défaut (partagé avec le détail de séance, non modifié
+   là-bas) : scoping local pour ne pas répercuter ce changement ailleurs. */
+.analysis-secondary-row .zone-row{grid-template-columns:minmax(0,130px) 1fr 42px 60px;gap:12px;}
+.analysis-secondary-row .zdl-row{gap:9px;}
+
+/* État "pas encore de tendance fiable" (Volume/D+/VAM avec moins de 3 semaines réellement
+   renseignées) : garde les chiffres qui restent honnêtes (total, valeur par semaine) plutôt qu'un
+   simple message vide, sans dessiner un graphique qui suggérerait une tendance qui n'existe pas. */
+.trend-fallback-stats{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:2px;}
+.trend-fallback-stats .lbl{display:block;font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.trend-fallback-stats .val{display:block;font-family:var(--font-display);font-weight:700;font-size:1.05rem;margin-top:2px;font-variant-numeric:tabular-nums;}
+.trend-fallback-value strong{font-family:var(--font-display);color:var(--text);}
 
 /* Run/Walk par pente — mini barres course/marche empilées par ligne de tranche de pente. */
 .rw-grade-list{display:flex;flex-direction:column;gap:10px;}

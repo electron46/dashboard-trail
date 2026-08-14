@@ -112,7 +112,7 @@
       <a class="link-arrow" style="margin-top:10px;display:inline-block;" href="historique.html">Voir toutes les activités →</a>
     </section>
     <section class="card">
-      <h2>Meilleurs personnels <small>— période</small></h2>
+      <h2>Repères de la période</h2>
       <div id="bestsBox"></div>
     </section>
   </div>
@@ -162,6 +162,18 @@ const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
 function fmtPctDelta(pct) { return pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%'); }
 function arrowFor(pct) { return pct == null ? '' : '<span class="arrow">' + (pct >= 0 ? '▲' : '▼') + '</span>'; }
 
+// Règle de fiabilité des tendances (Volume/D+/VAM) : sous 3 semaines réellement renseignées, un
+// graphique suggérerait une tendance qui n'existe pas. En dessous, on affiche encore ce qui reste
+// honnête (total / valeur par semaine), jamais une donnée inventée pour combler les trous. Le
+// nombre exact (3) est un seuil raisonnable, pas une règle statistique stricte.
+const TREND_MIN_WEEKS = 3;
+
+function kpiComparisonSub(deltaPct, previous, suffix) {
+  if (!previous) return 'Comparaison indisponible';
+  if (deltaPct == null) return 'Comparaison indisponible';
+  return arrowFor(deltaPct) + fmtPctDelta(deltaPct) + ' ' + suffix;
+}
+
 function renderKpis(cmp) {
   const grid = document.getElementById('kpiGrid');
   if (!cmp) { grid.innerHTML = '<div class="empty">Pas de séance sur cette période.</div>'; return; }
@@ -170,22 +182,22 @@ function renderKpis(cmp) {
   const countDelta = prev ? (c.count - prev.count) : null;
   const cards = [
     { icon:'route', label:'Distance totale', value: fmtNum(c.distanceKm,' km',1),
-      sub: (d.distanceKm!=null ? (arrowFor(d.distanceKm)+fmtPctDelta(d.distanceKm)) : '—') + ' vs période précédente',
+      sub: kpiComparisonSub(d.distanceKm, prev, 'vs période précédente'),
       status: d.distanceKm!=null && d.distanceKm>=0 ? 'ok' : null },
     { icon:'mountain-snow', label:'D+', value: fmtNum(c.ascent,' m',0),
-      sub: (d.ascent!=null ? (arrowFor(d.ascent)+fmtPctDelta(d.ascent)) : '—') + ' vs période précédente',
+      sub: kpiComparisonSub(d.ascent, prev, 'vs période précédente'),
       status: d.ascent!=null && d.ascent>=0 ? 'ok' : null },
     { icon:'clock', label:'Durée totale', value: fmtDuration(c.durationS),
-      sub: (d.durationS!=null ? (arrowFor(d.durationS)+fmtPctDelta(d.durationS)) : '—') + ' vs période précédente',
+      sub: kpiComparisonSub(d.durationS, prev, 'vs période précédente'),
       status: d.durationS!=null && d.durationS>=0 ? 'ok' : null },
     { icon:'trending-up', label:'VAM moyenne', value: c.vamAvg!=null ? c.vamAvg+' m/h' : null,
-      sub: c.vamAvg!=null ? ((d.vamAvg!=null ? (arrowFor(d.vamAvg)+fmtPctDelta(d.vamAvg)) : '—') + ' vs période précédente') : 'Pas de montée fiable détectée',
+      sub: c.vamAvg!=null ? kpiComparisonSub(d.vamAvg, prev, 'vs période précédente') : 'Aucune montée fiable détectée',
       status: d.vamAvg!=null && d.vamAvg>=0 ? 'ok' : null },
     { icon:'heart-pulse', label:'FC moyenne', value: c.avgHr!=null ? c.avgHr+' bpm' : null,
-      sub: c.avgHr!=null ? (hrDelta!=null ? ((hrDelta>=0?'+':'')+hrDelta+' bpm vs période précédente') : '—') : 'Non disponible',
+      sub: c.avgHr!=null ? (hrDelta!=null ? ((hrDelta>=0?'+':'')+hrDelta+' bpm vs période précédente') : 'Comparaison indisponible') : 'Non disponible',
       status: null },
     { icon:'flag', label:'Séances', value: String(c.count),
-      sub: countDelta!=null ? ((countDelta>=0?'+':'')+countDelta+' vs période précédente') : '—',
+      sub: countDelta!=null ? ((countDelta>=0?'+':'')+countDelta+' vs période précédente') : 'Comparaison indisponible',
       status: countDelta!=null && countDelta>=0 ? 'ok' : null },
   ];
   grid.innerHTML = cards.map(cd => '<div class="kpi-card">' +
@@ -196,13 +208,43 @@ function renderKpis(cmp) {
 }
 
 /* --------------------------- GRAPHIQUES DE TENDANCE --------------------------- */
+// État de repli commun aux 3 graphiques de tendance quand il n'y a pas assez de semaines
+// renseignées (voir TREND_MIN_WEEKS) : garde les chiffres qui restent honnêtes plutôt qu'un
+// graphique vide ou trompeur.
+function trendFallbackHtml(message, stats) {
+  const statsHtml = stats && stats.length
+    ? '<div class="trend-fallback-stats">' + stats.map(s => '<div><span class="lbl">'+escapeHtml(s.label)+'</span><span class="val">'+escapeHtml(s.value)+'</span></div>').join('') + '</div>'
+    : '';
+  return '<div class="trend-fallback">' + statsHtml + '<div class="empty" style="padding:6px 0 0;">' + message + '</div></div>';
+}
+
 function renderVolumeChart(weeks) {
-  document.getElementById('volumeChartBox').innerHTML = volumeChartSvg(weeks, { hideTitle: true });
-  initChartTooltips(document.getElementById('volumeChartBox'));
+  const box = document.getElementById('volumeChartBox');
+  const withData = weeks.filter(w => w.count > 0).sort((a,b) => a.startISO.localeCompare(b.startISO));
+  if (!withData.length) { box.innerHTML = '<div class="empty">Aucune activité sur cette période.</div>'; return; }
+  if (withData.length < TREND_MIN_WEEKS) {
+    const msg = withData.length === 1
+      ? 'Une seule semaine contient des activités sur cette période — pas assez de recul pour une tendance.'
+      : withData.length + ' semaines avec activité — pas encore assez de recul pour une tendance graphique.';
+    const stats = withData.map(w => ({ label: 'Semaine du ' + fmtDate(w.startISO), value: fmtNum(w.km,' km',1) + ' · ' + fmtDuration(w.durationS) }));
+    box.innerHTML = trendFallbackHtml(msg, stats);
+    return;
+  }
+  box.innerHTML = volumeChartSvg(weeks, { hideTitle: true });
+  initChartTooltips(box);
 }
 function renderDplusChart(weeks) {
   const box = document.getElementById('dplusChartBox');
-  if (weeks.length < 2) { box.innerHTML = svgEmpty('Évolution du dénivelé'); return; }
+  const withData = weeks.filter(w => w.count > 0).sort((a,b) => a.startISO.localeCompare(b.startISO));
+  if (!withData.length) { box.innerHTML = '<div class="empty">Aucune activité sur cette période.</div>'; return; }
+  if (withData.length < TREND_MIN_WEEKS) {
+    const msg = withData.length === 1
+      ? 'Une seule semaine contient des activités sur cette période — pas assez de recul pour une tendance.'
+      : withData.length + ' semaines avec activité — pas encore assez de recul pour une tendance graphique.';
+    const stats = withData.map(w => ({ label: 'Semaine du ' + fmtDate(w.startISO), value: fmtNum(w.ascent,' m D+',0) }));
+    box.innerHTML = trendFallbackHtml(msg, stats);
+    return;
+  }
   const series = [
     { name: 'D+', color: 'var(--accent)', values: weeks.map(w => Math.round(w.ascent)) },
     { name: 'D-', color: 'var(--secondary)', values: weeks.map(w => Math.round(w.descent || 0)) },
@@ -210,13 +252,28 @@ function renderDplusChart(weeks) {
   box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 220, hideTitle: true });
   initChartTooltips(box);
 }
-function renderVamChart(weeks) {
+// La VAM du KPI (période entière, voir aggregatePeriod) et la tendance hebdomadaire ici sont deux
+// calculs distincts : le KPI peut rester disponible même quand il n'y a pas assez de *semaines*
+// individuelles avec des montées fiables pour tracer une tendance — jamais présenté comme une
+// contradiction (voir CLAUDE.md, passe de finition 2026-08-14).
+function renderVamChart(weeks, periodVamAvg) {
   const box = document.getElementById('vamChartBox');
-  const pts = weeks.filter(w => w.vamAvg != null).map((w,i) => ({
+  const withVam = weeks.filter(w => w.vamAvg != null).sort((a,b) => a.startISO.localeCompare(b.startISO));
+  if (withVam.length < TREND_MIN_WEEKS) {
+    if (periodVamAvg == null) { box.innerHTML = '<div class="empty">Aucune montée fiable détectée sur cette période.</div>'; return; }
+    const reason = withVam.length === 0
+      ? 'Pas assez de semaines avec des montées fiables pour afficher une tendance hebdomadaire.'
+      : withVam.length + ' semaine' + (withVam.length>1?'s':'') + ' avec des montées fiables — pas encore assez de recul pour une tendance hebdomadaire.';
+    box.innerHTML = '<div class="trend-fallback">' +
+      '<div class="trend-fallback-value">VAM moyenne sur la période : <strong>' + periodVamAvg + ' m/h</strong></div>' +
+      '<div class="empty" style="padding:6px 0 0;">' + reason + '</div>' +
+    '</div>';
+    return;
+  }
+  const pts = withVam.map((w,i) => ({
     x: i, y: w.vamAvg, xLabel: w.shortLabel,
     label: 'Semaine du ' + fmtDate(w.startISO) + ' : VAM moyenne ' + w.vamAvg + ' m/h',
   }));
-  if (pts.length < 2) { box.innerHTML = '<div class="empty">Pas assez de montées fiables détectées sur cette période pour calculer une VAM moyenne.</div>'; return; }
   box.innerHTML = lineChartSvg('', pts, { decimals: 0, height: 220, hideTitle: true });
   initChartTooltips(box);
 }
@@ -235,13 +292,12 @@ function renderLocomotion(sessions) {
   const legend = segs.map(s => '<div class="zdl-row"><span class="zone-dot" style="background:'+s.color+'"></span>' +
     '<span class="zdl-label">'+s.label+'</span><span class="zdl-pct">'+s.pct+'%</span><span class="zdl-time">'+fmtDuration(s.sec)+'</span></div>').join('');
   box.innerHTML = '<div class="analysis-donut-row">' + donut + '<div class="zone-donut-legend">' + legend + '</div></div>' +
-    '<p class="provenance-tag">Estimation ELEV (cadence).</p>';
+    '<p class="provenance-tag">Estimation ELEV basée sur cadence.</p>';
 }
 
-function renderZones(sessions, zones) {
+function renderZones(zones, dist) {
   const box = document.getElementById('zonesBox');
   if (!zones) { box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>'; return; }
-  const dist = aggregateZones(sessions, zones);
   if (!dist) { box.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette période.</div>'; return; }
   box.innerHTML = '<div class="zone-bars">' + dist.map(z =>
     '<div class="zone-row"><span class="zone-label">'+escapeHtml(z.label)+'</span>' +
@@ -270,13 +326,13 @@ function renderRunWalkByGrade(buckets) {
       '<div class="rw-grade-bar-line"><span class="rw-tag">Marche</span><div class="rw-grade-track"><div class="rw-grade-fill walk" style="width:'+(b.walkPct||0)+'%"></div></div><span class="rw-grade-pct">'+(b.walkPct!=null?b.walkPct+'%':'—')+'</span></div>' +
     '</div></div>'
   ).join('') + '</div>' +
-  '<p class="provenance-tag">Estimation ELEV (cadence) — pas une donnée Garmin native.</p>';
+  '<p class="provenance-tag">Estimation ELEV basée sur cadence — pas une donnée Garmin native.</p>';
 }
 
 /* --------------------------- INSIGHT ELEV --------------------------- */
-function renderInsight(deltas, runWalkByGrade) {
+function renderInsight(deltas, runWalkByGrade, gradeBuckets, zoneDist) {
   const row = document.getElementById('insightRow');
-  const bullets = generateGlobalAnalysisInsight(deltas || {}, runWalkByGrade);
+  const bullets = generateGlobalAnalysisInsight(deltas || {}, runWalkByGrade, gradeBuckets, zoneDist);
   if (!bullets.length) { row.innerHTML = ''; return; }
   row.innerHTML = '<div class="insight-card">' +
     '<p class="insight-eyebrow"><img src="'+ICON('zap')+'" alt="">Insight ELEV</p>' +
@@ -330,24 +386,29 @@ function renderAnalysis() {
     ? ('Synthèse du ' + fmtDate(fromISO) + ' au ' + fmtDate(toISO) + ' — ' + current.length + ' séance' + (current.length>1?'s':'') + '.')
     : 'Synthèse de tes performances et de ta progression.';
 
-  const cmp = comparePeriods(aggregatePeriod(current), aggregatePeriod(previous));
+  const curAgg = aggregatePeriod(current);
+  const cmp = comparePeriods(curAgg, aggregatePeriod(previous));
   renderKpis(cmp);
 
-  const weeks = groupByWeek(current);
+  // Semaines à zéro comblées uniquement à l'intérieur de l'historique réellement connu (jamais
+  // avant la toute première séance) : une période "hors historique" reste absente, pas un 0 fabriqué.
+  const flooredFrom = sessions.length && fromISO < sessions[0].date ? sessions[0].date : fromISO;
+  const weeks = groupByWeek(current, flooredFrom, toISO);
   renderVolumeChart(weeks);
   renderDplusChart(weeks);
-  renderVamChart(weeks);
+  renderVamChart(weeks, curAgg ? curAgg.vamAvg : null);
 
   const profile = getProfile();
   const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zoneDist = zones ? aggregateZones(current, zones) : null;
   renderLocomotion(current);
-  renderZones(current, zones);
+  renderZones(zones, zoneDist);
   const gradeBuckets = aggregateGradeBuckets(current);
   renderGradeBuckets(gradeBuckets);
   const rwByGrade = aggregateRunWalkByGrade(current);
   renderRunWalkByGrade(rwByGrade);
 
-  renderInsight(cmp ? cmp.deltas : {}, rwByGrade);
+  renderInsight(cmp ? cmp.deltas : {}, rwByGrade, gradeBuckets, zoneDist);
   renderRecentActivities(current);
   renderBests(current);
 }
