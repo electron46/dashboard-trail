@@ -792,6 +792,19 @@ function ratioDplusKm(ascentM, distanceKm) {
 function fmtDate(iso) { const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; }
 // Décale une date ISO (YYYY-MM-DD) de n jours — utilitaire partagé (Plan, Objectifs).
 function addDaysIso(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
+// Parseur tolérant d'une durée texte libre du plan CSV ("1h15", "1h", "45min", "45 min", "1:30"...).
+// Retourne des minutes, ou null si le format n'est pas reconnu — jamais une estimation approximative.
+function parseDureeToMin(str) {
+  if (!str) return null;
+  const s = str.trim().toLowerCase();
+  let m = s.match(/^(\d+)\s*h\s*(\d{1,2})?$/);
+  if (m) return parseInt(m[1],10)*60 + (m[2]?parseInt(m[2],10):0);
+  m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return parseInt(m[1],10)*60 + parseInt(m[2],10);
+  m = s.match(/^(\d+)\s*min$/);
+  if (m) return parseInt(m[1],10);
+  return null;
+}
 function fmtDuration(s) {
   if (s == null) return 'Non disponible';
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.round(s%60);
@@ -1796,10 +1809,22 @@ function getCurrentPlanWeek(plan) {
   };
 }
 
-// Volume/D+/séances réalisé vs prévu sur une semaine du plan (matching strict par date, seule logique de
-// correspondance plan↔activité disponible aujourd'hui — voir CLAUDE.md, pas de matching flou inventé).
-// Statut "Dans les clous"/"En retard"/"En avance" : mêmes seuils que computePrepStatus (60%/130%), pour
-// rester cohérent avec le reste du site plutôt que d'introduire une nouvelle règle.
+// Statut d'un jour du plan : compare le nombre de séances planifiées à celui des séances réalisées ce
+// jour (matching strict par date, seule logique disponible — voir CLAUDE.md, pas de correspondance
+// approximative inventée). "Manqué" seulement si la date est passée ET que le nombre de séances
+// réalisées est inférieur au nombre de séances planifiées ce jour-là — couvre correctement le cas
+// (rare) de plusieurs séances planifiées le même jour, où seule une partie aurait été réalisée.
+function getPlanDayStatus(dateISO, plannedCount, doneCount) {
+  if (!plannedCount) return doneCount ? 'done' : 'rest';
+  if (doneCount >= plannedCount) return 'done';
+  const today = new Date().toISOString().slice(0,10);
+  return dateISO < today ? 'missed' : 'todo';
+}
+
+// Volume/D+/durée/séances réalisé vs prévu sur une semaine du plan. Statut "Dans les clous"/"En
+// retard"/"En avance" : mêmes seuils que computePrepStatus (60%/130%), pour rester cohérent avec le
+// reste du site plutôt que d'introduire une nouvelle règle. plannedDurationMin reste null si au moins
+// une séance de la semaine a une durée non reconnue par parseDureeToMin (jamais un total partiel).
 function calculateWeekProgress(week, sessions) {
   if (!week) return null;
   const doneItems = sessions.filter(s => s.date >= week.startISO && s.date <= week.endISO);
@@ -1807,14 +1832,22 @@ function calculateWeekProgress(week, sessions) {
   const doneKm = doneItems.reduce((s,x) => s + (x.distanceKm||0), 0);
   const plannedDplus = week.items.reduce((s,p) => s + (p.deniveleM||0), 0);
   const doneDplus = doneItems.reduce((s,x) => s + (x.ascent||0), 0);
-  const today = new Date().toISOString().slice(0,10);
-  const missedCount = week.items.filter(p => p.date < today && !sessions.some(s => s.date === p.date)).length;
+  const doneDurationS = doneItems.reduce((s,x) => s + (x.durationS||0), 0);
+  const durMins = week.items.map(p => parseDureeToMin(p.dureeDetail));
+  const plannedDurationMin = (durMins.length && durMins.every(v => v != null)) ? durMins.reduce((a,b)=>a+b,0) : null;
+  const dayGroups = new Map();
+  week.items.forEach(p => dayGroups.set(p.date, (dayGroups.get(p.date)||0) + 1));
+  let missedCount = 0;
+  dayGroups.forEach((plannedForDay, date) => {
+    const doneForDay = doneItems.filter(s => s.date === date).length;
+    if (getPlanDayStatus(date, plannedForDay, doneForDay) === 'missed') missedCount += (plannedForDay - doneForDay);
+  });
   const pctKm = plannedKm > 0 ? Math.round(doneKm/plannedKm*100) : null;
   const pctDplus = plannedDplus > 0 ? Math.round(doneDplus/plannedDplus*100) : null;
   let statusLabel = null;
   if (pctKm != null) statusLabel = pctKm < 60 ? 'En retard' : (pctKm > 130 ? 'En avance' : 'Dans les clous');
   return {
-    doneItems, plannedKm, doneKm, plannedDplus, doneDplus, missedCount,
+    doneItems, plannedKm, doneKm, plannedDplus, doneDplus, doneDurationS, plannedDurationMin, missedCount,
     plannedCount: week.items.length, doneCount: doneItems.length,
     pctSessions: week.items.length ? Math.round(doneItems.length/week.items.length*100) : null,
     pctKm, pctDplus, statusLabel,
@@ -1911,13 +1944,14 @@ function getPlanWeeksOverview(plan) {
 // fonctions déjà existantes et validées ailleurs sur le site.
 function getPlanInsights(plan, sessions) {
   const bullets = [];
-  const today = new Date().toISOString().slice(0,10);
   if (plan && plan.length) {
     const week = getCurrentPlanWeek(plan);
-    if (week) {
-      const missed = week.items.filter(p => p.date < today && !sessions.some(s => s.date === p.date));
-      if (missed.length) {
-        bullets.push({ title: 'Séance manquée', text: missed.length + ' séance' + (missed.length>1?'s':'') + ' prévue' + (missed.length>1?'s':'') + ' cette semaine n\'' + (missed.length>1?'ont':'a') + ' pas été réalisée' + (missed.length>1?'s':'') + '.' });
+    if (week && week.inRange) {
+      // Même règle que les badges de la semaine (getPlanDayStatus, via calculateWeekProgress) — pas de
+      // double logique, voir CLAUDE.md.
+      const wp = calculateWeekProgress(week, sessions);
+      if (wp.missedCount) {
+        bullets.push({ title: 'Séances', text: wp.missedCount + ' séance' + (wp.missedCount>1?'s':'') + ' prévue' + (wp.missedCount>1?'s':'') + ' cette semaine n\'' + (wp.missedCount>1?'ont':'a') + ' pas été associée' + (wp.missedCount>1?'s':'') + ' à une activité réalisée.' });
       }
     }
     if (bullets.length < 3) {
@@ -2250,6 +2284,9 @@ function volumeChartSvg(weeks, opts) {
 // Graphique "réalisé vs planifié" (page Objectifs — Volume/D+ de la préparation) : barres = réalisé,
 // ligne pointillée = cible planifiée — seulement si un plan est réellement importé (`planMap` vient de
 // groupPlanByWeek, null si aucun plan). Jamais de cible dessinée sans donnée réelle.
+// opts.mutedPlanned / opts.futureFromISO : options utilisées uniquement par la page Plan (voir CLAUDE.md,
+// micro-passe finition Plan) pour accentuer le contraste réalisé/planifié et estomper la partie future
+// de la ligne cible — non passées par Objectifs, dont le rendu reste strictement inchangé par défaut.
 function goalTrendChartSvg(weeks, planMap, key, opts) {
   opts = opts || {};
   const titleHtml = opts.hideTitle ? '' : '<h3>' + escapeHtml(opts.title || '') + '</h3>';
@@ -2268,7 +2305,11 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
     const val = wk[key] || 0;
     const bh = (val / maxV) * (h - padT - padB);
     const y = (h - padB) - bh;
-    const tip = escapeHtml('Semaine du ' + fmtDate(wk.startISO) + ' — réalisé ' + fmt(val) + (planMap ? (' · cible ' + fmt((planMap.get(wk.startISO) || {})[key] || 0)) : ''));
+    const plannedVal = planMap ? ((planMap.get(wk.startISO) || {})[key] || 0) : null;
+    const delta = plannedVal != null ? (val - plannedVal) : null;
+    const tip = escapeHtml(opts.mutedPlanned && plannedVal != null
+      ? ('Semaine du ' + fmtDate(wk.startISO) + ' — réalisé ' + fmt(val) + ' · planifié ' + fmt(plannedVal) + ' · écart ' + (delta>=0?'+':'') + fmt(delta))
+      : ('Semaine du ' + fmtDate(wk.startISO) + ' — réalisé ' + fmt(val) + (plannedVal != null ? (' · cible ' + fmt(plannedVal)) : '')));
     bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(bh, 1).toFixed(1) + '" rx="2" fill="var(--accent)" data-tooltip="' + tip + '"/>';
     if (weeks.length <= 9 || i % Math.ceil(weeks.length / 8) === 0) {
       bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 10) + '" font-size="11" fill="var(--muted)" text-anchor="middle">' + wk.shortLabel + '</text>';
@@ -2276,9 +2317,20 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
   });
   let planLine = '', legend = '<div class="chart-legend"><span><span class="dot" style="background:var(--accent)"></span>Réalisé</span>';
   if (planMap) {
+    const plannedColor = opts.mutedPlanned ? 'var(--muted-2)' : 'var(--secondary)';
+    const dash = opts.mutedPlanned ? '3,4' : '4,3';
     const pts = weeks.map((wk, i) => [padL + i * groupW + groupW / 2, sy((planMap.get(wk.startISO) || {})[key] || 0)]);
-    planLine = '<path d="' + pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-dasharray="4,3"/>';
-    legend += '<span><span class="dot" style="background:var(--secondary)"></span>Cible planifiée</span>';
+    const pathOf = arr => arr.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const splitIdx = opts.futureFromISO ? weeks.findIndex(wk => wk.startISO >= opts.futureFromISO) : -1;
+    if (splitIdx > 0 && splitIdx < weeks.length) {
+      planLine = '<path d="' + pathOf(pts.slice(0, splitIdx + 1)) + '" fill="none" stroke="' + plannedColor + '" stroke-width="2" stroke-dasharray="' + dash + '"/>' +
+        '<path d="' + pathOf(pts.slice(splitIdx)) + '" fill="none" stroke="' + plannedColor + '" stroke-width="2" stroke-dasharray="' + dash + '" opacity="0.5"/>';
+    } else if (splitIdx === 0) {
+      planLine = '<path d="' + pathOf(pts) + '" fill="none" stroke="' + plannedColor + '" stroke-width="2" stroke-dasharray="' + dash + '" opacity="0.5"/>';
+    } else {
+      planLine = '<path d="' + pathOf(pts) + '" fill="none" stroke="' + plannedColor + '" stroke-width="2" stroke-dasharray="' + dash + '"/>';
+    }
+    legend += '<span><span class="dot" style="background:' + plannedColor + '"></span>' + (opts.mutedPlanned ? 'Planifié' : 'Cible planifiée') + '</span>';
   }
   legend += '</div>';
   return '<div class="chart-box">' + titleHtml + legend + '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
