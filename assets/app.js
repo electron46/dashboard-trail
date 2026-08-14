@@ -212,6 +212,86 @@ function resolveDeveloperFields(messages) {
 }
 function fitTimestampToDate(ts) { if (ts === null || ts === undefined) return null; return new Date(FIT_EPOCH_MS + ts * 1000); }
 
+// LTTB (Largest Triangle Three Buckets) — réduit une série {x,y} à `threshold` points en
+// préservant au mieux la forme visuelle (pics, creux, ruptures), contrairement à un simple
+// échantillonnage "1 point tous les N". Référence : Sveinn Steinarsson, 2013. Opère sur des
+// indices pour pouvoir être réutilisé sur plusieurs signaux (altitude/FC/allure) et recomposer
+// ensuite un seul jeu de points communs (voir buildDetailSeries ci-dessous).
+function lttbSelectIndices(points, threshold) {
+  const n = points.length;
+  if (threshold >= n || threshold <= 2) return points.map((_, i) => i);
+  const sampled = [0];
+  const bucketSize = (n - 2) / (threshold - 2);
+  let a = 0;
+  for (let i = 0; i < threshold - 2; i++) {
+    const avgStart = Math.floor((i + 1) * bucketSize) + 1;
+    const avgEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1, n);
+    let avgX = 0, avgY = 0;
+    const avgLen = Math.max(1, avgEnd - avgStart);
+    for (let j = avgStart; j < avgEnd; j++) { avgX += points[j].x; avgY += points[j].y; }
+    avgX /= avgLen; avgY /= avgLen;
+
+    const rangeStart = Math.floor(i * bucketSize) + 1;
+    const rangeEnd = Math.floor((i + 1) * bucketSize) + 1;
+    const pax = points[a].x, pay = points[a].y;
+    let maxArea = -1, maxAreaIndex = rangeStart;
+    for (let j = rangeStart; j < rangeEnd; j++) {
+      const area = Math.abs((pax - avgX) * (points[j].y - pay) - (pax - points[j].x) * (avgY - pay)) * 0.5;
+      if (area > maxArea) { maxArea = area; maxAreaIndex = j; }
+    }
+    sampled.push(maxAreaIndex);
+    a = maxAreaIndex;
+  }
+  sampled.push(n - 1);
+  return sampled;
+}
+
+// Construit la série de points d'une séance (utilisée par les graphiques Altitude/Allure/FC et la
+// carte GPS) en visant `targetPoints` points au rendu — au lieu d'un pas fixe uniforme, on fait tourner
+// LTTB séparément sur l'altitude, la FC et l'allure (les 3 signaux réellement représentés en courbe),
+// puis on fusionne (union) les index sélectionnés : chaque signal garde ses pics/ruptures propres,
+// plutôt qu'un unique passage qui privilégierait la forme d'une seule métrique au détriment des autres.
+function buildDetailSeries(withTs, t0, targetPoints) {
+  const raw = withTs.map(r => {
+    const spd = r.enhanced_speed || r.speed;
+    let paceSecKm = (spd && spd > 0) ? 1000 / spd : null;
+    if (paceSecKm != null && paceSecKm > 1200) paceSecKm = null; // > 20:00/km : arrêt/pause, pas une donnée d'allure exploitable
+    return {
+      t: r.timestamp - t0,
+      distKm: r.distance != null ? r.distance / 1000 : null,
+      paceSecKm,
+      hr: r.heart_rate ?? null,
+      alt: r.enhanced_altitude ?? r.altitude ?? null,
+      cadenceSpm: r.cadence != null ? Math.round(r.cadence * 2) : null,
+      power: r.power ?? null,
+      lat: r.position_lat != null ? r.position_lat * SEMICIRCLE_TO_DEG : null,
+      lon: r.position_long != null ? r.position_long * SEMICIRCLE_TO_DEG : null,
+    };
+  });
+  if (raw.length <= targetPoints) return raw;
+
+  const perSignalTarget = Math.max(50, Math.round(targetPoints * 0.55));
+  const selected = new Set([0, raw.length - 1]);
+  ['alt', 'hr', 'paceSecKm'].forEach(key => {
+    const dense = []; const denseToGlobal = [];
+    raw.forEach((p, i) => { if (p[key] != null) { dense.push({ x: i, y: p[key] }); denseToGlobal.push(i); } });
+    if (dense.length < 3) return;
+    lttbSelectIndices(dense, perSignalTarget).forEach(localIdx => selected.add(denseToGlobal[localIdx]));
+  });
+  let indices = Array.from(selected).sort((a, b) => a - b);
+  // Garde-fou : si l'union des 3 signaux dépasse largement la cible (chevauchement faible), on
+  // ré-échantillonne uniformément CETTE liste déjà réduite plutôt que de repartir des données brutes.
+  const hardCap = Math.round(targetPoints * 1.25);
+  if (indices.length > hardCap) {
+    const stride = indices.length / hardCap;
+    const thinned = [];
+    for (let i = 0; i < hardCap; i++) thinned.push(indices[Math.min(indices.length - 1, Math.round(i * stride))]);
+    thinned[thinned.length - 1] = indices[indices.length - 1];
+    indices = Array.from(new Set(thinned)).sort((a, b) => a - b);
+  }
+  return indices.map(i => raw[i]);
+}
+
 function summarizeFit(messages, fileMeta) {
   const session = (messages.session && messages.session[0]) || {};
   const records = messages.record || [];
@@ -260,32 +340,16 @@ function summarizeFit(messages, fileMeta) {
   }
   if (avgSpeed == null && distanceM != null && durationS) avgSpeed = distanceM / durationS;
 
-  // Série temporelle downsamplée pour les courbes de séance (allure/FC/altitude/cadence) —
-  // on limite à ~120 points pour rester léger en localStorage, quel que soit le nombre de records bruts.
+  // Série temporelle pour les courbes de séance (allure/FC/altitude/cadence) et la carte GPS.
+  // Réduite via LTTB (voir buildDetailSeries) plutôt qu'un pas fixe uniforme : préserve les pics,
+  // creux et ruptures de chaque signal au lieu de les lisser arbitrairement. Cible ~1200 points
+  // (zone recommandée 1000-1500 pour un rendu desktop détaillé) ; le rendu mobile réduit encore
+  // ponctuellement à l'affichage (voir activite.html), sans dupliquer le stockage.
   const withTs = records.filter(r => r.timestamp != null);
   let series = [];
   if (withTs.length >= 2) {
     const t0 = withTs[0].timestamp;
-    // 300 points (au lieu de 120) : courbes un peu plus fines, tout en restant léger pour
-    // localStorage. Le détail complet reste récupérable via le fichier .fit original conservé
-    // en Storage quand la synchro est active (voir étape C).
-    const maxPoints = 300;
-    const step = Math.max(1, Math.ceil(withTs.length / maxPoints));
-    for (let i = 0; i < withTs.length; i += step) {
-      const r = withTs[i];
-      const spd = r.enhanced_speed || r.speed;
-      series.push({
-        t: r.timestamp - t0,
-        distKm: r.distance != null ? r.distance / 1000 : null,
-        paceSecKm: (spd && spd > 0) ? Math.round(1000 / spd) : null,
-        hr: r.heart_rate ?? null,
-        alt: r.enhanced_altitude ?? r.altitude ?? null,
-        cadenceSpm: r.cadence != null ? Math.round(r.cadence * 2) : null,
-        power: r.power ?? null,
-        lat: r.position_lat != null ? r.position_lat * SEMICIRCLE_TO_DEG : null,
-        lon: r.position_long != null ? r.position_long * SEMICIRCLE_TO_DEG : null,
-      });
-    }
+    series = buildDetailSeries(withTs, t0, 1200);
   }
 
   // Splits par portion (laps) — le plus souvent un auto-lap par km sur Garmin, utile pour repérer les montées.
@@ -1555,6 +1619,147 @@ function sessionPreviewSvg(session) {
     '</svg>';
   }
   return '';
+}
+
+/* --------------------------- GRAPHIQUE SIGNATURE ELEV (Altitude / Allure / FC) ---------------------------
+   Un seul rendu partagé par les 3 courbes de séance, pour qu'elles appartiennent visuellement à la
+   même famille : ligne continue, remplissage léger en dégradé, axes discrets, un seul curseur au
+   survol (jamais de forêt de points fixes — un survol lit tous les champs disponibles du point le
+   plus proche, pas seulement le signal de CE graphique). `key` sélectionne le signal principal
+   (alt/paceSecKm/hr...) ; `invertY` inverse l'axe (utilisé pour l'allure : plus rapide = plus haut) ;
+   `backgroundKey` affiche un signal secondaire en silhouette très légère (ex. altitude derrière FC). */
+let _elevChartId = 0;
+function elevChartSvg(points, opts) {
+  opts = opts || {};
+  const id = 'elevChart' + (_elevChartId++);
+  const key = opts.key;
+  const w = 1000, h = opts.height || 220, padL = 46, padR = 14, padT = 14, padB = 26;
+  const xs = points.map(p => p.x);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const spanX = (maxX - minX) || 1;
+  const yVals = points.map(p => p[key]).filter(v => v != null);
+  if (yVals.length < 2) return '';
+  let minY = opts.yMin ?? Math.min(...yVals), maxY = opts.yMax ?? Math.max(...yVals);
+  if (minY === maxY) { minY -= 1; maxY += 1; }
+  const spanY = (maxY - minY) || 1;
+  const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
+  const sy = y => opts.invertY
+    ? padT + (y - minY) / spanY * (h - padT - padB)
+    : (h - padB) - (y - minY) / spanY * (h - padT - padB);
+
+  // Découpe en segments continus : jamais de faux raccord au-dessus d'une valeur manquante
+  // (ex. pause sans allure exploitable) — un vrai vide dans la courbe plutôt qu'une donnée inventée.
+  const runsFor = k => {
+    const runs = []; let cur = [];
+    points.forEach(p => { if (p[k] == null) { if (cur.length) runs.push(cur); cur = []; } else cur.push(p); });
+    if (cur.length) runs.push(cur);
+    return runs;
+  };
+  const pathFor = (runs, yOf) => runs.filter(r => r.length >= 2).map(run =>
+    run.map((p, i) => (i === 0 ? 'M' : 'L') + sx(p.x).toFixed(1) + ',' + yOf(p).toFixed(1)).join(' ')
+  ).join(' ');
+  const areaFor = (runs, yOf) => runs.filter(r => r.length >= 2).map(run => {
+    const line = run.map((p, i) => (i === 0 ? 'M' : 'L') + sx(p.x).toFixed(1) + ',' + yOf(p).toFixed(1)).join(' ');
+    return line + ' L' + sx(run[run.length - 1].x).toFixed(1) + ',' + (h - padB) + ' L' + sx(run[0].x).toFixed(1) + ',' + (h - padB) + ' Z';
+  }).join(' ');
+
+  const runs = runsFor(key);
+  const path = pathFor(runs, p => sy(p[key]));
+  const areaPath = areaFor(runs, p => sy(p[key]));
+
+  let backgroundSvg = '';
+  if (opts.backgroundKey) {
+    const bgVals = points.map(p => p[opts.backgroundKey]).filter(v => v != null);
+    if (bgVals.length >= 2) {
+      const bgMin = Math.min(...bgVals), bgMax = Math.max(...bgVals), bgSpan = (bgMax - bgMin) || 1;
+      const bgSy = y => (h - padB) - (y - bgMin) / bgSpan * (h - padT - padB);
+      const bgArea = areaFor(runsFor(opts.backgroundKey), p => bgSy(p[opts.backgroundKey]));
+      backgroundSvg = '<path d="' + bgArea + '" fill="var(--muted-2)" opacity="0.16" stroke="none"/>';
+    }
+  }
+
+  const fmtY = v => opts.yFormat ? opts.yFormat(v) : Math.round(v);
+  const yTopLabel = opts.invertY ? fmtY(minY) : fmtY(maxY);
+  const yBottomLabel = opts.invertY ? fmtY(maxY) : fmtY(minY);
+
+  return '<div class="elev-chart-wrap" id="' + id + '" ' +
+    'data-key="' + key + '" data-min-x="' + minX + '" data-max-x="' + maxX + '" data-padl="' + padL + '" data-padr="' + padR + '" data-w="' + w + '" ' +
+    'data-min-y="' + minY + '" data-max-y="' + maxY + '" data-h="' + h + '" data-padt="' + padT + '" data-padb="' + padB + '" data-invert="' + (opts.invertY ? '1' : '0') + '">' +
+    (opts.axisHint ? '<div class="elev-chart-hint">' + escapeHtml(opts.axisHint) + '</div>' : '') +
+    '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<defs><linearGradient id="' + id + 'Fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/></linearGradient></defs>' +
+      backgroundSvg +
+      '<path d="' + areaPath + '" fill="url(#' + id + 'Fill)" stroke="none"/>' +
+      '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
+      '<text x="4" y="' + (padT + 10) + '" font-size="13" fill="var(--muted)">' + yTopLabel + '</text>' +
+      '<text x="4" y="' + (h - padB + 2) + '" font-size="13" fill="var(--muted)">' + yBottomLabel + '</text>' +
+      '<text x="' + padL + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + minX.toFixed(1) + ' km</text>' +
+      '<text x="' + (w - padR - 50) + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + maxX.toFixed(1) + ' km</text>' +
+      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' +
+      '<line class="sync-cursor" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (h - padB) + '" stroke="var(--text)" stroke-dasharray="3,3" opacity="0"/>' +
+      '<circle class="sync-dot" r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>' +
+    '</svg>' +
+    '<div class="sync-tooltip" data-tooltip-for="' + id + '" style="display:none;"></div>' +
+  '</div>';
+}
+
+// Contenu du tooltip commun aux 3 graphiques signature : n'affiche que les champs réellement
+// disponibles sur le point survolé, quel que soit le graphique à l'origine du survol.
+function elevChartTooltipText(p) {
+  const parts = [];
+  if (p.distKm != null) parts.push(p.distKm.toFixed(2) + ' km');
+  if (p.alt != null) parts.push(Math.round(p.alt) + ' m');
+  if (p.paceSecKm != null) parts.push(fmtPace(p.paceSecKm));
+  if (p.hr != null) parts.push(p.hr + ' bpm');
+  if (p.cadenceSpm != null) parts.push(p.cadenceSpm + ' spm');
+  if (p.power != null) parts.push(p.power + ' W');
+  return parts.join(' · ');
+}
+
+// Câble le survol (souris + tactile) d'un graphique produit par elevChartSvg. `onMove(point)` est
+// appelé à chaque déplacement (utilisé côté page pour synchroniser le repère sur la carte GPS).
+function initElevChart(wrapper, points, onMove) {
+  if (!wrapper) return;
+  const key = wrapper.dataset.key;
+  const minX = parseFloat(wrapper.dataset.minX), maxX = parseFloat(wrapper.dataset.maxX);
+  const padL = parseFloat(wrapper.dataset.padl), padR = parseFloat(wrapper.dataset.padr), w = parseFloat(wrapper.dataset.w);
+  const minY = parseFloat(wrapper.dataset.minY), maxY = parseFloat(wrapper.dataset.maxY);
+  const h = parseFloat(wrapper.dataset.h), padT = parseFloat(wrapper.dataset.padt), padB = parseFloat(wrapper.dataset.padb);
+  const invert = wrapper.dataset.invert === '1';
+  const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+  const svg = wrapper.querySelector('svg');
+  const cursor = svg.querySelector('.sync-cursor'), dot = svg.querySelector('.sync-dot');
+  const tooltip = wrapper.querySelector('.sync-tooltip');
+
+  function nearestIndex(distKm) {
+    let best = 0, bestDiff = Infinity;
+    points.forEach((p, i) => { if (p.x == null) return; const diff = Math.abs(p.x - distKm); if (diff < bestDiff) { bestDiff = diff; best = i; } });
+    return best;
+  }
+  function updateAt(clientX) {
+    const rect = wrapper.getBoundingClientRect();
+    if (!rect.width) return;
+    const scale = w / rect.width;
+    let xVb = (clientX - rect.left) * scale;
+    xVb = Math.max(padL, Math.min(w - padR, xVb));
+    const distKm = minX + (xVb - padL) / (w - padL - padR) * spanX;
+    const p = points[nearestIndex(distKm)];
+    cursor.setAttribute('x1', xVb.toFixed(1)); cursor.setAttribute('x2', xVb.toFixed(1)); cursor.setAttribute('opacity', '1');
+    if (p[key] != null) {
+      const syVal = invert ? padT + (p[key] - minY) / spanY * (h - padT - padB) : (h - padB) - (p[key] - minY) / spanY * (h - padT - padB);
+      dot.setAttribute('cx', xVb.toFixed(1)); dot.setAttribute('cy', syVal.toFixed(1)); dot.setAttribute('opacity', '1');
+    } else {
+      dot.setAttribute('opacity', '0');
+    }
+    tooltip.textContent = elevChartTooltipText(p);
+    tooltip.style.display = 'block';
+    if (onMove) onMove(p);
+  }
+  wrapper.addEventListener('mousemove', e => updateAt(e.clientX));
+  wrapper.addEventListener('touchmove', e => { if (e.touches[0]) updateAt(e.touches[0].clientX); }, { passive: true });
+  wrapper.addEventListener('mouseleave', () => {
+    cursor.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); tooltip.style.display = 'none';
+  });
 }
 
 let _chartGradientId = 0;

@@ -50,7 +50,14 @@
   <div class="kpi-strip" id="kpiRow"></div>
 
   <div class="activity-detail-grid">
-    <div class="altitude-profile-box" id="mapCard" style="padding:0;overflow:hidden;height:420px;"></div>
+    <div class="map-profile-col">
+      <div class="altitude-profile-box" id="mapCard" style="padding:0;overflow:hidden;height:340px;"></div>
+      <section class="card" id="profileSection">
+        <h2>Profil altimétrique</h2>
+        <div class="profile-header-stats" id="profileHeaderStats"></div>
+        <div id="altitudeProfileHost"></div>
+      </section>
+    </div>
     <div class="analysis-col">
       <div class="card-compact mini-card" id="resumeMiniCard">
         <h2>Résumé</h2>
@@ -68,12 +75,6 @@
     <h2>Montées principales</h2>
     <div id="climbsMiniList"></div>
     <a class="link-arrow" href="#" id="seeAllClimbsLink">Voir les 6 montées →</a>
-  </section>
-
-  <section class="card" id="profileSection">
-    <h2>Profil altimétrique</h2>
-    <div class="profile-header-stats" id="profileHeaderStats"></div>
-    <div id="altitudeProfileHost"></div>
   </section>
 
   <section class="card">
@@ -172,10 +173,11 @@ function initActivityPage(s) {
      ['Alt min', altMinMax.min != null ? Math.round(altMinMax.min) + ' m' : 'Non disponible'],
      ['Alt max', altMinMax.max != null ? Math.round(altMinMax.max) + ' m' : 'Non disponible']]
       .map(([l,v]) => '<span><strong>' + v + '</strong> ' + l + '</span>').join('') : '';
-  const altHtml = altitudeProfileHtml(withDist);
-  document.getElementById('altitudeProfileHost').innerHTML = altHtml ||
-    '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
-  if (altHtml) initAltitudeProfile(document.getElementById('altProfileWrap'), withDist);
+  const chartPoints = withDist.map(p => Object.assign({ x: p.distKm }, p));
+  const altHtml = elevChartSvg(chartPoints, { key: 'alt', yFormat: v => Math.round(v) + ' m' });
+  const altHost = document.getElementById('altitudeProfileHost');
+  altHost.innerHTML = altHtml || '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
+  if (altHtml) initElevChart(altHost.firstElementChild, chartPoints, p => moveMapCursor(p.lat, p.lon));
 
   const zones = karvonenZones(parseFloat(getProfile().fcMax), parseFloat(getProfile().fcRepos));
   const zoneDist = computeSessionZoneDistribution(s, zones);
@@ -364,82 +366,6 @@ function moveMapCursor(lat, lon) {
   }
 }
 
-/* --------------------------- PROFIL ALTIMÉTRIQUE (signature ELEV, synchronisé à la carte) ---------------------------
-   Grand graphique altitude/distance : au survol, un curseur commun affiche distance/altitude/allure/FC
-   (selon disponibilité) et déplace le repère sur la carte GPS (voir moveMapCursor ci-dessus). */
-function altitudeProfileHtml(withDist) {
-  const w = 1000, h = 220, padL = 46, padR = 14, padT = 14, padB = 26;
-  const pts = withDist.filter(p => p.alt != null).map(p => ({ x: p.distKm, y: p.alt }));
-  if (pts.length < 2) return '';
-  const minX = Math.min(...withDist.map(p => p.distKm)), maxX = Math.max(...withDist.map(p => p.distKm));
-  const spanX = (maxX - minX) || 1;
-  const minY = Math.min(...pts.map(p => p.y)), maxY = Math.max(...pts.map(p => p.y));
-  const spanY = (maxY - minY) || 1;
-  const sx = x => padL + (x - minX) / spanX * (w - padL - padR);
-  const sy = y => (h - padB) - (y - minY) / spanY * (h - padT - padB);
-  const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
-  const areaPath = path + ' L' + sx(pts[pts.length - 1].x).toFixed(1) + ',' + (h - padB) + ' L' + sx(pts[0].x).toFixed(1) + ',' + (h - padB) + ' Z';
-  return '<div class="sync-charts-wrap" id="altProfileWrap" ' +
-    'data-min-x="' + minX + '" data-max-x="' + maxX + '" data-padl="' + padL + '" data-padr="' + padR + '" data-w="' + w + '" ' +
-    'data-min-y="' + minY + '" data-max-y="' + maxY + '" data-h="' + h + '" data-padt="' + padT + '" data-padb="' + padB + '">' +
-    '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
-      '<defs><linearGradient id="altProfileFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/></linearGradient></defs>' +
-      '<path d="' + areaPath + '" fill="url(#altProfileFill)" stroke="none"/>' +
-      '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
-      '<text x="4" y="' + (padT + 10) + '" font-size="13" fill="var(--muted)">' + Math.round(maxY) + ' m</text>' +
-      '<text x="4" y="' + (h - padB + 2) + '" font-size="13" fill="var(--muted)">' + Math.round(minY) + ' m</text>' +
-      '<text x="' + padL + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + minX.toFixed(1) + ' km</text>' +
-      '<text x="' + (w - padR - 50) + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + maxX.toFixed(1) + ' km</text>' +
-      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' +
-      '<line class="sync-cursor" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (h - padB) + '" stroke="var(--text)" stroke-dasharray="3,3" opacity="0"/>' +
-      '<circle class="sync-dot" r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>' +
-    '</svg>' +
-    '<div class="sync-tooltip" id="altProfileTooltip" style="display:none;"></div>' +
-  '</div>';
-}
-function initAltitudeProfile(wrapper, withDist) {
-  if (!wrapper) return;
-  const minX = parseFloat(wrapper.dataset.minX), maxX = parseFloat(wrapper.dataset.maxX);
-  const padL = parseFloat(wrapper.dataset.padl), padR = parseFloat(wrapper.dataset.padr), w = parseFloat(wrapper.dataset.w);
-  const minY = parseFloat(wrapper.dataset.minY), maxY = parseFloat(wrapper.dataset.maxY);
-  const h = parseFloat(wrapper.dataset.h), padT = parseFloat(wrapper.dataset.padt), padB = parseFloat(wrapper.dataset.padb);
-  const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
-  const svg = wrapper.querySelector('svg');
-  const cursor = svg.querySelector('.sync-cursor'), dot = svg.querySelector('.sync-dot');
-  const tooltip = wrapper.querySelector('#altProfileTooltip');
-
-  function nearestIndex(distKm) {
-    let best = 0, bestDiff = Infinity;
-    withDist.forEach((p, i) => { const diff = Math.abs(p.distKm - distKm); if (diff < bestDiff) { bestDiff = diff; best = i; } });
-    return best;
-  }
-  function updateAt(clientX) {
-    const rect = wrapper.getBoundingClientRect();
-    const scale = w / rect.width;
-    let xVb = (clientX - rect.left) * scale;
-    xVb = Math.max(padL, Math.min(w - padR, xVb));
-    const distKm = minX + (xVb - padL) / (w - padL - padR) * spanX;
-    const p = withDist[nearestIndex(distKm)];
-    cursor.setAttribute('x1', xVb.toFixed(1)); cursor.setAttribute('x2', xVb.toFixed(1)); cursor.setAttribute('opacity', '1');
-    if (p.alt != null) {
-      const sy = (h - padB) - (p.alt - minY) / spanY * (h - padT - padB);
-      dot.setAttribute('cx', xVb.toFixed(1)); dot.setAttribute('cy', sy.toFixed(1)); dot.setAttribute('opacity', '1');
-    }
-    const parts = [p.distKm != null ? p.distKm.toFixed(2) + ' km' : ''];
-    if (p.alt != null) parts.push(Math.round(p.alt) + ' m');
-    if (p.paceSecKm != null) parts.push(fmtPace(p.paceSecKm));
-    if (p.hr != null) parts.push(p.hr + ' bpm');
-    tooltip.textContent = parts.filter(Boolean).join(' · ');
-    tooltip.style.display = 'block';
-    moveMapCursor(p.lat, p.lon);
-  }
-  wrapper.addEventListener('mousemove', e => updateAt(e.clientX));
-  wrapper.addEventListener('touchmove', e => { if (e.touches[0]) updateAt(e.touches[0].clientX); }, { passive: true });
-  wrapper.addEventListener('mouseleave', () => {
-    cursor.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); tooltip.style.display = 'none';
-  });
-}
-
 /* --------------------------- ONGLET RÉSUMÉ --------------------------- */
 function renderResumeTab(s) {
   const altVals = (s.series || []).map(p => p.alt).filter(v => v != null);
@@ -475,12 +401,16 @@ function renderResumeTab(s) {
 
   const runWalk = computeRunWalkBreakdown(s);
   if (runWalk) {
+    const segs = [
+      ['run', 'Course', runWalk.run],
+      ['walk', 'Marche', runWalk.walk],
+      ['stop', 'Arrêt', runWalk.stop],
+    ].filter(([, , v]) => v.pct > 0);
     html += '<h4 class="resume-group-title">Répartition locomotion <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0;">(estimation ELEV à partir de la cadence)</span></h4>' +
-      '<div class="metrics-grid">' +
-        '<div class="metric"><div class="lbl">Course</div><div class="val">' + fmtDuration(runWalk.run.sec) + ' · ' + runWalk.run.pct + '%</div></div>' +
-        '<div class="metric"><div class="lbl">Marche</div><div class="val">' + fmtDuration(runWalk.walk.sec) + ' · ' + runWalk.walk.pct + '%</div></div>' +
-        '<div class="metric"><div class="lbl">Arrêt</div><div class="val">' + fmtDuration(runWalk.stop.sec) + ' · ' + runWalk.stop.pct + '%</div></div>' +
-      '</div>';
+      '<div class="locomotion-bar">' + segs.map(([key, , v]) => '<span class="loco-seg loco-' + key + '" style="width:' + v.pct + '%"></span>').join('') + '</div>' +
+      '<div class="locomotion-legend">' + segs.map(([key, label, v]) =>
+        '<div class="loco-item"><span class="loco-dot loco-' + key + '"></span><strong>' + label + '</strong><span>' + v.pct + '%</span><span class="hint">' + fmtDuration(v.sec) + '</span></div>'
+      ).join('') + '</div>';
   }
 
   document.getElementById('resumeTabMetrics').innerHTML = html;
@@ -500,37 +430,37 @@ function renderComparison(s, allSessions) {
     rows.map(([lbl, val]) => '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>').join('') + '</div>';
 }
 
-// Silhouette d'altitude réutilisée en arrière-plan des onglets Allure et FC — permet de voir
-// directement "l'allure chute parce que la pente monte" sans changer d'onglet.
-function altitudeBackgroundSeries(s) {
-  return (s.series || []).filter(p => p.distKm != null && p.alt != null).map(p => ({ x: p.distKm, y: p.alt }));
+// Points communs aux 3 graphiques signature (Altitude/Allure/FC) : x = distance, tous les autres
+// champs de la séance restent accessibles pour le tooltip unifié (voir elevChartTooltipText).
+function chartPointsFor(s) {
+  return (s.series || []).filter(p => p.distKm != null).map(p => Object.assign({ x: p.distKm }, p));
 }
 
 /* --------------------------- ONGLET ALLURE --------------------------- */
 function renderAllureTab(s) {
   const box = document.getElementById('allureTabBox');
-  const withDist = (s.series || []).filter(p => p.distKm != null && p.paceSecKm != null);
-  if (withDist.length < 2) { box.innerHTML = '<div class="empty">Pas de donnée d\'allure disponible pour cette activité.</div>'; return; }
-  const points = withDist.map(p => ({ x: p.distKm, y: p.paceSecKm, label: p.distKm.toFixed(2) + ' km : ' + fmtPace(p.paceSecKm), xLabel: p.distKm.toFixed(1) + ' km' }));
-  box.innerHTML = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre) pour repérer l\'effet de la pente sur l\'allure. Plus la courbe descend, plus l\'allure est rapide.</p>' +
-    '<div class="chart-declutter">' + lineChartSvg('Allure au fil de la sortie (min/km)', points, { decimals: 0, background: altitudeBackgroundSeries(s) }) + '</div>';
-  initChartTooltips(box);
+  const points = chartPointsFor(s);
+  if (!points.filter(p => p.paceSecKm != null).length) { box.innerHTML = '<div class="empty">Pas de donnée d\'allure disponible pour cette activité.</div>'; return; }
+  const chart = elevChartSvg(points, { key: 'paceSecKm', backgroundKey: 'alt', invertY: true, yFormat: fmtPace, axisHint: 'plus rapide ↑' });
+  box.innerHTML = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre). L\'axe est inversé : une courbe qui monte = une allure plus rapide.</p>' + chart;
+  const wrap = box.querySelector('.elev-chart-wrap');
+  if (wrap) initElevChart(wrap, points, p => moveMapCursor(p.lat, p.lon));
 }
 
 /* --------------------------- ONGLET FRÉQUENCE CARDIAQUE --------------------------- */
 function renderFcTab(s) {
   const box = document.getElementById('fcTabBox');
-  const withDist = (s.series || []).filter(p => p.distKm != null && p.hr != null);
-  if (withDist.length < 2) { box.innerHTML = '<div class="empty">Cette activité ne contient pas de données de fréquence cardiaque.</div>'; return; }
-  const points = withDist.map(p => ({ x: p.distKm, y: p.hr, label: p.distKm.toFixed(2) + ' km : ' + p.hr + ' bpm', xLabel: p.distKm.toFixed(1) + ' km' }));
-  let html = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre).</p>' +
-    '<div class="chart-declutter">' + lineChartSvg('Fréquence cardiaque (bpm)', points, { background: altitudeBackgroundSeries(s) }) + '</div>';
+  const points = chartPointsFor(s);
+  if (!points.filter(p => p.hr != null).length) { box.innerHTML = '<div class="empty">Cette activité ne contient pas de données de fréquence cardiaque.</div>'; return; }
+  const chart = elevChartSvg(points, { key: 'hr', backgroundKey: 'alt', yFormat: v => Math.round(v) + ' bpm' });
+  let html = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre).</p>' + chart;
   html += '<div class="metrics-grid" style="margin-top:12px;">' +
     '<div class="metric"><div class="lbl">FC moyenne</div><div class="val">' + (s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible') + '</div></div>' +
     '<div class="metric"><div class="lbl">FC max</div><div class="val">' + (s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible') + '</div></div>' +
   '</div>';
   box.innerHTML = html;
-  initChartTooltips(box);
+  const wrap = box.querySelector('.elev-chart-wrap');
+  if (wrap) initElevChart(wrap, points, p => moveMapCursor(p.lat, p.lon));
 }
 
 /* --------------------------- ONGLET ZONES --------------------------- */
@@ -550,11 +480,45 @@ function renderZonesTab(s) {
 }
 
 /* --------------------------- ONGLET MONTÉES --------------------------- */
+// Profil simplifié avec les montées surlignées — repère visuel rapide au-dessus de la table,
+// pour situer chaque montée dans la sortie sans avoir à comparer des distances dans sa tête.
+function climbsProfileSvg(series, climbs) {
+  const pts = (series || []).filter(p => p.distKm != null && p.alt != null);
+  if (pts.length < 2) return '';
+  const w = 1000, h = 90, pad = 6;
+  const minX = pts[0].distKm, maxX = pts[pts.length - 1].distKm, spanX = (maxX - minX) || 1;
+  const alts = pts.map(p => p.alt);
+  const minY = Math.min(...alts), maxY = Math.max(...alts), spanY = (maxY - minY) || 1;
+  const sx = x => pad + (x - minX) / spanX * (w - 2 * pad);
+  const sy = y => (h - pad) - (y - minY) / spanY * (h - 2 * pad);
+  const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + sx(p.distKm).toFixed(1) + ',' + sy(p.alt).toFixed(1)).join(' ');
+  const area = path + ' L' + sx(pts[pts.length - 1].distKm).toFixed(1) + ',' + (h - pad) + ' L' + sx(pts[0].distKm).toFixed(1) + ',' + (h - pad) + ' Z';
+  const bands = climbs.map((c, i) => {
+    const x1 = sx(c.startDistKm), x2 = sx(c.endDistKm);
+    return '<rect x="' + x1.toFixed(1) + '" y="0" width="' + Math.max(2, x2 - x1).toFixed(1) + '" height="' + h + '" fill="var(--accent)" opacity="0.22"/>' +
+      '<text x="' + ((x1 + x2) / 2).toFixed(1) + '" y="12" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent-light)">M' + (i + 1) + '</text>';
+  }).join('');
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="climbs-profile-svg">' +
+    '<path d="' + area + '" fill="var(--chart-fill-top)" stroke="none"/>' +
+    '<path d="' + path + '" fill="none" stroke="var(--muted-2)" stroke-width="1.5"/>' +
+    bands +
+  '</svg>';
+}
+
 function renderMonteesTab(s, climbs) {
   const box = document.getElementById('monteesTabBox');
   let html = '<p class="hint">Détection automatique et déterministe : segments d\'au moins 40 m de D+ avec une pente moyenne d\'au moins 3 %. Les 6 montées les plus significatives sont affichées, dans l\'ordre de la sortie.</p>';
   if (!climbs.length) { html += '<div class="empty">Pas de montée significative détectée sur cette activité.</div>'; box.innerHTML = html; return; }
-  html += '<div class="item-grid">' + climbs.map((c, i) =>
+
+  const profileSvg = climbsProfileSvg(s.series, climbs);
+  if (profileSvg) html += '<div class="climbs-profile-box">' + profileSvg + '</div>';
+
+  html += '<div class="climbs-full-table">' +
+    '<div class="climbs-mini-table"><div class="climbs-mini-head"><span>#</span><span>Distance</span><span>D+</span><span>Pente</span><span>Durée</span><span>VAM</span><span>FC</span></div>' +
+    climbs.map((c, i) => '<div class="climbs-mini-row"><span>' + (i+1) + '</span><span>' + c.distanceKm.toFixed(2) + ' km</span><span>' + c.gainM + ' m</span><span>' + c.gradePct + ' %</span><span>' + fmtDuration(c.durationS) + '</span><span>' + (c.vamMh != null ? c.vamMh + ' m/h' : '—') + '</span><span>' + (c.avgHr != null ? c.avgHr + ' bpm' : '—') + '</span></div>').join('') +
+    '</div></div>';
+
+  html += '<div class="climbs-mobile-cards item-grid">' + climbs.map((c, i) =>
     '<div class="item-card"><h3>Montée ' + (i + 1) + '</h3><div class="metrics-grid">' +
     '<div class="metric"><div class="lbl">Distance</div><div class="val">' + c.distanceKm.toFixed(2) + ' km</div></div>' +
     '<div class="metric"><div class="lbl">D+</div><div class="val">' + c.gainM + ' m</div></div>' +
@@ -564,6 +528,7 @@ function renderMonteesTab(s, climbs) {
     '<div class="metric"><div class="lbl">FC moyenne</div><div class="val' + (c.avgHr == null ? ' na' : '') + '">' + (c.avgHr != null ? c.avgHr + ' bpm' : 'Non disponible') + '</div></div>' +
     '</div></div>'
   ).join('') + '</div>';
+
   box.innerHTML = html;
 }
 

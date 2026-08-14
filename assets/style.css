@@ -216,15 +216,14 @@ tr.session-row:hover{background:var(--bg);}
 .chart-box svg rect[data-tooltip]:hover{opacity:.75;}
 .chart-tooltip{position:fixed;display:none;pointer-events:none;background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:.72rem;padding:5px 9px;border-radius:6px;z-index:200;white-space:nowrap;box-shadow:var(--shadow);}
 
-/* Courbes à forte densité de points (Allure/FC de séance, ~300 points) : les repères ne
-   s'affichent qu'au survol de leur zone de détection, pas en permanence — sinon la courbe
-   disparaît sous des dizaines de points fixes. Sans effet sur les autres graphiques (tendances
-   hebdomadaires à peu de points), qui gardent leurs repères visibles en permanence. */
-.chart-declutter circle.chart-dot{opacity:0;transition:opacity 120ms;}
-.chart-declutter circle[data-tooltip]:hover + circle.chart-dot{opacity:1;}
 .sync-charts-wrap{position:relative;cursor:crosshair;}
 .sync-charts-wrap .chart-box svg{pointer-events:none;}
 .sync-tooltip{position:absolute;top:6px;right:14px;background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius-pill);padding:4px 10px;font-family:var(--font-mono);font-size:.72rem;color:var(--text);pointer-events:none;z-index:2;box-shadow:var(--shadow);}
+
+/* Graphique signature ELEV (Altitude/Allure/FC) — même famille visuelle, voir elevChartSvg dans app.js */
+.elev-chart-wrap{position:relative;cursor:crosshair;}
+.elev-chart-wrap svg{width:100%;height:auto;display:block;}
+.elev-chart-hint{position:absolute;top:6px;left:50px;font-size:.68rem;color:var(--muted);letter-spacing:.02em;}
 .empty{color:var(--muted);font-size:.85rem;padding:14px;text-align:center;}
 
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0;}
@@ -505,11 +504,15 @@ main.activities-main{max-width:1600px;}
 .kpi-strip .kpi-item .v{font-family:var(--font-display);font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;}
 .kpi-strip .kpi-item .l{font-size:.68rem;color:var(--muted);margin-top:1px;}
 
-/* Colonne GPS (large) + colonne d'analyse (résumé compact, zones, montées, insight) */
+/* Colonne carte+profil (large, terrain) + colonne d'analyse (résumé, zones, insight) — carte et
+   profil forment une seule zone visuelle (même largeur, faible écart) pour qu'aucun grand vide ne
+   subsiste sous la carte : le profil vient directement combler l'espace en dessous. */
 .activity-detail-grid{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
 @media (min-width:1024px){
   .activity-detail-grid{grid-template-columns:1.7fr 1fr;}
 }
+.map-profile-col{display:flex;flex-direction:column;gap:12px;min-width:0;}
+.map-profile-col #profileSection{margin:0;}
 .analysis-col{display:flex;flex-direction:column;gap:14px;min-width:0;}
 .mini-card h2{margin-bottom:10px;}
 .mini-list-group{margin-bottom:14px;}
@@ -545,6 +548,27 @@ main.activities-main{max-width:1600px;}
 .climbs-mini-row{border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text);}
 .climbs-mini-row:last-child{border-bottom:none;}
 .climbs-mini-row:hover{background:var(--panel-raised);}
+
+/* Répartition course/marche/arrêt en barre empilée (onglet Résumé) */
+.locomotion-bar{display:flex;height:14px;border-radius:var(--radius-pill);overflow:hidden;background:var(--panel-raised);margin:4px 0 10px;}
+.loco-seg{display:block;height:100%;}
+.loco-run{background:var(--accent);} .loco-walk{background:var(--accent-light);} .loco-stop{background:var(--muted-2);}
+.locomotion-legend{display:flex;gap:18px;flex-wrap:wrap;font-size:.82rem;}
+.loco-item{display:flex;align-items:baseline;gap:5px;}
+.loco-item strong{color:var(--text);}
+.loco-item .hint{margin:0;font-size:.74rem;}
+.loco-dot{display:inline-block;width:8px;height:8px;border-radius:2px;}
+
+/* Profil simplifié avec montées surlignées (onglet Montées) */
+.climbs-profile-box{margin-bottom:14px;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;}
+.climbs-profile-svg{width:100%;height:70px;display:block;}
+
+/* Onglet Montées : table desktop, cartes empilées mobile (même bascule que le reste du site) */
+.climbs-mobile-cards{display:none;}
+@media (max-width:640px){
+  .climbs-full-table{display:none;}
+  .climbs-mobile-cards{display:grid;}
+}
 #climbsMiniCard .link-arrow{display:inline-block;margin-top:10px;font-size:.78rem;}
 
 /* Stats d'en-tête du profil altimétrique (D+/D-/alt min/alt max) */
