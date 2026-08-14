@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -25,31 +26,122 @@
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
-  <h1>Mes objectifs de la saison</h1>
-  <button id="themeToggle" type="button">☀ Clair</button>
+  <div>
+    <h1>Mes objectifs</h1>
+    <p class="hint" style="margin-top:2px;">Vos ambitions trail, vos repères, votre progression.</p>
+  </div>
+  <div class="app-topbar-actions">
+    <button class="btn primary" id="addRaceBtn" type="button">+ Nouvel objectif</button>
+    <button id="themeToggle" type="button">☀ Clair</button>
+  </div>
 </header>
 
 <main>
 
-  <section class="card">
-    <h2>Échéances</h2>
-    <div class="races" id="racesBox"></div>
-    <div class="row" style="margin-top:12px;">
-      <button class="btn" id="addRaceBtn" type="button">+ Ajouter une course</button>
-    </div>
-  </section>
+  <div id="goalSelectorRow"></div>
 
-  <section class="card">
-    <h2>Saison en un coup d'œil</h2>
-    <div id="timelineBox"></div>
-  </section>
+  <section class="card" id="goalHeroCard"></section>
+
+  <div id="goalSecondaryBox"></div>
+
+  <div class="tabs" id="goalTabs">
+    <button type="button" data-tab="apercu" class="active">Aperçu</button>
+    <button type="button" data-tab="charge">Charge &amp; Volume</button>
+    <button type="button" data-tab="longues">Sorties longues</button>
+    <button type="button" data-tab="intensite">Intensité</button>
+    <button type="button" data-tab="vam">VAM</button>
+    <button type="button" data-tab="historique">Historique</button>
+    <button type="button" data-tab="details">Détails</button>
+  </div>
+
+  <div class="tab-panel active" data-panel="apercu">
+    <div class="analysis-charts-row">
+      <section class="card"><h2>Évolution du volume</h2><div id="goalVolumeChartBox"></div></section>
+      <section class="card"><h2>Évolution du D+</h2><div id="goalDplusChartBox"></div></section>
+      <section class="card card-compact"><h2>Répartition des zones FC</h2><div id="goalZonesBox"></div></section>
+    </div>
+    <div class="analysis-charts-row" style="margin-top:14px;">
+      <section class="card"><h2>Sortie longue la plus longue</h2><div id="goalLongestBox"></div></section>
+      <section class="card"><h2>Charge d'entraînement</h2><div id="goalChargeBox"></div></section>
+      <section class="card"><h2>État de préparation</h2><div id="goalStateBox"></div></section>
+    </div>
+    <section class="card" style="margin-top:14px;">
+      <h2>Prochaines étapes recommandées</h2>
+      <div id="goalRecommendationsBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="charge">
+    <section class="card">
+      <h2>Volume &amp; charge de la préparation <small>(12 dernières semaines)</small></h2>
+      <div class="metrics-grid" id="goalChargeKpiBox"></div>
+    </section>
+    <div class="analysis-charts-row" style="margin-top:14px;">
+      <section class="card"><h2>Volume — réalisé vs planifié</h2><div id="goalVolumeChart2Box"></div></section>
+      <section class="card"><h2>D+ — réalisé vs planifié</h2><div id="goalDplusChart2Box"></div></section>
+      <section class="card"><h2>Charge (aiguë vs chronique)</h2><div id="goalChargeChart2Box"></div></section>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="longues">
+    <section class="card">
+      <h2>Sorties longues de la préparation <small>(12 dernières semaines)</small></h2>
+      <p class="hint" id="goalLongTargetHint"></p>
+      <div class="activities-table-head">
+        <span>Date</span><span>Activité</span><span>Distance</span><span>D+</span>
+        <span>Durée</span><span>Allure</span><span>FC moy.</span><span>Mini profil</span><span></span>
+      </div>
+      <div class="activity-row-list" id="goalLongRunsBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="intensite">
+    <section class="card">
+      <h2>Répartition des zones FC <small>(12 dernières semaines)</small></h2>
+      <div id="goalIntensityBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="vam">
+    <section class="card">
+      <h2>VAM moyenne par semaine <small>(12 dernières semaines)</small></h2>
+      <div id="goalVamChartBox"></div>
+      <p class="provenance-tag">Calcul ELEV — moyenne pondérée des montées détectées, jamais sur la sortie entière.</p>
+    </section>
+    <section class="card" style="margin-top:14px;">
+      <h2>Repères VAM de la période</h2>
+      <div class="metrics-grid" id="goalVamMetricsBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="historique">
+    <section class="card">
+      <h2>Historique de l'objectif</h2>
+      <div id="goalHistoryBox"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-panel="details">
+    <section class="card">
+      <h2>Détails de l'objectif</h2>
+      <div id="goalDetailsBox"></div>
+      <div class="row" style="margin-top:16px;">
+        <button class="btn" id="goalEditBtn" type="button">Modifier</button>
+        <button class="btn" id="goalArchiveBtn" type="button"></button>
+        <a class="btn" href="plan.html">Voir le plan →</a>
+        <a class="btn" href="historique.html">Voir les activités →</a>
+      </div>
+    </section>
+  </div>
 
 </main>
 
@@ -84,6 +176,9 @@
       <label class="field">Dénivelé positif (m)
         <input type="number" id="raceDenivele" min="0" step="10">
       </label>
+      <label class="field">Type de course (optionnel)
+        <input type="text" id="raceType" placeholder="ex. Ultra Trail, Trail court, Kilomètre vertical...">
+      </label>
       <label class="field">Statut
         <select id="raceStatut">
           <option value="principal">Objectif principal</option>
@@ -100,6 +195,9 @@
       </label>
       <label class="field">Conditions de chaleur attendues (optionnel)
         <textarea id="raceChaleur" rows="2" placeholder="ex. course historiquement très chaude en journée, peu d'ombre"></textarea>
+      </label>
+      <label class="field">Notes (optionnel)
+        <textarea id="raceNotes" rows="2" placeholder="Notes libres sur cet objectif"></textarea>
       </label>
     </div>
     <div class="row" style="margin-top:14px;justify-content:space-between;">
@@ -126,95 +224,443 @@
 </div>
 
 <script>
-// statutLabel() est maintenant dans assets/app.js (partagée avec l'Accueil).
+/* --------------------------- SÉLECTION DE L'OBJECTIF --------------------------- */
+// statutLabel() est dans assets/app.js (partagée avec l'Accueil).
+let selectedRaceId = null;
+let showArchived = false;
 
-function renderRaces() {
+function selectableRaces() { return getRaces().filter(r => showArchived || !r.archived); }
+// Objectif par défaut : le principal le plus proche à venir, sinon la prochaine course à venir,
+// sinon la plus récente (course déjà passée) — jamais un choix arbitraire dans une liste vide.
+function defaultRaceId() {
   const today = new Date().toISOString().slice(0,10);
-  const races = getRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
-  const box = document.getElementById('racesBox');
-  if (!races.length) {
-    box.innerHTML = '<div class="empty">Aucune course enregistrée pour l\'instant.<br><button class="btn small" id="emptyAddRaceBtn" type="button" style="margin-top:8px;">+ Ajouter ta première course</button></div>';
+  const races = getRaces().filter(r => !r.archived);
+  if (!races.length) return null;
+  const upcoming = races.filter(r => r.date >= today).sort((a,b) => a.date.localeCompare(b.date));
+  const principal = upcoming.find(r => r.statut === 'principal');
+  if (principal) return principal.id;
+  if (upcoming.length) return upcoming[0].id;
+  return races.slice().sort((a,b) => b.date.localeCompare(a.date))[0].id;
+}
+function currentRace() {
+  const races = getRaces();
+  return races.find(r => r.id === selectedRaceId) || null;
+}
+function selectRace(id) { selectedRaceId = id; renderGoalPage(); }
+
+function renderGoalSelector() {
+  const box = document.getElementById('goalSelectorRow');
+  const races = getRaces();
+  if (!races.length) { box.innerHTML = ''; return; }
+  const race = currentRace();
+  if (!race) { box.innerHTML = ''; return; }
+  const list = selectableRaces().slice().sort((a,b) => a.date.localeCompare(b.date));
+  const archivedCount = races.filter(r => r.archived).length;
+  box.innerHTML = '<div class="goal-selector">' +
+    '<button class="goal-selector-btn" id="goalSelectorBtn" type="button"><span class="star">★</span>' + escapeHtml(statutLabel(race.statut)) + ' <span style="opacity:.6;">▾</span></button>' +
+    '<div class="goal-selector-menu" id="goalSelectorMenu">' +
+      list.map(r => '<button class="goal-selector-item' + (r.id === race.id ? ' active' : '') + '" data-select="' + r.id + '">' +
+        escapeHtml(r.name) + (r.archived ? ' (archivé)' : '') + '<span class="gsi-meta">' + fmtDate(r.date) + ' — ' + statutLabel(r.statut) + '</span></button>').join('') +
+      (archivedCount && !showArchived ? '<button class="goal-selector-item" id="goalShowArchivedBtn" style="color:var(--muted);">Voir aussi les objectifs archivés (' + archivedCount + ')</button>' : '') +
+    '</div>' +
+  '</div>';
+  document.getElementById('goalSelectorBtn').addEventListener('click', () => document.getElementById('goalSelectorMenu').classList.toggle('open'));
+  box.querySelectorAll('[data-select]').forEach(btn => btn.addEventListener('click', () => selectRace(btn.dataset.select)));
+  const showArchivedBtn = document.getElementById('goalShowArchivedBtn');
+  if (showArchivedBtn) showArchivedBtn.addEventListener('click', () => { showArchived = true; renderGoalSelector(); });
+  document.addEventListener('click', e => { if (!box.contains(e.target)) document.getElementById('goalSelectorMenu').classList.remove('open'); }, { once: true });
+}
+
+/* --------------------------- FENÊTRE D'ANALYSE (12 dernières semaines, cohérente avec l'indice) --------------------------- */
+function goalWindow() {
+  const today = new Date().toISOString().slice(0,10);
+  const windowStart = new Date(new Date(today).getTime() - READINESS_WEEKS * 7 * 86400000).toISOString().slice(0,10);
+  return { fromISO: windowStart, toISO: today, sessions: loadAllSessions().filter(s => s.date >= windowStart && s.date <= today) };
+}
+function goalCountdown(dateISO) {
+  const todayISO = new Date().toISOString().slice(0,10);
+  if (dateISO < todayISO) return { main: 'Course terminée', sub: fmtDate(dateISO) };
+  const days = Math.ceil((new Date(dateISO) - new Date(todayISO)) / 86400000);
+  if (days === 0) return { main: "Aujourd'hui", sub: fmtDate(dateISO) };
+  const weeks = Math.round(days / 7);
+  const mainTxt = weeks >= 2 ? (weeks + ' semaines restantes') : ('J-' + days);
+  return { main: mainTxt, sub: weeks >= 2 ? ('J-' + days) : fmtDate(dateISO) };
+}
+function weeklyMaxDistance(sessions, nWeeks) {
+  return getRecentWeeklyVolumes(nWeeks).map(w => {
+    const weEnd = new Date(w.startISO); weEnd.setDate(weEnd.getDate() + 6);
+    const inWeek = sessions.filter(s => s.date >= w.startISO && s.date <= weEnd.toISOString().slice(0,10));
+    return inWeek.length ? Math.max(...inWeek.map(s => s.distanceKm || 0)) : 0;
+  });
+}
+
+/* --------------------------- HERO --------------------------- */
+function renderGoalHero() {
+  const card = document.getElementById('goalHeroCard');
+  const race = currentRace();
+  if (!race) {
+    card.innerHTML = '<div class="empty-state"><div class="empty-title">Aucun objectif défini</div><p>Ajoute une course pour commencer ton suivi de préparation.</p>' +
+      '<button class="btn small accent" id="emptyAddRaceBtn" type="button">+ Ajouter ta première course</button></div>';
     document.getElementById('emptyAddRaceBtn').addEventListener('click', () => openRaceModal(null));
     return;
   }
-  box.innerHTML = races.map(r => {
-    const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
-    let prepHtml = '';
-    if (days >= 0) {
-      const readiness = computeRaceReadiness(r);
-      if (readiness.overall != null) {
-        const levelBadge = readiness.overall < 60 ? '<span class="badge warn-badge">À renforcer</span>' : '<span class="badge ok-badge">Sur la bonne voie</span>';
-        prepHtml = '<div class="prep readiness">' +
-          '<div>Indice de préparation : <strong>' + readiness.overall + '%</strong> ' + levelBadge + '</div>' +
-          '<div class="bar-track"><div class="bar-fill" style="width:' + Math.min(100,readiness.overall) + '%"></div></div>' +
-          '<div class="readiness-subs">' +
-          readiness.subs.map(s => '<div class="readiness-sub" data-tooltip="' + escapeHtml(s.detail) + '"><span>' + s.label + '</span>' +
-            '<div class="bar-track"><div class="bar-fill" style="width:' + (s.score!=null ? Math.min(100,s.score) : 0) + '%"></div></div>' +
-            '<small>' + (s.score!=null ? s.score+'%' : 'n/d') + '</small></div>').join('') +
-          '</div>' +
-          (readiness.weakest ? '<div class="readiness-weak">Point faible actuel : ' + readiness.weakest.label + ' (' + readiness.weakest.score + '%)</div>' : '') +
-        '</div>';
-      } else {
-        prepHtml = '<div class="prep" style="opacity:.75;">Pas encore assez de séances récentes (12 dernières semaines) pour calculer un indice de préparation.</div>';
-      }
-    }
-    const ratio = ratioDplusKm(r.denivele, r.distanceKm);
-    return '<div class="race-chip ' + r.statut + '" data-id="' + r.id + '">' +
-      '<button class="edit-btn" data-edit="' + r.id + '" title="Modifier">✎</button>' +
-      '<span class="tag">' + statutLabel(r.statut) + '</span>' +
-      '<h3>' + escapeHtml(r.name) + '</h3>' +
-      '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small>' +
-      (ratio ? ' <span class="badge brand-badge" title="Ratio dénivelé / distance — plus le chiffre est élevé, plus le terrain est raide">' + ratio + ' m/km</span>' : '') +
-      '<br>' +
-      '<strong>' + (days >= 0 ? ('J-' + days + ' jours') : 'passée') + '</strong>' +
-      (r.tempsVise ? ' <small>— visé ' + escapeHtml(r.tempsVise) + '</small>' : '') +
-      prepHtml +
+  const readiness = computeRaceReadiness(race);
+  const countdown = goalCountdown(race.date);
+  const ratio = ratioDplusKm(race.denivele, race.distanceKm);
+
+  const pills = [
+    ['Distance', fmtNum(race.distanceKm, ' km', 0)],
+    ['Dénivelé +', fmtNum(race.denivele, ' m+', 0)],
+    race.type ? ['Type', race.type] : null,
+    ['Date cible', fmtDate(race.date)],
+  ].filter(Boolean).map(([l,v]) => '<div class="goal-hero-pill"><span class="l">' + escapeHtml(l) + '</span><span class="v">' + escapeHtml(v) + (l==='Distance'&&ratio ? ' <span class="badge brand-badge" title="Ratio dénivelé/distance">'+ratio+' m/km</span>' : '') + '</span></div>').join('');
+
+  // KPI spécifiques : volume/D+ hebdo moyens (12 sem.) + sortie longue, comparés aux 4 semaines
+  // précédentes (même logique que comparePeriods, réutilisée telle quelle).
+  const today = new Date().toISOString().slice(0,10);
+  const c4From = new Date(); c4From.setDate(c4From.getDate() - 28);
+  const p4From = new Date(); p4From.setDate(p4From.getDate() - 56);
+  const p4To = new Date(); p4To.setDate(p4To.getDate() - 29);
+  const sessions = loadAllSessions();
+  const last4 = filterSessionsByRange(sessions, c4From.toISOString().slice(0,10), today);
+  const prev4 = filterSessionsByRange(sessions, p4From.toISOString().slice(0,10), p4To.toISOString().slice(0,10));
+  const cmp4 = comparePeriods(aggregatePeriod(last4), aggregatePeriod(prev4));
+  const win = goalWindow();
+  const avgVolume = win.sessions.length ? (win.sessions.reduce((a,s)=>a+(s.distanceKm||0),0) / READINESS_WEEKS) : null;
+  const avgDplus = win.sessions.length ? (win.sessions.reduce((a,s)=>a+(s.ascent||0),0) / READINESS_WEEKS) : null;
+  const longestRecent = win.sessions.length ? Math.max(...win.sessions.map(s => s.distanceKm || 0)) : null;
+  const longSpark = weeklyMaxDistance(win.sessions, 8);
+  const volSpark = getRecentWeeklyVolumes(8).map(w => w.km);
+  const dplusSpark = getRecentWeeklyVolumes(8).map(w => w.dplus);
+
+  const kpiCell = (label, value, spark, deltaPct) => {
+    const arrow = deltaPct == null ? '' : '<span class="arrow">' + (deltaPct >= 0 ? '▲' : '▼') + '</span>';
+    const deltaTxt = deltaPct == null ? 'Comparaison indisponible' : (arrow + (deltaPct>=0?'+':'') + deltaPct + '% vs 4 sem. précédentes');
+    return '<div class="metric"><div class="lbl">' + escapeHtml(label) + '</div>' +
+      '<div class="val">' + (value != null ? escapeHtml(value) : 'Non disponible') + '</div>' +
+      (spark && spark.length >= 3 ? '<div class="kpi-spark" style="width:80px;height:24px;margin-top:4px;">' + sparklineSvg(spark) + '</div>' : '') +
+      '<div class="hint" style="margin-top:4px;">' + deltaTxt + '</div>' +
     '</div>';
-  }).join('');
-  box.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openRaceModal(btn.dataset.edit)));
-  initChartTooltips(box);
+  };
+
+  card.innerHTML =
+    '<div class="goal-hero-top">' +
+      '<div class="goal-hero-identity">' +
+        '<div class="goal-hero-eyebrow"><span class="badge ' + race.statut + '">' + escapeHtml(statutLabel(race.statut)) + '</span></div>' +
+        '<h2>' + escapeHtml(race.name) + '</h2>' +
+      '</div>' +
+      '<div class="goal-hero-pills">' + pills + '</div>' +
+    '</div>' +
+    '<div class="metrics-grid" style="grid-template-columns:auto repeat(3,minmax(140px,1fr));margin-top:18px;">' +
+      '<div class="goal-hero-score">' +
+        '<div class="goal-ring-big">' + (readiness.overall != null ? ringSvg(readiness.overall, 88) : '') + '</div>' +
+        '<div class="goal-score-meta">' +
+          '<div class="pct">' + (readiness.overall != null ? readiness.overall + '%' : '—') + '</div>' +
+          '<div class="lbl">' + (readinessLevelLabel(readiness.overall) || 'Pas assez de données') + '</div>' +
+          '<div class="countdown">' + escapeHtml(countdown.main) + '<small>' + escapeHtml(countdown.sub) + '</small></div>' +
+        '</div>' +
+      '</div>' +
+      kpiCell('Volume hebdo moyen', avgVolume != null ? fmtNum(avgVolume,' km',1) : null, volSpark, cmp4 ? cmp4.deltas.distanceKm : null) +
+      kpiCell('D+ hebdo moyen', avgDplus != null ? fmtNum(avgDplus,' m',0) : null, dplusSpark, cmp4 ? cmp4.deltas.ascent : null) +
+      kpiCell('Sortie longue', longestRecent != null ? fmtNum(longestRecent,' km',1) : null, longSpark, null) +
+    '</div>' +
+    '<div class="goal-subscores">' +
+      readiness.subs.map(s => '<div class="goal-subscore-row" title="' + escapeHtml(s.detail) + '">' +
+        '<span>' + escapeHtml(s.label) + '</span>' +
+        '<div class="goal-subscore-track"><div class="goal-subscore-fill" style="width:' + (s.score!=null?Math.min(100,s.score):0) + '%"></div></div>' +
+        '<span class="goal-subscore-val' + (s.score==null?' na':'') + '">' + (s.score!=null ? s.score+'%' : 'n/d') + '</span>' +
+      '</div>').join('') +
+    '</div>';
+  initChartTooltips(card);
 }
 
-function renderTimeline() {
-  const box = document.getElementById('timelineBox');
-  const races = getRaces();
-  if (!races.length) { box.innerHTML = '<div class="empty">Ajoute une course pour voir la frise de la saison.</div>'; return; }
-  const today = new Date();
-  const todayISO = today.toISOString().slice(0,10);
-  const dates = races.map(r => r.date).concat([todayISO]);
-  const minDate = new Date(dates.reduce((a,b) => a < b ? a : b));
-  const maxDate = new Date(dates.reduce((a,b) => a > b ? a : b));
-  minDate.setDate(minDate.getDate() - 16);
-  maxDate.setDate(maxDate.getDate() + 16);
-  const span = maxDate - minDate || 1;
-  const w = 700, h = 130, padL = 20, padR = 20, y = 65;
-  const pos = d => padL + (new Date(d) - minDate) / span * (w - padL - padR);
-  const todayX = pos(todayISO);
-  const markers = races.map(r => {
-    const x = pos(r.date);
-    const isPrincipal = r.statut === 'principal';
-    const isEnvisage = r.statut === 'envisage';
-    const color = isPrincipal ? 'var(--accent)' : (isEnvisage ? 'var(--muted)' : 'var(--secondary)');
-    const dy = isPrincipal ? -20 : 20;
-    const dash = isEnvisage ? ' stroke-dasharray="2,2"' : '';
-    // Évite que le nom de la course soit tronqué près des bords du cadre (ancrage du texte adapté à la position).
-    const anchor = x < 65 ? 'start' : (x > w - 65 ? 'end' : 'middle');
-    return '<g' + (isEnvisage ? ' opacity="0.7"' : '') + '>' +
-      '<line x1="'+x.toFixed(1)+'" y1="'+y+'" x2="'+x.toFixed(1)+'" y2="'+(y+dy).toFixed(1)+'" stroke="'+color+'" stroke-width="2.5"'+dash+'/>' +
-      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="11" fill="transparent" data-tooltip="'+escapeHtml(r.name+' — '+fmtDate(r.date))+'"/>' +
-      '<circle cx="'+x.toFixed(1)+'" cy="'+y+'" r="6" fill="'+color+'" style="pointer-events:none;"/>' +
-      '<text x="'+x.toFixed(1)+'" y="'+(y+dy+(isPrincipal?-10:20)).toFixed(1)+'" font-size="13" fill="var(--text)" text-anchor="'+anchor+'">'+escapeHtml(r.name)+'</text>' +
-    '</g>';
-  }).join('');
-  box.innerHTML = '<div class="chart-box"><svg viewBox="0 0 '+w+' '+h+'">' +
-    '<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--border)" stroke-width="2"/>' +
-    '<line x1="'+todayX.toFixed(1)+'" y1="'+(y-38)+'" x2="'+todayX.toFixed(1)+'" y2="'+(y+38)+'" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="3,3"/>' +
-    '<text x="'+todayX.toFixed(1)+'" y="'+(y+54)+'" font-size="12" fill="var(--danger)" text-anchor="middle">aujourd\'hui</text>' +
-    markers +
-  '</svg></div>';
-  initChartTooltips(box);
+/* --------------------------- AUTRES OBJECTIFS --------------------------- */
+function renderGoalSecondary() {
+  const box = document.getElementById('goalSecondaryBox');
+  const race = currentRace();
+  const others = selectableRaces().filter(r => !race || r.id !== race.id).sort((a,b) => a.date.localeCompare(b.date));
+  if (!others.length) { box.innerHTML = ''; return; }
+  const today = new Date().toISOString().slice(0,10);
+  box.innerHTML = '<div class="goal-secondary-title">Autres objectifs</div><div class="races">' +
+    others.map(r => {
+      const readiness = computeRaceReadiness(r);
+      const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
+      return '<div class="race-chip ' + r.statut + '" data-select="' + r.id + '" style="cursor:pointer;">' +
+        '<span class="tag">' + escapeHtml(statutLabel(r.statut)) + '</span>' +
+        '<h3>' + escapeHtml(r.name) + '</h3>' +
+        '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small><br>' +
+        '<strong>' + (days >= 0 ? ('J-' + days) : 'Terminée') + '</strong>' +
+        (readiness.overall != null ? ' <span class="badge brand-badge">' + readiness.overall + '% prêt</span>' : '') +
+      '</div>';
+    }).join('') + '</div>';
+  box.querySelectorAll('[data-select]').forEach(el => el.addEventListener('click', () => selectRace(el.dataset.select)));
 }
 
+/* --------------------------- ONGLET APERÇU --------------------------- */
+function renderApercu() {
+  const race = currentRace();
+  if (!race) return;
+  const win = goalWindow();
+  const weeks = groupByWeek(win.sessions, win.fromISO, win.toISO);
+  const plan = getPlan();
+  const planMap = groupPlanByWeek(plan, win.fromISO, win.toISO);
+
+  // Aucune activité du tout sur la fenêtre : un vrai état vide plutôt qu'un graphique à 12 barres
+  // nulles (voir CLAUDE.md — objectif sans activité).
+  if (!win.sessions.length) {
+    const emptyMsg = '<div class="empty">Aucune activité enregistrée pour cette préparation.<br><a class="link-arrow" href="historique.html">Importer une activité →</a></div>';
+    document.getElementById('goalVolumeChartBox').innerHTML = emptyMsg;
+    document.getElementById('goalDplusChartBox').innerHTML = emptyMsg;
+  } else {
+    document.getElementById('goalVolumeChartBox').innerHTML = goalTrendChartSvg(weeks, planMap, 'km', { hideTitle: true, fmt: v => v.toFixed(0)+' km' });
+    document.getElementById('goalDplusChartBox').innerHTML = goalTrendChartSvg(weeks, planMap, 'ascent', { hideTitle: true, fmt: v => Math.round(v)+' m' });
+    initChartTooltips(document.getElementById('goalVolumeChartBox'));
+    initChartTooltips(document.getElementById('goalDplusChartBox'));
+  }
+
+  const profile = getProfile();
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  const zoneDist = zones ? aggregateZones(win.sessions, zones) : null;
+  const zonesBox = document.getElementById('goalZonesBox');
+  if (!zones) zonesBox.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a>.</div>';
+  else if (!zoneDist) zonesBox.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette fenêtre.</div>';
+  else {
+    const donut = genericDonutSvg(zoneDist.map(z => ({ pct: z.pct, color: ZONE_DONUT_COLORS[z.key] || 'var(--accent)' })), READINESS_WEEKS + ' sem.', 'fenêtre');
+    const legend = zoneDist.map(z => '<div class="zdl-row"><span class="zone-dot ' + z.key + '"></span><span class="zdl-label">' + escapeHtml(z.label) + '</span><span class="zdl-pct">' + z.pct + '%</span><span class="zdl-time">' + fmtDuration(z.sec) + '</span></div>').join('');
+    zonesBox.innerHTML = '<div class="analysis-donut-row">' + donut + '<div class="zone-donut-legend">' + legend + '</div></div>';
+  }
+
+  const longestBox = document.getElementById('goalLongestBox');
+  const longest = getLongestRuns(win.sessions, 1)[0];
+  if (!longest) longestBox.innerHTML = '<div class="empty">Aucune activité enregistrée pour cette préparation.<br><a class="link-arrow" href="historique.html">Importer une activité →</a></div>';
+  else {
+    const visual = sessionPreviewSvg(longest);
+    longestBox.innerHTML = '<a href="activite.html?id=' + encodeURIComponent(longest.id) + '" style="text-decoration:none;color:inherit;display:block;">' +
+      (visual ? '<div class="activity-visual" style="height:110px;margin-bottom:10px;">' + visual + '</div>' : '') +
+      '<div class="metrics-grid" style="grid-template-columns:1fr 1fr;">' +
+        '<div class="metric"><div class="lbl">Distance</div><div class="val">' + fmtNum(longest.distanceKm,' km',1) + '</div></div>' +
+        '<div class="metric"><div class="lbl">D+</div><div class="val">' + fmtNum(longest.ascent,' m',0) + '</div></div>' +
+      '</div>' +
+      '<p class="hint">' + fmtDuration(longest.durationS) + ' · ' + fmtDate(longest.date) + '</p>' +
+    '</a>';
+  }
+
+  const chargeBox = document.getElementById('goalChargeBox');
+  if (!win.sessions.length) chargeBox.innerHTML = '<div class="empty">Aucune activité enregistrée pour cette préparation.</div>';
+  else if (weeks.length < 2) chargeBox.innerHTML = '<div class="empty">Pas assez de semaines pour calculer la charge.</div>';
+  else {
+    weeks.forEach((w,i) => { const win4 = weeks.slice(Math.max(0,i-3), i+1).map(x=>x.km); w.chronic = +(win4.reduce((a,b)=>a+b,0)/win4.length).toFixed(1); });
+    const series = [{ name:'Aiguë (semaine)', color:'var(--accent)', values: weeks.map(w=>+w.km.toFixed(1)) }, { name:'Chronique (moy. 4 sem.)', color:'var(--secondary)', values: weeks.map(w=>w.chronic) }];
+    chargeBox.innerHTML = groupedBarChartSvg('', weeks, series, { height:170, hideTitle:true });
+    initChartTooltips(chargeBox);
+  }
+
+  const stateBox = document.getElementById('goalStateBox');
+  const readiness = computeRaceReadiness(race);
+  if (readiness.overall == null) stateBox.innerHTML = '<div class="empty">Pas encore assez de données pour évaluer ta préparation.</div>';
+  else {
+    const level = readinessLevelLabel(readiness.overall);
+    const badgeCls = readiness.overall >= 85 ? 'ok-badge' : (readiness.overall >= 60 ? 'ok-badge' : 'warn-badge');
+    stateBox.innerHTML = '<div class="goal-score-meta"><div class="pct">' + readiness.overall + '%</div><div class="lbl">' + level + '</div></div>' +
+      '<div class="hint" style="margin-top:10px;">' + (readiness.weakest ? 'Point faible actuel : ' + escapeHtml(readiness.weakest.label) + ' (' + readiness.weakest.score + '%)' : '') + '</div>';
+  }
+
+  const recBox = document.getElementById('goalRecommendationsBox');
+  const recs = getGoalRecommendations(readiness);
+  if (!recs.length) recBox.innerHTML = '<div class="empty">' + (readiness.overall != null ? 'Toutes les dimensions suivies sont bien couvertes pour le moment.' : 'Pas encore assez de données pour proposer des recommandations.') + '</div>';
+  else recBox.innerHTML = '<div class="coach-cards-grid">' + recs.map(r =>
+    '<div class="coach-card"><h4>' + escapeHtml(r.title) + '</h4><p>' + escapeHtml(r.text) + '</p><ul><li>' + escapeHtml(r.detail) + '</li></ul></div>'
+  ).join('') + '</div>';
+}
+// ZONE_DONUT_COLORS est déjà défini dans assets/app.js (partagé avec activite.html), réutilisé tel quel.
+
+/* --------------------------- ONGLET CHARGE & VOLUME --------------------------- */
+function renderChargeVolume() {
+  const win = goalWindow();
+  const weeks = groupByWeek(win.sessions, win.fromISO, win.toISO);
+  const plan = getPlan();
+  const planMap = groupPlanByWeek(plan, win.fromISO, win.toISO);
+  const agg = aggregatePeriod(win.sessions);
+  const weeksWithSession = new Set(win.sessions.map(s => isoWeek(s.date))).size;
+
+  document.getElementById('goalChargeKpiBox').innerHTML = [
+    ['Volume hebdomadaire', agg ? fmtNum(agg.distanceKm / READINESS_WEEKS, ' km', 1) : 'Non disponible'],
+    ['Durée totale', agg ? fmtDuration(agg.durationS) : 'Non disponible'],
+    ['D+ total', agg ? fmtNum(agg.ascent, ' m', 0) : 'Non disponible'],
+    ['Régularité', weeksWithSession + '/' + READINESS_WEEKS + ' semaines actives'],
+    [!plan ? 'Plan associé' : 'Évolution vs plan', !plan ? 'Aucun plan associé' : 'Voir graphiques ci-dessous'],
+  ].map(([l,v]) => '<div class="metric"><div class="lbl">' + l + '</div><div class="val' + (v==='Non disponible'?' na':'') + '">' + v + '</div></div>').join('');
+
+  if (!win.sessions.length) {
+    const emptyMsg = '<div class="empty">Aucune activité enregistrée pour cette préparation.<br><a class="link-arrow" href="historique.html">Importer une activité →</a></div>';
+    document.getElementById('goalVolumeChart2Box').innerHTML = emptyMsg;
+    document.getElementById('goalDplusChart2Box').innerHTML = emptyMsg;
+  } else {
+    document.getElementById('goalVolumeChart2Box').innerHTML = goalTrendChartSvg(weeks, planMap, 'km', { hideTitle:true, height:240, fmt: v=>v.toFixed(0)+' km' });
+    document.getElementById('goalDplusChart2Box').innerHTML = goalTrendChartSvg(weeks, planMap, 'ascent', { hideTitle:true, height:240, fmt: v=>Math.round(v)+' m' });
+    initChartTooltips(document.getElementById('goalVolumeChart2Box'));
+    initChartTooltips(document.getElementById('goalDplusChart2Box'));
+  }
+
+  const chargeBox = document.getElementById('goalChargeChart2Box');
+  if (!win.sessions.length) chargeBox.innerHTML = '<div class="empty">Aucune activité enregistrée pour cette préparation.</div>';
+  else if (weeks.length < 2) chargeBox.innerHTML = '<div class="empty">Pas assez de semaines pour calculer la charge.</div>';
+  else {
+    weeks.forEach((w,i) => { const win4 = weeks.slice(Math.max(0,i-3), i+1).map(x=>x.km); w.chronic = +(win4.reduce((a,b)=>a+b,0)/win4.length).toFixed(1); });
+    const series = [{ name:'Aiguë (semaine)', color:'var(--accent)', values: weeks.map(w=>+w.km.toFixed(1)) }, { name:'Chronique (moy. 4 sem.)', color:'var(--secondary)', values: weeks.map(w=>w.chronic) }];
+    chargeBox.innerHTML = groupedBarChartSvg('', weeks, series, { height:240, hideTitle:true });
+    initChartTooltips(chargeBox);
+  }
+}
+
+/* --------------------------- ONGLET SORTIES LONGUES --------------------------- */
+function renderLongRuns() {
+  const race = currentRace();
+  const win = goalWindow();
+  const hintEl = document.getElementById('goalLongTargetHint');
+  if (race) {
+    const target = race.distanceKm * READINESS_LONG_RUN_RATIO;
+    hintEl.textContent = 'Repère indicatif : une sortie longue proche de ' + target.toFixed(0) + ' km (' + Math.round(READINESS_LONG_RUN_RATIO*100) + '% de la distance de course) est un bon signal de préparation.';
+  } else hintEl.textContent = '';
+
+  const box = document.getElementById('goalLongRunsBox');
+  const runs = getLongestRuns(win.sessions, 8);
+  if (!runs.length) { box.innerHTML = '<div class="empty">Aucune activité enregistrée pour cette préparation.<br><a class="link-arrow" href="historique.html">Importer une activité →</a></div>'; return; }
+  box.innerHTML = runs.map(s => {
+    const visual = sessionPreviewSvg(s);
+    const [, mo, da] = s.date.split('-');
+    const dateStack = '<span class="cell-day">' + parseInt(da,10) + '</span><span class="cell-month">' + FR_MONTHS_SHORT[parseInt(mo,10)-1].replace('.','').toUpperCase() + '</span><span class="cell-year">' + s.date.slice(0,4) + '</span>';
+    return '<a class="activity-row" href="activite.html?id=' + encodeURIComponent(s.id) + '">' +
+      '<span class="cell cell-date">' + dateStack + '</span>' +
+      '<span class="cell cell-activity"><span class="row-title">' + escapeHtml(s.sport || 'Séance') + '</span></span>' +
+      '<span class="cell cell-stat">' + fmtNum(s.distanceKm, ' km', 1) + '</span>' +
+      '<span class="cell cell-stat">' + fmtNum(s.ascent, ' m', 0) + '</span>' +
+      '<span class="cell cell-stat">' + fmtDuration(s.durationS) + '</span>' +
+      '<span class="cell cell-stat">' + (s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') + '</span>' +
+      '<span class="cell cell-stat">' + (s.avgHr != null ? s.avgHr + ' bpm' : '—') + '</span>' +
+      '<span class="cell cell-visual">' + (visual || '') + '</span>' +
+      '<span class="cell cell-arrow link-arrow">Voir →</span>' +
+    '</a>';
+  }).join('');
+}
+
+/* --------------------------- ONGLET INTENSITÉ --------------------------- */
+function renderIntensite() {
+  const box = document.getElementById('goalIntensityBox');
+  const win = goalWindow();
+  const profile = getProfile();
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  if (!zones) { box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>'; return; }
+  const dist = aggregateZones(win.sessions, zones);
+  if (!dist) { box.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette fenêtre.</div>'; return; }
+  const z3plus = dist.slice(2).reduce((a,z)=>a+z.pct,0);
+  box.innerHTML = '<div class="zone-bars">' + dist.map(z =>
+    '<div class="zone-row"><span class="zone-label">' + escapeHtml(z.label) + '</span>' +
+    '<div class="zone-track"><div class="zone-fill ' + z.key + '" style="width:' + z.pct + '%"></div></div>' +
+    '<span class="zone-pct">' + z.pct + '%</span><span class="zone-time">' + fmtDuration(z.sec) + '</span></div>'
+  ).join('') + '</div>' +
+  '<p class="hint" style="margin-top:12px;">' + z3plus + '% du temps avec FC disponible a été passé en zones Z3 à Z5 (tempo/seuil/VMA) sur cette fenêtre.</p>';
+}
+
+/* --------------------------- ONGLET VAM --------------------------- */
+function renderVamTab() {
+  const win = goalWindow();
+  const weeks = groupByWeek(win.sessions, win.fromISO, win.toISO);
+  const withVam = weeks.filter(w => w.vamAvg != null);
+  const box = document.getElementById('goalVamChartBox');
+  if (withVam.length < 2) box.innerHTML = '<div class="empty">Pas assez de montées fiables détectées sur cette fenêtre pour une tendance hebdomadaire.</div>';
+  else {
+    const pts = withVam.map((w,i) => ({ x:i, y:w.vamAvg, xLabel:w.shortLabel, label:'Semaine du '+fmtDate(w.startISO)+' : VAM moyenne '+w.vamAvg+' m/h' }));
+    box.innerHTML = lineChartSvg('', pts, { decimals:0, height:220, hideTitle:true });
+    initChartTooltips(box);
+  }
+  const agg = aggregatePeriod(win.sessions);
+  const bests = computePeriodBests(win.sessions);
+  const bestVam = bests.find(b => b.label === 'VAM la plus élevée');
+  document.getElementById('goalVamMetricsBox').innerHTML = [
+    ['VAM moyenne récente', agg && agg.vamAvg != null ? agg.vamAvg + ' m/h' : 'Aucune montée fiable détectée'],
+    ['Meilleure VAM de la période', bestVam ? bestVam.value + ' (' + bestVam.date + ')' : 'Non disponible'],
+  ].map(([l,v]) => '<div class="metric"><div class="lbl">' + l + '</div><div class="val' + (v.includes('Non disponible')||v.includes('Aucune')?' na':'') + '">' + v + '</div></div>').join('');
+}
+
+/* --------------------------- ONGLET HISTORIQUE --------------------------- */
+function renderHistorique() {
+  const box = document.getElementById('goalHistoryBox');
+  const race = currentRace();
+  if (!race) { box.innerHTML = ''; return; }
+  const today = new Date().toISOString().slice(0,10);
+  const items = [
+    ['Objectif créé', race.createdAt ? fmtDate(race.createdAt.slice(0,10)) : 'Date de création non connue (course existante avant cette fonctionnalité)'],
+    ['Plan associé', getPlan() ? 'Un plan est actuellement importé (partagé entre tous les objectifs)' : 'Aucun plan associé'],
+    ['Statut', race.date < today ? 'Course terminée' : 'À venir'],
+    ['Objectif archivé', race.archived ? 'Oui' : 'Non'],
+  ];
+  if (race.date < today && race.resultat) items.push(['Résultat', race.resultat]);
+  box.innerHTML = '<div class="mini-list">' + items.map(([l,v]) =>
+    '<div class="mini-list-row"><span class="mini-list-lbl">' + escapeHtml(l) + '</span><span class="mini-list-val">' + escapeHtml(v) + '</span></div>'
+  ).join('') + '</div>';
+}
+
+/* --------------------------- ONGLET DÉTAILS --------------------------- */
+function renderDetails() {
+  const box = document.getElementById('goalDetailsBox');
+  const race = currentRace();
+  const archiveBtn = document.getElementById('goalArchiveBtn');
+  if (!race) { box.innerHTML = ''; archiveBtn.style.display = 'none'; return; }
+  const today = new Date().toISOString().slice(0,10);
+  const isPast = race.date < today;
+  const rows = [
+    ['Nom', race.name], ['Date', fmtDate(race.date)],
+    ['Distance', fmtNum(race.distanceKm,' km',1)], ['Dénivelé +', fmtNum(race.denivele,' m',0)],
+    ['Type', race.type || 'Non renseigné'], ['Statut', statutLabel(race.statut)],
+    ['Temps visé', race.tempsVise || 'Non renseigné'],
+    ['Technicité du terrain', race.technicite || 'Non renseigné'],
+    ['Chaleur attendue', race.chaleur || 'Non renseigné'],
+    ['Notes', race.notes || 'Aucune'],
+  ];
+  if (isPast) rows.push(['Résultat', race.resultat || 'Non renseigné']);
+  box.innerHTML = '<div class="mini-list">' + rows.map(([l,v]) =>
+    '<div class="mini-list-row"><span class="mini-list-lbl">' + escapeHtml(l) + '</span><span class="mini-list-val">' + escapeHtml(v) + '</span></div>'
+  ).join('') + '</div>';
+  archiveBtn.style.display = 'inline-block';
+  archiveBtn.textContent = race.archived ? 'Désarchiver cet objectif' : 'Archiver cet objectif';
+}
+document.getElementById('goalEditBtn').addEventListener('click', () => { const r = currentRace(); if (r) openRaceModal(r.id); });
+document.getElementById('goalArchiveBtn').addEventListener('click', () => {
+  const race = currentRace();
+  if (!race) return;
+  upsertRace(Object.assign({}, race, { archived: !race.archived }));
+  if (race.archived) { /* on vient de désarchiver, rien à changer */ }
+  else { showArchived = false; selectedRaceId = defaultRaceId(); }
+  renderGoalPage();
+});
+
+/* --------------------------- TABS --------------------------- */
+document.querySelectorAll('#goalTabs button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('#goalTabs button').forEach(b => b.classList.toggle('active', b === btn));
+  const tab = btn.dataset.tab;
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+}));
+
+/* --------------------------- ORCHESTRATION --------------------------- */
+function renderGoalPage() {
+  if (!selectedRaceId || !getRaces().find(r => r.id === selectedRaceId)) selectedRaceId = defaultRaceId();
+  renderGoalSelector();
+  renderGoalHero();
+  renderGoalSecondary();
+  const race = currentRace();
+  if (race) {
+    renderApercu();
+    renderChargeVolume();
+    renderLongRuns();
+    renderIntensite();
+    renderVamTab();
+    renderHistorique();
+    renderDetails();
+  }
+}
+
+/* --------------------------- MODALE AJOUT/ÉDITION --------------------------- */
 let editingRaceId = null;
 function openRaceModal(id) {
   editingRaceId = id || null;
@@ -224,10 +670,12 @@ function openRaceModal(id) {
   document.getElementById('raceDate').value = race ? race.date : '';
   document.getElementById('raceDistance').value = race ? race.distanceKm : '';
   document.getElementById('raceDenivele').value = race ? race.denivele : '';
+  document.getElementById('raceType').value = race ? (race.type || '') : '';
   document.getElementById('raceStatut').value = race ? race.statut : 'secondaire';
   document.getElementById('raceTempsVise').value = race ? (race.tempsVise || '') : '';
   document.getElementById('raceTechnicite').value = race ? (race.technicite || '') : '';
   document.getElementById('raceChaleur').value = race ? (race.chaleur || '') : '';
+  document.getElementById('raceNotes').value = race ? (race.notes || '') : '';
   document.getElementById('deleteRaceBtn').style.display = race ? 'inline-block' : 'none';
   document.getElementById('raceModalMsg').innerHTML = '';
   document.getElementById('raceAiBlock').style.display = race ? 'block' : 'none';
@@ -247,28 +695,31 @@ document.getElementById('saveRaceBtn').addEventListener('click', () => {
   const date = document.getElementById('raceDate').value;
   const distanceKm = parseFloat(document.getElementById('raceDistance').value);
   const denivele = parseFloat(document.getElementById('raceDenivele').value);
+  const type = document.getElementById('raceType').value.trim();
   const statut = document.getElementById('raceStatut').value;
   const tempsVise = document.getElementById('raceTempsVise').value.trim();
   const technicite = document.getElementById('raceTechnicite').value.trim();
   const chaleur = document.getElementById('raceChaleur').value.trim();
+  const notes = document.getElementById('raceNotes').value.trim();
   if (!name || !date || isNaN(distanceKm) || isNaN(denivele)) {
     showMsg('raceModalMsg', 'Merci de remplir tous les champs (nom, date, distance, dénivelé).', 'err');
     return;
   }
-  // Fusionne avec la course existante pour ne pas perdre une estimation IA déjà générée.
+  // Fusionne avec la course existante pour ne pas perdre une estimation IA déjà générée / son archivage.
   const existing = editingRaceId ? getRaces().find(r => r.id === editingRaceId) : null;
-  upsertRace(Object.assign({}, existing, { id: editingRaceId, name, date, distanceKm, denivele, statut, tempsVise, technicite, chaleur }));
+  const createdAt = existing ? existing.createdAt : new Date().toISOString();
+  const race = upsertRace(Object.assign({}, existing, { id: editingRaceId, name, date, distanceKm, denivele, type, statut, tempsVise, technicite, chaleur, notes, createdAt }));
   closeRaceModal();
-  renderRaces();
-  renderTimeline();
+  selectedRaceId = race.id;
+  renderGoalPage();
 });
 document.getElementById('deleteRaceBtn').addEventListener('click', () => {
   if (!editingRaceId) return;
   if (!confirm('Supprimer cette course ?')) return;
   deleteRace(editingRaceId);
   closeRaceModal();
-  renderRaces();
-  renderTimeline();
+  selectedRaceId = null;
+  renderGoalPage();
 });
 
 /* --------------------------- ESTIMATION IA DU TEMPS DE COURSE --------------------------- */
@@ -408,8 +859,8 @@ document.getElementById('raceAiUseBtn').addEventListener('click', () => {
   document.getElementById('raceTempsVise').value = val.trim();
 });
 
-renderRaces();
-renderTimeline();
+renderSidebarUser();
+renderGoalPage();
 </script>
 </body>
 </html>

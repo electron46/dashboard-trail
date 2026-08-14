@@ -1621,6 +1621,63 @@ function computeRaceReadiness(race) {
   return { overall, subs, weakest };
 }
 
+// Libellé qualitatif de l'indice de préparation — seuils documentés (mêmes que le badge déjà utilisé
+// sur la page Objectifs avant cette refonte, complétés d'un 3e palier) : jamais un mot choisi à
+// l'œil, toujours dérivé du même pourcentage affiché à côté (voir CLAUDE.md — pas de score inventé).
+function readinessLevelLabel(overall) {
+  if (overall == null) return null;
+  if (overall >= 85) return 'Excellente préparation';
+  if (overall >= 60) return 'Sur la bonne voie';
+  return 'À renforcer';
+}
+
+/* --------------------------- PAGE OBJECTIFS — cockpit de préparation par course --------------------------- */
+// Regroupe les entrées du plan (une ligne par séance planifiée) par semaine ISO, dans le même format
+// que groupByWeek() côté séances réalisées — permet de superposer "réalisé vs planifié" sur le même
+// axe de semaines. Retourne null si aucun plan n'est importé (jamais une cible dessinée sans donnée
+// réelle, voir CLAUDE.md).
+function groupPlanByWeek(plan, fromISO, toISO) {
+  if (!plan || !plan.length) return null;
+  const map = new Map();
+  plan.forEach(p => {
+    if (p.date < fromISO || p.date > toISO) return;
+    const ws = isoWeek(p.date);
+    if (!map.has(ws)) map.set(ws, { km: 0, ascent: 0 });
+    const w = map.get(ws);
+    w.km += p.distanceKm || 0;
+    w.ascent += p.deniveleM || 0;
+  });
+  return map;
+}
+
+// Les N sorties les plus longues d'une fenêtre de séances (page Objectifs, onglet "Sorties longues").
+function getLongestRuns(sessions, n) {
+  return sessions.filter(s => s.distanceKm != null).slice().sort((a,b) => b.distanceKm - a.distanceKm).slice(0, n || 6);
+}
+
+// Libellé + texte court par dimension de préparation, réutilisés pour construire les recommandations
+// déterministes (voir getGoalRecommendations) — le texte reste générique, le repère chiffré vient
+// toujours du sous-score réel (sub.detail), jamais fabriqué ici.
+const GOAL_REC_TEXT = {
+  volume: { title: 'Construire l’endurance', text: 'Maintiens une hausse progressive du volume hebdomadaire pour consolider ta base.' },
+  dplus: { title: 'Développer le dénivelé', text: 'Continue d’augmenter le D+ hebdomadaire pour te rapprocher du terrain de la course.' },
+  longues: { title: 'Allonger les sorties', text: 'Les sorties longues restent en retrait par rapport à la distance de l’objectif.' },
+  intensite: { title: 'Optimiser l’intensité', text: 'Le temps passé en intensité (zones 3 et plus) peut encore progresser.' },
+  regularite: { title: 'Renforcer la régularité', text: 'La régularité des sorties sur les dernières semaines peut encore progresser.' },
+};
+// Recommandations déterministes : reprend les sous-scores réels de computeRaceReadiness(), classés
+// du plus faible au plus fort, sans inventer de nouvelle métrique — le repère affiché est toujours
+// `sub.detail`, déjà calculé par computeRaceReadiness (comparaison au plan si disponible, sinon repère
+// générique documenté). Les dimensions déjà quasi complètes (score ≥ 95) ne sont pas mises en avant.
+function getGoalRecommendations(readiness) {
+  if (!readiness || !readiness.subs) return [];
+  const withScore = readiness.subs.filter(s => s.score != null && s.score < 95);
+  return withScore.sort((a,b) => a.score - b.score).slice(0, 4).map(s => {
+    const meta = GOAL_REC_TEXT[s.key] || { title: s.label, text: '' };
+    return { key: s.key, title: meta.title, text: meta.text, detail: s.detail, score: s.score };
+  });
+}
+
 // Statistiques de la semaine en cours (depuis lundi), comparées à la semaine précédente complète.
 // Pure fonction de calcul (aucun accès au DOM) — réutilisée par les KPI et la section "Cette semaine".
 // deltaPct vaut null quand il n'y a rien à comparer (semaine précédente vide) : à afficher comme "—",
@@ -1822,8 +1879,11 @@ function sparklineSvg(values) {
 // Anneau de progression circulaire compact (KPI "Objectif principal"). Trait de fond très
 // discret + arc rempli proportionnel au pourcentage, pas de texte à l'intérieur (la valeur
 // est déjà affichée en grand à côté).
-function ringSvg(pct) {
-  const size = 44, stroke = 4, r = (size - stroke) / 2, c = size / 2;
+// `size` optionnel (défaut 44px, utilisé par les KPI de l'Accueil) — la page Objectifs passe une
+// taille plus grande (voir `.goal-ring-big`) pour son score de préparation en position de hero.
+function ringSvg(pct, size) {
+  size = size || 44;
+  const stroke = Math.max(4, Math.round(size * 0.09)), r = (size - stroke) / 2, c = size / 2;
   const circumference = 2 * Math.PI * r;
   const offset = circumference * (1 - Math.max(0, Math.min(100, pct)) / 100);
   return '<svg class="kpi-ring" viewBox="0 0 '+size+' '+size+'">' +
@@ -1907,6 +1967,47 @@ function volumeChartSvg(weeks, opts) {
     '<text x="2" y="' + (padT + 6) + '" font-size="12" fill="var(--muted)">' + maxKm.toFixed(0) + ' km</text>' +
     bars +
     '<path d="' + linePath + '" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round"/>' +
+  '</svg></div>';
+}
+
+// Graphique "réalisé vs planifié" (page Objectifs — Volume/D+ de la préparation) : barres = réalisé,
+// ligne pointillée = cible planifiée — seulement si un plan est réellement importé (`planMap` vient de
+// groupPlanByWeek, null si aucun plan). Jamais de cible dessinée sans donnée réelle.
+function goalTrendChartSvg(weeks, planMap, key, opts) {
+  opts = opts || {};
+  const titleHtml = opts.hideTitle ? '' : '<h3>' + escapeHtml(opts.title || '') + '</h3>';
+  if (weeks.length < 2) return '<div class="chart-box">' + titleHtml + '<div class="empty">Pas encore assez de séances sur cette fenêtre pour ce graphique.</div></div>';
+  const w = 620, h = opts.height || 220, padL = 44, padR = 10, padT = 18, padB = 30;
+  const fmt = opts.fmt || (v => Math.round(v));
+  const realizedVals = weeks.map(x => x[key] || 0);
+  const plannedVals = planMap ? weeks.map(x => (planMap.get(x.startISO) || {})[key] || 0) : [];
+  const maxV = Math.max(1, ...realizedVals, ...plannedVals);
+  const groupW = (w - padL - padR) / weeks.length;
+  const barW = Math.min(groupW * 0.55, 46);
+  const sy = v => (h - padB) - (v / maxV) * (h - padT - padB);
+  let bars = '';
+  weeks.forEach((wk, i) => {
+    const x = padL + i * groupW + (groupW - barW) / 2;
+    const val = wk[key] || 0;
+    const bh = (val / maxV) * (h - padT - padB);
+    const y = (h - padB) - bh;
+    const tip = escapeHtml('Semaine du ' + fmtDate(wk.startISO) + ' — réalisé ' + fmt(val) + (planMap ? (' · cible ' + fmt((planMap.get(wk.startISO) || {})[key] || 0)) : ''));
+    bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(bh, 1).toFixed(1) + '" rx="2" fill="var(--accent)" data-tooltip="' + tip + '"/>';
+    if (weeks.length <= 9 || i % Math.ceil(weeks.length / 8) === 0) {
+      bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 10) + '" font-size="11" fill="var(--muted)" text-anchor="middle">' + wk.shortLabel + '</text>';
+    }
+  });
+  let planLine = '', legend = '<div class="chart-legend"><span><span class="dot" style="background:var(--accent)"></span>Réalisé</span>';
+  if (planMap) {
+    const pts = weeks.map((wk, i) => [padL + i * groupW + groupW / 2, sy((planMap.get(wk.startISO) || {})[key] || 0)]);
+    planLine = '<path d="' + pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-dasharray="4,3"/>';
+    legend += '<span><span class="dot" style="background:var(--secondary)"></span>Cible planifiée</span>';
+  }
+  legend += '</div>';
+  return '<div class="chart-box">' + titleHtml + legend + '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
+    '<text x="2" y="' + (padT + 6) + '" font-size="12" fill="var(--muted)">' + fmt(maxV) + '</text>' +
+    bars + planLine +
   '</svg></div>';
 }
 
