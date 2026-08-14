@@ -24,6 +24,7 @@
     <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+    <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
     <a href="profil.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
@@ -83,6 +84,13 @@
   </section>
 
   <section class="card">
+    <h2>Profil de performance <small>calculé à partir de tes séances importées</small></h2>
+    <div id="radarBox"></div>
+    <p class="hint">Chaque axe est calculé à partir de repères fixes documentés (volume, dénivelé, allure sur terrain roulant, dérive cardiaque, régularité) — pas une comparaison à d'autres coureurs, juste une lecture de ton propre historique. Réimporte tes séances récentes en page <a href="historique.html">Activités</a> si un axe indique "n/d" (donnée insuffisante).</p>
+    <div id="radarNotes" class="hint"></div>
+  </section>
+
+  <section class="card">
     <div class="row">
       <button class="btn primary" id="saveProfileBtn" type="button">Enregistrer le profil</button>
     </div>
@@ -111,6 +119,7 @@
   <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
   <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
   <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
+  <a href="plan.html"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
   <a href="profil.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
   <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
   <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
@@ -272,6 +281,22 @@ function collectFieldGroupValues() {
   return values;
 }
 
+/* --------------------------- PROFIL DE PERFORMANCE (radar) --------------------------- */
+function renderRadar() {
+  const box = document.getElementById('radarBox');
+  const notesBox = document.getElementById('radarNotes');
+  const sessions = loadAllSessions();
+  if (sessions.length < 2) {
+    box.innerHTML = '<div class="empty">Pas encore assez de séances importées pour calculer un profil de performance (2 minimum, idéalement des séances récentes).</div>';
+    notesBox.textContent = '';
+    return;
+  }
+  const { scores, notes } = computePerformanceRadar(sessions);
+  box.innerHTML = radarChartSvg(RADAR_AXES, scores);
+  initChartTooltips(box);
+  notesBox.textContent = notes.length ? notes.join(' ') : '';
+}
+
 /* --------------------------- RECORDS PERSONNELS --------------------------- */
 function renderRecords() {
   const body = document.getElementById('recordsBody');
@@ -373,6 +398,7 @@ document.getElementById('copySummaryBtn').addEventListener('click', async () => 
   renderRecords();
   renderObjectifsRaces();
   renderFieldGroups(p);
+  renderRadar();
 })();
 </script>
 </body>

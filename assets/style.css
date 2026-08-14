@@ -72,8 +72,27 @@ section.card h2 small{font-family:var(--font-sans);color:var(--muted);font-weigh
 .race-chip .prep{margin-top:8px;font-size:.78rem;}
 .race-chip .prep .bar-track{height:5px;border-radius:var(--radius-pill);background:rgba(128,128,128,.25);overflow:hidden;margin-top:3px;}
 .race-chip .prep .bar-fill{height:100%;border-radius:var(--radius-pill);background:currentColor;}
+.readiness-subs{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;}
+.readiness-sub{flex:1 1 90px;font-size:.72rem;cursor:default;}
+.readiness-sub span{display:block;opacity:.85;}
+.readiness-sub small{opacity:.75;}
+.readiness-sub .bar-track{height:4px;}
+.readiness-weak{margin-top:8px;font-size:.78rem;font-weight:600;}
 .race-chip .edit-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:inherit;opacity:.6;cursor:pointer;font-size:.9rem;}
 .race-chip .edit-btn:hover{opacity:1;}
+
+/* Page Plan — calendrier hebdomadaire */
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+.plan-day{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px;min-height:80px;}
+.plan-day.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+.plan-day .day-label{font-family:var(--font-sans);font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;}
+.plan-session{border-radius:var(--radius-md);padding:7px 9px;margin-bottom:6px;font-size:.78rem;}
+.plan-session:last-child{margin-bottom:0;}
+.plan-session .type{font-weight:600;display:block;margin-bottom:1px;}
+.plan-session.planned{background:var(--bg);border:1px dashed var(--border);}
+.plan-session.done{background:var(--success-soft);color:var(--success);border:1px solid transparent;}
+.plan-session.done .hint{color:inherit;opacity:.8;}
+.plan-compare-diff{font-size:.72rem;margin-top:3px;font-weight:600;}
 
 #dropzone{border:2px dashed var(--border);border-radius:var(--radius-md);padding:26px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color 120ms,background 120ms;}
 #dropzone.drag{border-color:var(--accent);background:var(--bg);color:var(--text);}
@@ -124,6 +143,7 @@ tr.session-row:hover{background:var(--bg);}
 .chart-box{border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;}
 .chart-box h3{margin:0 0 10px;font-size:.95rem;color:var(--muted);font-weight:600;}
 .chart-box svg{width:100%;height:auto;display:block;}
+.radar-box svg{max-width:420px;margin:0 auto;}
 .chart-box svg text{font-family:var(--font-mono);}
 .chart-box svg [data-tooltip]{cursor:crosshair;}
 .chart-box svg circle[data-tooltip]:hover{r:5;opacity:.85;}

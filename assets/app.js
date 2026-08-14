@@ -232,6 +232,7 @@ function summarizeFit(messages, fileMeta) {
       avgPaceSecPerKm: (lSpeed && lSpeed > 0) ? Math.round(1000 / lSpeed) : null,
       avgHr: l.avg_heart_rate ?? null,
       ascent: l.total_ascent ?? null,
+      descent: l.total_descent ?? null,
     };
   }).filter(l => l.distanceKm != null && l.distanceKm > 0);
 
@@ -694,6 +695,155 @@ function computePrepStatus(raceDateISO) {
   return { pct, doneKm, plannedKm, pctDplus, doneDplus, plannedDplus, level };
 }
 
+// Indice de préparation détaillé pour une course donnée : décompose la préparation en 5 sous-scores
+// (volume, dénivelé, sorties longues, intensité, régularité) au lieu d'un seul pourcentage global,
+// pour identifier un point faible actionnable plutôt qu'un chiffre unique. Repères fixes documentés
+// ci-dessous (pas de comparaison à d'autres coureurs).
+const READINESS_WEEKS = 12;
+const READINESS_LONG_RUN_RATIO = 0.6; // la plus longue sortie récente devrait représenter ~60% de la distance de course
+const READINESS_VOL_BENCHMARK = 60;   // km/semaine — repère générique utilisé seulement si aucun plan n'est importé
+const READINESS_DPLUS_BENCHMARK = 2200; // m D+/semaine — idem
+const READINESS_INTENSITY_BENCHMARK = 15; // % du temps en zone FC 3+ (tempo/seuil/VMA) sur la fenêtre, pour un score plein
+function computeRaceReadiness(race) {
+  const sessions = loadAllSessions();
+  const today = new Date().toISOString().slice(0,10);
+  const windowStart = new Date(new Date(today).getTime() - READINESS_WEEKS*7*86400000).toISOString().slice(0,10);
+  const recent = sessions.filter(s => s.date >= windowStart && s.date <= today);
+  const subs = [];
+
+  // Volume + dénivelé : priorité à la comparaison avec le plan importé (28 derniers jours) si disponible,
+  // sinon repère générique hebdomadaire sur la fenêtre de 12 semaines.
+  const prep = computePrepStatus(race.date);
+  if (prep) {
+    subs.push({ key:'volume', label:'Volume', score: clampScore(prep.pct), detail: prep.pct + '% du volume prévu au plan (28 derniers jours)' });
+    subs.push({ key:'dplus', label:'Dénivelé', score: prep.pctDplus != null ? clampScore(prep.pctDplus) : null, detail: prep.pctDplus != null ? (prep.pctDplus + '% du D+ prévu au plan (28 derniers jours)') : 'Pas de D+ renseigné dans le plan' });
+  } else {
+    const weekKm = {}, weekDplus = {};
+    recent.forEach(s => { const wk = isoWeek(s.date); weekKm[wk] = (weekKm[wk]||0) + (s.distanceKm||0); weekDplus[wk] = (weekDplus[wk]||0) + (s.ascent||0); });
+    const kmVals = Object.values(weekKm), dplusVals = Object.values(weekDplus);
+    const avgKm = kmVals.length ? kmVals.reduce((a,b)=>a+b,0)/kmVals.length : null;
+    const avgDplus = dplusVals.length ? dplusVals.reduce((a,b)=>a+b,0)/dplusVals.length : null;
+    subs.push({ key:'volume', label:'Volume', score: avgKm!=null ? clampScore(avgKm/READINESS_VOL_BENCHMARK*100) : null, detail: avgKm!=null ? (Math.round(avgKm)+' km/semaine en moyenne (aucun plan importé — repère générique '+READINESS_VOL_BENCHMARK+' km/semaine)') : 'Pas assez de séances récentes' });
+    subs.push({ key:'dplus', label:'Dénivelé', score: avgDplus!=null ? clampScore(avgDplus/READINESS_DPLUS_BENCHMARK*100) : null, detail: avgDplus!=null ? (Math.round(avgDplus)+' m D+/semaine en moyenne (repère générique '+READINESS_DPLUS_BENCHMARK+' m/semaine)') : 'Pas assez de séances récentes' });
+  }
+
+  // Sorties longues : la plus longue sortie récente, rapportée à la distance de la course visée.
+  const longest = recent.reduce((max, s) => (s.distanceKm||0) > (max ? max.distanceKm||0 : 0) ? s : max, null);
+  const longKm = longest ? longest.distanceKm : null;
+  const target = race.distanceKm * READINESS_LONG_RUN_RATIO;
+  subs.push({
+    key:'longues', label:'Sorties longues',
+    score: (longKm != null && target > 0) ? clampScore(longKm / target * 100) : null,
+    detail: longKm != null ? ('Plus longue sortie récente : ' + longKm.toFixed(1) + ' km (repère : ' + target.toFixed(0) + ' km, soit ' + Math.round(READINESS_LONG_RUN_RATIO*100) + '% de la distance de course)') : 'Aucune séance récente',
+  });
+
+  // Intensité : part du temps passé en zone FC 3+ (tempo/seuil/VMA) sur la fenêtre — nécessite FC max
+  // et FC repos renseignées en page Accueil pour calculer les zones Karvonen.
+  const profile = getProfile();
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  if (zones) {
+    let z3PlusSec = 0, totalSec = 0;
+    recent.forEach(s => {
+      const series = s.series || [];
+      for (let i = 1; i < series.length; i++) {
+        const hr = series[i].hr; if (hr == null) continue;
+        const dt = series[i].t - series[i-1].t; if (!dt || dt <= 0 || dt > 120) continue;
+        totalSec += dt;
+        let zi = zones.findIndex(z => hr >= z.low && hr <= z.high);
+        if (zi < 0) zi = hr < zones[0].low ? 0 : zones.length - 1;
+        if (zi >= 2) z3PlusSec += dt;
+      }
+    });
+    const pctZ3 = totalSec > 0 ? (z3PlusSec/totalSec*100) : null;
+    subs.push({ key:'intensite', label:'Intensité', score: pctZ3!=null ? clampScore(pctZ3/READINESS_INTENSITY_BENCHMARK*100) : null, detail: pctZ3!=null ? (Math.round(pctZ3)+'% du temps en zone 3+ (repère : '+READINESS_INTENSITY_BENCHMARK+'%)') : 'Pas de données FC exploitables récemment' });
+  } else {
+    subs.push({ key:'intensite', label:'Intensité', score: null, detail: 'Renseigne ta FC max et ta FC repos en page Accueil pour calculer ce sous-score' });
+  }
+
+  // Régularité : proportion des 12 dernières semaines avec au moins une séance enregistrée.
+  const weeksWithSession = new Set(recent.map(s => isoWeek(s.date))).size;
+  subs.push({ key:'regularite', label:'Régularité', score: clampScore(weeksWithSession / READINESS_WEEKS * 100), detail: weeksWithSession + '/' + READINESS_WEEKS + ' semaines avec au moins une séance' });
+
+  const valid = subs.filter(s => s.score != null);
+  const overall = valid.length ? Math.round(valid.reduce((a,s) => a+s.score, 0) / valid.length) : null;
+  const weakest = valid.length ? valid.reduce((min,s) => s.score < min.score ? s : min, valid[0]) : null;
+  return { overall, subs, weakest };
+}
+
+// Profil de performance à 6 axes, calculé à partir des séances des 12 dernières semaines (repères fixes
+// documentés ci-dessous, pas de comparaison à d'autres coureurs — juste une lecture de tes propres données).
+const RADAR_WEEKS = 12;
+const RADAR_AXES = [
+  { key:'endurance', label:'Endurance' },
+  { key:'montee', label:'Montée' },
+  { key:'descente', label:'Descente' },
+  { key:'vitesse', label:'Vitesse' },
+  { key:'resistance', label:'Résistance' },
+  { key:'regularite', label:'Régularité' },
+];
+function clampScore(v) { return v == null ? null : Math.round(Math.max(0, Math.min(100, v))); }
+function computePerformanceRadar(sessions) {
+  const today = new Date();
+  const windowStart = new Date(today.getTime() - RADAR_WEEKS*7*86400000).toISOString().slice(0,10);
+  const recent = sessions.filter(s => s.date >= windowStart);
+  const notes = [];
+
+  // Endurance : volume hebdomadaire moyen sur les semaines actives. Repère : 60 km/semaine = 100.
+  const weekKm = {};
+  recent.forEach(s => { const wk = isoWeek(s.date); weekKm[wk] = (weekKm[wk]||0) + (s.distanceKm||0); });
+  const activeWeeks = Object.values(weekKm);
+  const endurance = activeWeeks.length ? clampScore((activeWeeks.reduce((a,b)=>a+b,0) / activeWeeks.length) / 60 * 100) : null;
+  if (endurance == null) notes.push('Endurance : pas assez de séances récentes.');
+
+  // Montée / Descente : dénivelé positif ou négatif hebdomadaire moyen. Repère : 2200 m/semaine = 100.
+  const weekDplus = {}, weekDmoins = {};
+  recent.forEach(s => {
+    const wk = isoWeek(s.date);
+    weekDplus[wk] = (weekDplus[wk]||0) + (s.ascent||0);
+    weekDmoins[wk] = (weekDmoins[wk]||0) + (s.descent||0);
+  });
+  const dplusVals = Object.values(weekDplus), dmoinsVals = Object.values(weekDmoins);
+  const montee = dplusVals.length ? clampScore((dplusVals.reduce((a,b)=>a+b,0) / dplusVals.length) / 2200 * 100) : null;
+  const descente = dmoinsVals.length ? clampScore((dmoinsVals.reduce((a,b)=>a+b,0) / dmoinsVals.length) / 2200 * 100) : null;
+  if (montee == null) notes.push('Montée : pas assez de séances récentes.');
+  if (descente == null) notes.push('Descente : pas assez de séances récentes.');
+
+  // Vitesse : meilleure allure atteinte sur un km roulant (D+ et D- < 20 m/km, seuil déjà utilisé
+  // pour distinguer terrain roulant/montée en page Activités). Repère : 4:00/km = 100, 8:00/km = 0.
+  let bestFlatPace = null;
+  recent.forEach(s => {
+    (s.laps||[]).forEach(l => {
+      if (!l.distanceKm || !l.avgPaceSecPerKm) return;
+      const dplusKm = (l.ascent||0)/l.distanceKm, dmoinsKm = (l.descent||0)/l.distanceKm;
+      if (dplusKm < 20 && dmoinsKm < 20) { if (bestFlatPace == null || l.avgPaceSecPerKm < bestFlatPace) bestFlatPace = l.avgPaceSecPerKm; }
+    });
+  });
+  const vitesse = bestFlatPace != null ? clampScore((480 - bestFlatPace) / (480 - 240) * 100) : null;
+  if (vitesse == null) notes.push('Vitesse : pas de split sur terrain roulant identifié récemment.');
+
+  // Résistance : dérive cardiaque sur les sorties longues (≥1h30, courbe FC disponible) — écart entre la FC
+  // moyenne de la 2e moitié et celle de la 1re moitié. Repère : 0% de dérive = 100, 15%+ = 0.
+  const drifts = [];
+  recent.forEach(s => {
+    if (!s.durationS || s.durationS < 5400 || !s.series || s.series.length < 20) return;
+    const withHr = s.series.filter(p => p.hr != null);
+    if (withHr.length < 20) return;
+    const mid = Math.floor(withHr.length/2);
+    const firstHalf = withHr.slice(0, mid), secondHalf = withHr.slice(mid);
+    const avg = arr => arr.reduce((a,p)=>a+p.hr,0) / arr.length;
+    const h1 = avg(firstHalf), h2 = avg(secondHalf);
+    if (h1 > 0) drifts.push((h2 - h1) / h1 * 100);
+  });
+  const resistance = drifts.length ? clampScore(100 - (drifts.reduce((a,b)=>a+b,0)/drifts.length) / 15 * 100) : null;
+  if (resistance == null) notes.push('Résistance : pas de sortie longue avec FC exploitable récemment.');
+
+  // Régularité : proportion des 12 dernières semaines avec au moins une séance enregistrée.
+  const weeksWithSession = new Set(recent.map(s => isoWeek(s.date))).size;
+  const regularite = clampScore(weeksWithSession / RADAR_WEEKS * 100);
+
+  return { scores: { endurance, montee, descente, vitesse, resistance, regularite }, notes };
+}
+
 /* --------------------------- 7) GRAPHIQUES SVG PARTAGÉS --------------------------- */
 function svgEmpty(title) { return '<div class="chart-box"><h3>' + title + '</h3><div class="empty">Pas encore assez de séances pour ce graphique (2 minimum).</div></div>'; }
 
@@ -762,6 +912,41 @@ function groupedBarChartSvg(title, weeks, series) {
     '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
     bars +
   '</svg></div>';
+}
+
+function radarChartSvg(axes, scores) {
+  const w = 340, h = 340, cx = w/2, cy = h/2, r = 120;
+  const n = axes.length;
+  const angle = i => -Math.PI/2 + i * (2*Math.PI/n);
+  const pt = (i, frac) => [cx + Math.cos(angle(i)) * r * frac, cy + Math.sin(angle(i)) * r * frac];
+  // Anneaux de repère à 25/50/75/100%.
+  let rings = '';
+  [0.25, 0.5, 0.75, 1].forEach(frac => {
+    const poly = axes.map((_, i) => pt(i, frac).join(',')).join(' ');
+    rings += '<polygon points="'+poly+'" fill="none" stroke="var(--border)" stroke-width="1"/>';
+  });
+  let spokes = '', labels = '';
+  axes.forEach((ax, i) => {
+    const [x, y] = pt(i, 1);
+    spokes += '<line x1="'+cx+'" y1="'+cy+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--border)" stroke-width="1"/>';
+    const [lx, ly] = pt(i, 1.16);
+    const score = scores[ax.key];
+    labels += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" font-size="12" fill="var(--text)" text-anchor="middle" dominant-baseline="middle">'+ax.label+(score!=null?' ('+score+')':' (n/d)')+'</text>';
+  });
+  const dataPts = axes.map((ax, i) => pt(i, (scores[ax.key] ?? 0) / 100));
+  const dataPoly = dataPts.map(p => p.join(',')).join(' ');
+  const dots = axes.map((ax, i) => {
+    const [x, y] = dataPts[i];
+    const score = scores[ax.key];
+    const tip = escapeHtml(ax.label + ' : ' + (score!=null ? score+'/100' : 'donnée insuffisante'));
+    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="10" fill="transparent" data-tooltip="'+tip+'"/>' +
+      '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="4" fill="var(--accent)" style="pointer-events:none;"/>';
+  }).join('');
+  return '<div class="chart-box radar-box"><h3>Profil de performance <small style="font-weight:400;">(estimé sur les '+RADAR_WEEKS+' dernières semaines)</small></h3>' +
+    '<svg viewBox="0 0 '+w+' '+h+'">' + rings + spokes +
+    '<polygon points="'+dataPoly+'" fill="var(--chart-fill-top)" stroke="var(--accent)" stroke-width="2.5"/>' +
+    dots + labels +
+    '</svg></div>';
 }
 
 // Info-bulle interactive au survol pour les graphiques SVG (remplace les <title> natifs, peu lisibles
