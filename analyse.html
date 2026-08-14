@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="auth-pending">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -25,36 +26,96 @@
     <a href="analyse.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
-  <h1>Analyse — pourquoi ma performance évolue</h1>
+  <div>
+    <h1>Analyse globale</h1>
+    <p class="hint" id="periodLabel" style="margin-top:2px;">Synthèse de tes performances et de ta progression.</p>
+  </div>
   <button id="themeToggle" type="button">☀ Clair</button>
 </header>
 
-<main>
+<main class="analysis-main">
 
   <section class="card">
-    <h2>Comparer des séances similaires</h2>
-    <div class="row" style="align-items:flex-end;">
-      <label class="field" style="max-width:280px;">Groupe de distance
-        <select id="bucketSelect"></select>
-      </label>
+    <div class="analysis-period-row">
+      <div class="period-select" id="periodSelect">
+        <button type="button" data-period="4w">4 sem.</button>
+        <button type="button" data-period="12w" class="active">12 sem.</button>
+        <button type="button" data-period="6m">6 mois</button>
+        <button type="button" data-period="1y">1 an</button>
+        <button type="button" data-period="all">Tout</button>
+      </div>
+      <div class="analysis-custom-dates">
+        <span>ou période personnalisée :</span>
+        <input type="date" id="customFrom">
+        <span>→</span>
+        <input type="date" id="customTo">
+      </div>
     </div>
-    <p class="hint">Les séances sont regroupées par distance approchante (par tranche de 5 km) pour comparer ce qui est comparable.</p>
-    <div id="compareTableBox" style="margin-top:12px;"></div>
   </section>
 
-  <section class="card">
-    <h2>Efficacité <small>(vitesse par battement de cœur — plus c'est haut, plus tu es efficace à effort égal)</small></h2>
-    <div id="efficiencyTrendBox"></div>
-    <div id="efficiencyChartBox" style="margin-top:12px;"></div>
-    <p class="hint">Efficacité = vitesse moyenne (km/h) ÷ FC moyenne (bpm). Si ce chiffre monte dans le temps pour un même type de sortie, tu cours plus vite pour le même effort cardiaque : c'est un signe de progression.</p>
-  </section>
+  <section class="kpi-grid" aria-label="Indicateurs principaux" id="kpiGrid"></section>
+
+  <div class="analysis-charts-row">
+    <section class="card">
+      <h2>Évolution du volume</h2>
+      <div id="volumeChartBox"></div>
+    </section>
+    <section class="card">
+      <h2>Évolution du dénivelé</h2>
+      <div id="dplusChartBox"></div>
+    </section>
+    <section class="card">
+      <h2>VAM moyenne par semaine</h2>
+      <div id="vamChartBox"></div>
+      <p class="provenance-tag">Calcul ELEV — moyenne pondérée des montées détectées, jamais sur la sortie entière.</p>
+    </section>
+  </div>
+
+  <div class="analysis-secondary-row">
+    <section class="card card-compact">
+      <h2>Répartition locomotion</h2>
+      <div id="locomotionBox"></div>
+    </section>
+    <section class="card card-compact">
+      <h2>Temps passé par zone FC</h2>
+      <div id="zonesBox"></div>
+    </section>
+    <section class="card card-compact">
+      <h2>Répartition par pente <small>(% du temps en mouvement)</small></h2>
+      <div id="gradeBucketsBox"></div>
+    </section>
+    <section class="card card-compact">
+      <h2>Run / walk par pente</h2>
+      <div id="runWalkGradeBox"></div>
+    </section>
+  </div>
+
+  <div id="insightRow"></div>
+
+  <div class="analysis-bottom-row">
+    <section class="card">
+      <h2>Dernières activités</h2>
+      <div class="activities-table-head">
+        <span>Date</span><span>Activité</span><span>Distance</span><span>D+</span>
+        <span>Durée</span><span>Allure</span><span>FC moy.</span><span>Mini profil</span><span></span>
+      </div>
+      <div class="activity-row-list" id="recentActivitiesBox"></div>
+      <a class="link-arrow" style="margin-top:10px;display:inline-block;" href="historique.html">Voir toutes les activités →</a>
+    </section>
+    <section class="card">
+      <h2>Meilleurs personnels <small>— période</small></h2>
+      <div id="bestsBox"></div>
+    </section>
+  </div>
 
 </main>
 
@@ -74,105 +135,227 @@
 </nav>
 
 <script>
-// Regroupe les séances par tranche de distance de 5 km (ex. 20-25 km, 25-30 km...) pour comparer
-// des sorties de nature comparable plutôt que de mélanger une sortie de 8 km avec un ultra de 80 km.
-function sessionBucket(distanceKm) {
-  if (distanceKm == null || distanceKm <= 0) return null;
-  return Math.max(5, Math.round(distanceKm / 5) * 5);
-}
-function bucketLabel(bucket) { return '~' + bucket + ' km'; }
+/* --------------------------- PÉRIODE --------------------------- */
+let periodKey = '12w';
+let customFrom = null, customTo = null;
 
-function getBuckets(sessions) {
-  const map = new Map();
-  sessions.forEach(s => {
-    const b = sessionBucket(s.distanceKm);
-    if (b == null) return;
-    if (!map.has(b)) map.set(b, []);
-    map.get(b).push(s);
-  });
-  // Ne garde que les groupes avec au moins 2 séances (sinon rien à comparer).
-  return [...map.entries()].filter(([, list]) => list.length >= 2).sort((a,b) => b[1].length - a[1].length);
-}
-
-function efficiency(s) {
-  if (!s.avgPaceSecPerKm || !s.avgHr) return null;
-  const speedKmH = 3600 / s.avgPaceSecPerKm;
-  return speedKmH / s.avgHr;
-}
-
-let selectedBucket = null;
-
-function initBucketSelect() {
-  const sessions = loadAllSessions();
-  const buckets = getBuckets(sessions);
-  const select = document.getElementById('bucketSelect');
-  if (!buckets.length) {
-    select.innerHTML = '<option value="">Aucun groupe comparable pour l\'instant</option>';
-    select.disabled = true;
-    renderAll(sessions, null);
-    return;
+document.querySelectorAll('#periodSelect [data-period]').forEach(btn => btn.addEventListener('click', () => {
+  periodKey = btn.dataset.period;
+  document.querySelectorAll('#periodSelect [data-period]').forEach(b => b.classList.toggle('active', b === btn));
+  document.getElementById('customFrom').value = '';
+  document.getElementById('customTo').value = '';
+  customFrom = null; customTo = null;
+  renderAnalysis();
+}));
+['customFrom','customTo'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+  customFrom = document.getElementById('customFrom').value || null;
+  customTo = document.getElementById('customTo').value || null;
+  if (customFrom && customTo) {
+    periodKey = 'custom';
+    document.querySelectorAll('#periodSelect [data-period]').forEach(b => b.classList.remove('active'));
+    renderAnalysis();
   }
-  select.disabled = false;
-  select.innerHTML = buckets.map(([b, list]) => '<option value="'+b+'">' + bucketLabel(b) + ' (' + list.length + ' séances)</option>').join('');
-  selectedBucket = Number(select.value);
-  select.addEventListener('change', () => { selectedBucket = Number(select.value); renderAll(sessions, selectedBucket); });
-  renderAll(sessions, selectedBucket);
-}
+}));
 
-function renderAll(sessions, bucket) {
-  renderCompareTable(sessions, bucket);
-  renderEfficiency(sessions, bucket);
-}
+/* --------------------------- KPI --------------------------- */
+const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+function fmtPctDelta(pct) { return pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%'); }
+function arrowFor(pct) { return pct == null ? '' : '<span class="arrow">' + (pct >= 0 ? '▲' : '▼') + '</span>'; }
 
-function renderCompareTable(sessions, bucket) {
-  const box = document.getElementById('compareTableBox');
-  if (bucket == null) {
-    box.innerHTML = '<div class="empty">Importe au moins 2 séances de distance comparable (page Activités) pour voir une comparaison.</div>';
-    return;
-  }
-  const list = sessions.filter(s => sessionBucket(s.distanceKm) === bucket).sort((a,b) => a.date.localeCompare(b.date)).slice(-6);
-  const rows = [
-    ['Date', list.map(s => fmtDate(s.date))],
-    ['Distance', list.map(s => fmtNum(s.distanceKm, ' km', 1))],
-    ['D+', list.map(s => fmtNum(s.ascent, ' m', 0))],
-    ['Temps', list.map(s => fmtDuration(s.durationS))],
-    ['Allure', list.map(s => fmtPace(s.avgPaceSecPerKm))],
-    ['FC moy.', list.map(s => s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible')],
+function renderKpis(cmp) {
+  const grid = document.getElementById('kpiGrid');
+  if (!cmp) { grid.innerHTML = '<div class="empty">Pas de séance sur cette période.</div>'; return; }
+  const c = cmp.current, d = cmp.deltas, prev = cmp.previous;
+  const hrDelta = (c.avgHr != null && prev && prev.avgHr != null) ? Math.round(c.avgHr - prev.avgHr) : null;
+  const countDelta = prev ? (c.count - prev.count) : null;
+  const cards = [
+    { icon:'route', label:'Distance totale', value: fmtNum(c.distanceKm,' km',1),
+      sub: (d.distanceKm!=null ? (arrowFor(d.distanceKm)+fmtPctDelta(d.distanceKm)) : '—') + ' vs période précédente',
+      status: d.distanceKm!=null && d.distanceKm>=0 ? 'ok' : null },
+    { icon:'mountain-snow', label:'D+', value: fmtNum(c.ascent,' m',0),
+      sub: (d.ascent!=null ? (arrowFor(d.ascent)+fmtPctDelta(d.ascent)) : '—') + ' vs période précédente',
+      status: d.ascent!=null && d.ascent>=0 ? 'ok' : null },
+    { icon:'clock', label:'Durée totale', value: fmtDuration(c.durationS),
+      sub: (d.durationS!=null ? (arrowFor(d.durationS)+fmtPctDelta(d.durationS)) : '—') + ' vs période précédente',
+      status: d.durationS!=null && d.durationS>=0 ? 'ok' : null },
+    { icon:'trending-up', label:'VAM moyenne', value: c.vamAvg!=null ? c.vamAvg+' m/h' : null,
+      sub: c.vamAvg!=null ? ((d.vamAvg!=null ? (arrowFor(d.vamAvg)+fmtPctDelta(d.vamAvg)) : '—') + ' vs période précédente') : 'Pas de montée fiable détectée',
+      status: d.vamAvg!=null && d.vamAvg>=0 ? 'ok' : null },
+    { icon:'heart-pulse', label:'FC moyenne', value: c.avgHr!=null ? c.avgHr+' bpm' : null,
+      sub: c.avgHr!=null ? (hrDelta!=null ? ((hrDelta>=0?'+':'')+hrDelta+' bpm vs période précédente') : '—') : 'Non disponible',
+      status: null },
+    { icon:'flag', label:'Séances', value: String(c.count),
+      sub: countDelta!=null ? ((countDelta>=0?'+':'')+countDelta+' vs période précédente') : '—',
+      status: countDelta!=null && countDelta>=0 ? 'ok' : null },
   ];
-  box.innerHTML = '<table><tbody>' + rows.map(([label, values]) =>
-    '<tr><th>' + label + '</th>' + values.map(v => '<td>' + escapeHtml(String(v)) + '</td>').join('') + '</tr>'
-  ).join('') + '</tbody></table>';
+  grid.innerHTML = cards.map(cd => '<div class="kpi-card">' +
+    '<div class="kpi-label"><img src="'+ICON(cd.icon)+'" alt="">'+escapeHtml(cd.label)+'</div>' +
+    '<div class="kpi-value-row"><div class="kpi-value'+(cd.value==null?' na':'')+'">'+(cd.value!=null?escapeHtml(cd.value):'Non disponible')+'</div></div>' +
+    '<div class="kpi-sub'+(cd.status?' status-'+cd.status:'')+'">'+cd.sub+'</div>' +
+  '</div>').join('');
 }
 
-function renderEfficiency(sessions, bucket) {
-  const trendBox = document.getElementById('efficiencyTrendBox');
-  const chartBox = document.getElementById('efficiencyChartBox');
-  if (bucket == null) {
-    trendBox.innerHTML = '';
-    chartBox.innerHTML = '';
-    return;
-  }
-  const list = sessions.filter(s => sessionBucket(s.distanceKm) === bucket).sort((a,b) => a.date.localeCompare(b.date));
-  const pts = list.map((s, i) => {
-    const eff = efficiency(s);
-    return eff == null ? null : { x: i, y: +eff.toFixed(3), xLabel: fmtDate(s.date).slice(0,5), label: fmtDate(s.date) + ' : ' + eff.toFixed(2) + ' (allure ' + fmtPace(s.avgPaceSecPerKm) + ', FC ' + s.avgHr + ' bpm)' };
-  }).filter(Boolean);
-
-  if (pts.length >= 2) {
-    const first = pts[0].y, last = pts[pts.length-1].y;
-    const delta = Math.round(((last - first) / first) * 100);
-    const badge = delta > 3 ? '<span class="badge ok-badge">+' + delta + '% — en progression</span>'
-      : (delta < -3 ? '<span class="badge warn-badge">' + delta + '% — en baisse sur cette distance</span>'
-      : '<span class="badge brand-badge">stable (' + (delta>=0?'+':'') + delta + '%)</span>');
-    trendBox.innerHTML = '<div class="metrics-grid"><div class="metric"><div class="lbl">Évolution sur ce groupe</div><div class="val">' + badge + '</div></div></div>';
-  } else {
-    trendBox.innerHTML = '';
-  }
-  chartBox.innerHTML = lineChartSvg('Efficacité (km/h par bpm) — ' + bucketLabel(bucket), pts, { decimals: 2 });
-  initChartTooltips(chartBox);
+/* --------------------------- GRAPHIQUES DE TENDANCE --------------------------- */
+function renderVolumeChart(weeks) {
+  document.getElementById('volumeChartBox').innerHTML = volumeChartSvg(weeks, { hideTitle: true });
+  initChartTooltips(document.getElementById('volumeChartBox'));
+}
+function renderDplusChart(weeks) {
+  const box = document.getElementById('dplusChartBox');
+  if (weeks.length < 2) { box.innerHTML = svgEmpty('Évolution du dénivelé'); return; }
+  const series = [
+    { name: 'D+', color: 'var(--accent)', values: weeks.map(w => Math.round(w.ascent)) },
+    { name: 'D-', color: 'var(--secondary)', values: weeks.map(w => Math.round(w.descent || 0)) },
+  ];
+  box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 220, hideTitle: true });
+  initChartTooltips(box);
+}
+function renderVamChart(weeks) {
+  const box = document.getElementById('vamChartBox');
+  const pts = weeks.filter(w => w.vamAvg != null).map((w,i) => ({
+    x: i, y: w.vamAvg, xLabel: w.shortLabel,
+    label: 'Semaine du ' + fmtDate(w.startISO) + ' : VAM moyenne ' + w.vamAvg + ' m/h',
+  }));
+  if (pts.length < 2) { box.innerHTML = '<div class="empty">Pas assez de montées fiables détectées sur cette période pour calculer une VAM moyenne.</div>'; return; }
+  box.innerHTML = lineChartSvg('', pts, { decimals: 0, height: 220, hideTitle: true });
+  initChartTooltips(box);
 }
 
-initBucketSelect();
+/* --------------------------- LOCOMOTION / ZONES / PENTE --------------------------- */
+function renderLocomotion(sessions) {
+  const box = document.getElementById('locomotionBox');
+  const loco = aggregateLocomotion(sessions);
+  if (!loco) { box.innerHTML = '<div class="empty">Cadence insuffisante sur cette période pour estimer la locomotion.</div>'; return; }
+  const segs = [
+    { key:'run', label:'Course', pct: loco.run.pct, sec: loco.run.sec, color: 'var(--accent)' },
+    { key:'walk', label:'Marche', pct: loco.walk.pct, sec: loco.walk.sec, color: 'var(--accent-light)' },
+    { key:'stop', label:'Arrêt', pct: loco.stop.pct, sec: loco.stop.sec, color: 'var(--muted-2)' },
+  ];
+  const donut = genericDonutSvg(segs, fmtDuration(loco.totalSec), 'Total');
+  const legend = segs.map(s => '<div class="zdl-row"><span class="zone-dot" style="background:'+s.color+'"></span>' +
+    '<span class="zdl-label">'+s.label+'</span><span class="zdl-pct">'+s.pct+'%</span><span class="zdl-time">'+fmtDuration(s.sec)+'</span></div>').join('');
+  box.innerHTML = '<div class="analysis-donut-row">' + donut + '<div class="zone-donut-legend">' + legend + '</div></div>' +
+    '<p class="provenance-tag">Estimation ELEV (cadence).</p>';
+}
+
+function renderZones(sessions, zones) {
+  const box = document.getElementById('zonesBox');
+  if (!zones) { box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>'; return; }
+  const dist = aggregateZones(sessions, zones);
+  if (!dist) { box.innerHTML = '<div class="empty">Pas assez de séances avec FC sur cette période.</div>'; return; }
+  box.innerHTML = '<div class="zone-bars">' + dist.map(z =>
+    '<div class="zone-row"><span class="zone-label">'+escapeHtml(z.label)+'</span>' +
+    '<div class="zone-track"><div class="zone-fill '+z.key+'" style="width:'+z.pct+'%"></div></div>' +
+    '<span class="zone-pct">'+z.pct+'%</span><span class="zone-time">'+fmtDuration(z.sec)+'</span></div>'
+  ).join('') + '</div>';
+}
+
+function renderGradeBuckets(buckets) {
+  const box = document.getElementById('gradeBucketsBox');
+  if (!buckets) { box.innerHTML = '<div class="empty">Pas assez de données GPS/altitude sur cette période.</div>'; return; }
+  box.innerHTML = '<div class="zone-bars">' + buckets.map(b =>
+    '<div class="zone-row"><span class="zone-label">'+escapeHtml(b.label)+'</span>' +
+    '<div class="zone-track"><div class="zone-fill" style="width:'+b.pct+'%;background:var(--accent)"></div></div>' +
+    '<span class="zone-pct">'+b.pct+'%</span><span class="zone-time">'+fmtDuration(b.sec)+'</span></div>'
+  ).join('') + '</div>';
+}
+
+function renderRunWalkByGrade(buckets) {
+  const box = document.getElementById('runWalkGradeBox');
+  if (!buckets || !buckets.length) { box.innerHTML = '<div class="empty">Cadence insuffisante sur cette période pour cette analyse.</div>'; return; }
+  box.innerHTML = '<div class="rw-grade-list">' + buckets.map(b =>
+    '<div class="rw-grade-row"><span class="rw-grade-label">'+escapeHtml(b.label)+'</span>' +
+    '<div class="rw-grade-bars">' +
+      '<div class="rw-grade-bar-line"><span class="rw-tag">Course</span><div class="rw-grade-track"><div class="rw-grade-fill run" style="width:'+(b.runPct||0)+'%"></div></div><span class="rw-grade-pct">'+(b.runPct!=null?b.runPct+'%':'—')+'</span></div>' +
+      '<div class="rw-grade-bar-line"><span class="rw-tag">Marche</span><div class="rw-grade-track"><div class="rw-grade-fill walk" style="width:'+(b.walkPct||0)+'%"></div></div><span class="rw-grade-pct">'+(b.walkPct!=null?b.walkPct+'%':'—')+'</span></div>' +
+    '</div></div>'
+  ).join('') + '</div>' +
+  '<p class="provenance-tag">Estimation ELEV (cadence) — pas une donnée Garmin native.</p>';
+}
+
+/* --------------------------- INSIGHT ELEV --------------------------- */
+function renderInsight(deltas, runWalkByGrade) {
+  const row = document.getElementById('insightRow');
+  const bullets = generateGlobalAnalysisInsight(deltas || {}, runWalkByGrade);
+  if (!bullets.length) { row.innerHTML = ''; return; }
+  row.innerHTML = '<div class="insight-card">' +
+    '<p class="insight-eyebrow"><img src="'+ICON('zap')+'" alt="">Insight ELEV</p>' +
+    bullets.map(b => '<div class="insight-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+  '</div>';
+}
+
+/* --------------------------- DERNIÈRES ACTIVITÉS / MEILLEURS PERSONNELS --------------------------- */
+function renderRecentActivities(sessions) {
+  const box = document.getElementById('recentActivitiesBox');
+  const list = [...sessions].sort((a,b) => b.date.localeCompare(a.date)).slice(0,5);
+  if (!list.length) { box.innerHTML = '<div class="empty">Aucune activité sur cette période.</div>'; return; }
+  box.innerHTML = list.map(s => {
+    const visual = sessionPreviewSvg(s);
+    const [, mo, da] = s.date.split('-');
+    const dateStack = '<span class="cell-day">' + parseInt(da,10) + '</span><span class="cell-month">' + FR_MONTHS_SHORT[parseInt(mo,10)-1].replace('.','').toUpperCase() + '</span><span class="cell-year">' + s.date.slice(0,4) + '</span>';
+    return '<a class="activity-row" href="activite.html?id=' + encodeURIComponent(s.id) + '">' +
+      '<span class="cell cell-date">' + dateStack + '</span>' +
+      '<span class="cell cell-activity"><span class="row-title">' + escapeHtml(s.sport || 'Séance') + '</span></span>' +
+      '<span class="cell cell-stat">' + fmtNum(s.distanceKm, ' km', 1) + '</span>' +
+      '<span class="cell cell-stat">' + fmtNum(s.ascent, ' m', 0) + '</span>' +
+      '<span class="cell cell-stat">' + fmtDuration(s.durationS) + '</span>' +
+      '<span class="cell cell-stat">' + (s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') + '</span>' +
+      '<span class="cell cell-stat">' + (s.avgHr != null ? s.avgHr + ' bpm' : '—') + '</span>' +
+      '<span class="cell cell-visual">' + (visual || '') + '</span>' +
+      '<span class="cell cell-arrow link-arrow">Voir →</span>' +
+    '</a>';
+  }).join('');
+}
+
+function renderBests(sessions) {
+  const box = document.getElementById('bestsBox');
+  const bests = computePeriodBests(sessions);
+  if (!bests.length) { box.innerHTML = '<div class="empty">Pas assez de séances sur cette période.</div>'; return; }
+  box.innerHTML = '<div class="mini-list">' + bests.map(b =>
+    '<a class="mini-list-row" href="activite.html?id=' + encodeURIComponent(b.activityId) + '" style="text-decoration:none;color:inherit;">' +
+    '<span class="mini-list-lbl">' + escapeHtml(b.label) + '<br><span style="font-size:.68rem;color:var(--muted-2);">' + b.date + '</span></span>' +
+    '<span class="mini-list-val">' + escapeHtml(b.value) + '</span></a>'
+  ).join('') + '</div>';
+}
+
+/* --------------------------- ORCHESTRATION --------------------------- */
+function renderAnalysis() {
+  const sessions = loadAllSessions();
+  const { fromISO, toISO } = resolveAnalysisRange(periodKey, customFrom, customTo, sessions);
+  const current = filterSessionsByRange(sessions, fromISO, toISO);
+  const { fromISO: pFrom, toISO: pTo } = previousAnalysisRange(fromISO, toISO);
+  const previous = filterSessionsByRange(sessions, pFrom, pTo);
+
+  document.getElementById('periodLabel').textContent = current.length
+    ? ('Synthèse du ' + fmtDate(fromISO) + ' au ' + fmtDate(toISO) + ' — ' + current.length + ' séance' + (current.length>1?'s':'') + '.')
+    : 'Synthèse de tes performances et de ta progression.';
+
+  const cmp = comparePeriods(aggregatePeriod(current), aggregatePeriod(previous));
+  renderKpis(cmp);
+
+  const weeks = groupByWeek(current);
+  renderVolumeChart(weeks);
+  renderDplusChart(weeks);
+  renderVamChart(weeks);
+
+  const profile = getProfile();
+  const zones = karvonenZones(parseFloat(profile.fcMax), parseFloat(profile.fcRepos));
+  renderLocomotion(current);
+  renderZones(current, zones);
+  const gradeBuckets = aggregateGradeBuckets(current);
+  renderGradeBuckets(gradeBuckets);
+  const rwByGrade = aggregateRunWalkByGrade(current);
+  renderRunWalkByGrade(rwByGrade);
+
+  renderInsight(cmp ? cmp.deltas : {}, rwByGrade);
+  renderRecentActivities(current);
+  renderBests(current);
+}
+
+renderAnalysis(); // premier rendu depuis le cache local, avant même la vérification de connexion
+renderSidebarUser();
+async function onAuthReady() { await syncActivitiesWithSupabase(); renderAnalysis(); }
 </script>
+<script src="assets/authgate.js"></script>
 </body>
 </html>

@@ -1206,6 +1206,250 @@ function generateSessionInsight(session, zoneDist, climbs) {
   return bullets.slice(0, 3);
 }
 
+/* --------------------------- ANALYSE GLOBALE (page Analyse, multi-séances) ---------------------------
+   Distinct des fonctions ci-dessus (qui portent sur UNE séance) : ici on agrège plusieurs séances sur
+   une période pour en tirer des tendances. Rien de fictif — voir CLAUDE.md : uniquement des métriques
+   réellement calculables à partir de `activities`/localStorage, jamais de score de forme/récupération
+   inventé. */
+
+const ANALYSIS_PERIODS = {
+  '4w': { label: '4 sem.', days: 28 },
+  '12w': { label: '12 sem.', days: 84 },
+  '6m': { label: '6 mois', days: 182 },
+  '1y': { label: '1 an', days: 365 },
+  'all': { label: 'Tout', days: null },
+};
+function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0,10); }
+
+// Résout une période "rapide" (ou personnalisée) en bornes ISO [from, to]. "Tout" s'appuie sur la
+// première séance réellement connue, jamais une date arbitraire.
+function resolveAnalysisRange(key, customFrom, customTo, sessions) {
+  const today = new Date().toISOString().slice(0,10);
+  if (key === 'custom' && customFrom && customTo) return { fromISO: customFrom, toISO: customTo };
+  const def = ANALYSIS_PERIODS[key] || ANALYSIS_PERIODS['12w'];
+  if (def.days == null) return { fromISO: sessions.length ? sessions[0].date : today, toISO: today };
+  return { fromISO: isoDaysAgo(def.days), toISO: today };
+}
+// Période précédente de même durée, immédiatement avant fromISO — pour la comparaison automatique.
+function previousAnalysisRange(fromISO, toISO) {
+  const from = new Date(fromISO + 'T00:00:00Z'), to = new Date(toISO + 'T00:00:00Z');
+  const spanDays = Math.max(1, Math.round((to - from) / 86400000));
+  const prevTo = new Date(from); prevTo.setUTCDate(prevTo.getUTCDate() - 1);
+  const prevFrom = new Date(prevTo); prevFrom.setUTCDate(prevFrom.getUTCDate() - spanDays);
+  return { fromISO: prevFrom.toISOString().slice(0,10), toISO: prevTo.toISOString().slice(0,10) };
+}
+function filterSessionsByRange(sessions, fromISO, toISO) {
+  return sessions.filter(s => s.date >= fromISO && s.date <= toISO);
+}
+
+// Regroupe des séances par semaine ISO (lundi-dimanche) : distance/D+/D-/durée/nb de séances, plus
+// une VAM moyenne pondérée par le D+ des montées détectées (voir detectClimbs) — jamais calculée sur
+// la sortie entière. Une semaine sans séance n'apparaît simplement pas (pas de 0 fabriqué).
+function groupByWeek(sessions) {
+  const map = new Map();
+  sessions.forEach(s => {
+    const ws = isoWeek(s.date);
+    if (!map.has(ws)) map.set(ws, { startISO: ws, km: 0, durationS: 0, ascent: 0, descent: 0, count: 0, climbs: [] });
+    const w = map.get(ws);
+    w.km += s.distanceKm || 0;
+    w.durationS += s.durationS || 0;
+    w.ascent += s.ascent || 0;
+    w.descent += s.descent || 0;
+    w.count += 1;
+    if (Array.isArray(s.series) && s.series.length > 2) w.climbs.push(...detectClimbs(s.series));
+  });
+  return [...map.values()].sort((a,b) => a.startISO.localeCompare(b.startISO)).map(w => {
+    const withVam = w.climbs.filter(c => c.vamMh != null && c.gainM);
+    const totalGain = withVam.reduce((a,c) => a + c.gainM, 0);
+    const vamAvg = totalGain > 0 ? Math.round(withVam.reduce((a,c) => a + c.vamMh * c.gainM, 0) / totalGain) : null;
+    return { startISO: w.startISO, shortLabel: w.startISO.slice(8,10)+'/'+w.startISO.slice(5,7), km: w.km, durationS: w.durationS, ascent: w.ascent, descent: w.descent, count: w.count, vamAvg };
+  });
+}
+
+// Somme/moyennes d'une période (KPI + comparaison). null si aucune séance.
+function aggregatePeriod(sessions) {
+  if (!sessions.length) return null;
+  const distanceKm = sessions.reduce((a,s) => a + (s.distanceKm||0), 0);
+  const ascent = sessions.reduce((a,s) => a + (s.ascent||0), 0);
+  const durationS = sessions.reduce((a,s) => a + (s.durationS||0), 0);
+  const withHr = sessions.filter(s => s.avgHr != null && s.durationS);
+  const totalHrDuration = withHr.reduce((a,s) => a + s.durationS, 0);
+  const avgHr = withHr.length ? Math.round(withHr.reduce((a,s) => a + s.avgHr * s.durationS, 0) / totalHrDuration) : null;
+  let totalGain = 0, gainVam = 0;
+  sessions.forEach(s => {
+    if (!Array.isArray(s.series) || s.series.length < 3) return;
+    detectClimbs(s.series).forEach(c => { if (c.vamMh != null && c.gainM) { totalGain += c.gainM; gainVam += c.vamMh * c.gainM; } });
+  });
+  const vamAvg = totalGain > 0 ? Math.round(gainVam / totalGain) : null;
+  return { distanceKm, ascent, durationS, avgHr, vamAvg, count: sessions.length };
+}
+function pctDelta(cur, prev) { if (cur == null || prev == null || prev === 0) return null; return Math.round((cur - prev) / prev * 100); }
+// Compare deux agrégats de période (courante / précédente de même durée). Ne calcule un delta que
+// pour les métriques où une hausse a un sens univoque à colorer (distance/D+/durée/VAM) — la FC et
+// le nombre de séances restent gérés à l'affichage sans jugement automatique de couleur (voir CLAUDE.md).
+function comparePeriods(current, previous) {
+  if (!current) return null;
+  return {
+    current, previous,
+    deltas: {
+      distanceKm: previous ? pctDelta(current.distanceKm, previous.distanceKm) : null,
+      ascent: previous ? pctDelta(current.ascent, previous.ascent) : null,
+      durationS: previous ? pctDelta(current.durationS, previous.durationS) : null,
+      vamAvg: previous ? pctDelta(current.vamAvg, previous.vamAvg) : null,
+    },
+  };
+}
+
+// Répartition du temps en zones FC (Karvonen) cumulée sur une période — somme de
+// computeSessionZoneDistribution sur toutes les séances où elle est calculable.
+function aggregateZones(sessions, zones) {
+  if (!zones) return null;
+  const secByZone = zones.map(() => 0);
+  let total = 0;
+  sessions.forEach(s => {
+    const dist = computeSessionZoneDistribution(s, zones);
+    if (!dist) return;
+    dist.forEach((z,i) => { secByZone[i] += z.sec; total += z.sec; });
+  });
+  if (!total) return null;
+  return zones.map((z,i) => ({ key: z.key, label: z.label, sec: secByZone[i], pct: Math.round(secByZone[i]/total*100) }));
+}
+
+// Répartition course/marche/arrêt cumulée sur une période (voir computeRunWalkBreakdown, par séance).
+function aggregateLocomotion(sessions) {
+  const sec = { run: 0, walk: 0, stop: 0 };
+  let any = false;
+  sessions.forEach(s => {
+    const b = computeRunWalkBreakdown(s);
+    if (!b) return;
+    any = true;
+    sec.run += b.run.sec; sec.walk += b.walk.sec; sec.stop += b.stop.sec;
+  });
+  if (!any) return null;
+  const total = sec.run + sec.walk + sec.stop;
+  if (!total) return null;
+  return {
+    run: { sec: sec.run, pct: Math.round(sec.run/total*100) },
+    walk: { sec: sec.walk, pct: Math.round(sec.walk/total*100) },
+    stop: { sec: sec.stop, pct: Math.round(sec.stop/total*100) },
+    totalSec: total,
+  };
+}
+
+// Tranches de pente utilisées pour la répartition par pente et le run/walk par pente. Pente en
+// valeur absolue (montée et descente confondues) : convention documentée à l'affichage.
+const GRADE_BUCKETS = [
+  { key: 'g0', label: '0–5 %', min: 0, max: 5 },
+  { key: 'g5', label: '5–10 %', min: 5, max: 10 },
+  { key: 'g10', label: '10–15 %', min: 10, max: 15 },
+  { key: 'g15', label: '15–20 %', min: 15, max: 20 },
+  { key: 'g20', label: '> 20 %', min: 20, max: Infinity },
+];
+function gradeBucketIndex(pct) {
+  const abs = Math.abs(pct);
+  const i = GRADE_BUCKETS.findIndex(b => abs >= b.min && abs < b.max);
+  return i < 0 ? GRADE_BUCKETS.length - 1 : i;
+}
+
+// Répartition du temps EN MOUVEMENT (arrêts exclus) par tranche de pente, cumulée sur une période.
+// Convention : % du temps en mouvement, pas % de la distance.
+function aggregateGradeBuckets(sessions) {
+  const secByBucket = GRADE_BUCKETS.map(() => 0);
+  let total = 0;
+  sessions.forEach(s => {
+    const series = (s.series || []).filter(p => p.alt != null && p.distKm != null && p.t != null);
+    for (let i = 1; i < series.length; i++) {
+      const p0 = series[i-1], p1 = series[i];
+      const dt = p1.t - p0.t; if (!dt || dt <= 0 || dt > 120) continue;
+      const dDistKm = p1.distKm - p0.distKm; if (dDistKm <= 0) continue;
+      const speedKmh = dDistKm / (dt/3600);
+      if (speedKmh < RUNWALK_STOP_SPEED_KMH) continue;
+      const gradePct = ((p1.alt - p0.alt) / (dDistKm * 1000)) * 100;
+      secByBucket[gradeBucketIndex(gradePct)] += dt; total += dt;
+    }
+  });
+  if (!total) return null;
+  return GRADE_BUCKETS.map((b,i) => ({ key: b.key, label: b.label, sec: secByBucket[i], pct: Math.round(secByBucket[i]/total*100) }));
+}
+
+// Course vs marche par tranche de pente — estimation ELEV basée cadence (mêmes seuils que
+// computeRunWalkBreakdown). N'utilise que les intervalles où la cadence est réellement disponible
+// (jamais de repli sur l'allure ici, pour ne pas empiler une estimation sur une estimation).
+function aggregateRunWalkByGrade(sessions) {
+  const runByBucket = GRADE_BUCKETS.map(() => 0), walkByBucket = GRADE_BUCKETS.map(() => 0);
+  let anyCadence = false;
+  sessions.forEach(s => {
+    const series = (s.series || []).filter(p => p.alt != null && p.distKm != null && p.t != null);
+    for (let i = 1; i < series.length; i++) {
+      const p0 = series[i-1], p1 = series[i];
+      const dt = p1.t - p0.t; if (!dt || dt <= 0 || dt > 120) continue;
+      const dDistKm = p1.distKm - p0.distKm; if (dDistKm <= 0) continue;
+      const speedKmh = dDistKm / (dt/3600);
+      if (speedKmh < RUNWALK_STOP_SPEED_KMH) continue;
+      const cad = (p0.cadenceSpm != null && p1.cadenceSpm != null) ? (p0.cadenceSpm + p1.cadenceSpm) / 2 : null;
+      if (cad == null) continue;
+      anyCadence = true;
+      const gradePct = ((p1.alt - p0.alt) / (dDistKm * 1000)) * 100;
+      const bi = gradeBucketIndex(gradePct);
+      if (cad < RUNWALK_CADENCE_THRESHOLD) walkByBucket[bi] += dt; else runByBucket[bi] += dt;
+    }
+  });
+  if (!anyCadence) return null;
+  return GRADE_BUCKETS.map((b,i) => {
+    const totalSec = runByBucket[i] + walkByBucket[i];
+    return { key: b.key, label: b.label, totalSec, runPct: totalSec ? Math.round(runByBucket[i]/totalSec*100) : null, walkPct: totalSec ? Math.round(walkByBucket[i]/totalSec*100) : null };
+  }).filter(b => b.totalSec > 0);
+}
+
+function bestByKey(sessions, key, better) {
+  const withVal = sessions.filter(s => s[key] != null);
+  if (!withVal.length) return null;
+  return withVal.reduce((a,b) => better(a[key], b[key]) ? a : b);
+}
+// "Meilleurs personnels — période" : volontairement pas des "records" au sens absolu (l'allure et la
+// FC dépendent trop du terrain d'une sortie à l'autre pour être comparées comme une performance
+// sportive, voir CLAUDE.md). Chaque entrée garde l'id de la séance source pour pouvoir l'ouvrir.
+function computePeriodBests(sessions) {
+  if (!sessions.length) return [];
+  const out = [];
+  const longest = bestByKey(sessions, 'distanceKm', (a,b) => a > b);
+  if (longest) out.push({ label: 'Plus longue sortie', value: fmtNum(longest.distanceKm, ' km', 1), date: fmtDate(longest.date), activityId: longest.id });
+  const mostAscent = bestByKey(sessions, 'ascent', (a,b) => a > b);
+  if (mostAscent) out.push({ label: 'Plus gros dénivelé', value: fmtNum(mostAscent.ascent, ' m D+', 0), date: fmtDate(mostAscent.date), activityId: mostAscent.id });
+  let bestVam = null;
+  sessions.forEach(s => {
+    if (!Array.isArray(s.series) || s.series.length < 3) return;
+    detectClimbs(s.series).forEach(c => { if (c.vamMh != null && (!bestVam || c.vamMh > bestVam.vamMh)) bestVam = { vamMh: c.vamMh, session: s }; });
+  });
+  if (bestVam) out.push({ label: 'Meilleure VAM', value: bestVam.vamMh + ' m/h', date: fmtDate(bestVam.session.date), activityId: bestVam.session.id });
+  const fastestPace = bestByKey(sessions, 'avgPaceSecPerKm', (a,b) => a < b);
+  if (fastestPace) out.push({ label: 'Allure moyenne la plus rapide (période)', value: fmtPace(fastestPace.avgPaceSecPerKm), date: fmtDate(fastestPace.date), activityId: fastestPace.id });
+  const lowestHr = bestByKey(sessions, 'avgHr', (a,b) => a < b);
+  if (lowestHr) out.push({ label: 'FC moyenne la plus basse (période)', value: lowestHr.avgHr + ' bpm', date: fmtDate(lowestHr.date), activityId: lowestHr.id });
+  return out;
+}
+
+// Insight ELEV de la page Analyse (tendance multi-séances) — distinct de generateElevInsight()
+// (Accueil, charge aiguë/chronique) et generateSessionInsight() (une séance). Déterministe, aucun
+// appel réseau, ne conclut que ce que les données permettent réellement d'établir.
+function generateGlobalAnalysisInsight(deltas, runWalkByGrade) {
+  const bullets = [];
+  if (deltas.distanceKm != null && Math.abs(deltas.distanceKm) >= 8) {
+    bullets.push({ title: deltas.distanceKm > 0 ? 'Volume en progression' : 'Volume en retrait',
+      text: 'Ton volume total a ' + (deltas.distanceKm > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.distanceKm) + '% par rapport à la période précédente de même durée.' });
+  }
+  if (deltas.ascent != null && deltas.vamAvg != null && deltas.ascent >= 8 && Math.abs(deltas.vamAvg) <= 5) {
+    bullets.push({ title: 'Montées', text: 'Ta VAM moyenne reste stable malgré une hausse du D+ de ' + deltas.ascent + '% sur la période.' });
+  } else if (deltas.vamAvg != null && Math.abs(deltas.vamAvg) >= 8) {
+    bullets.push({ title: deltas.vamAvg > 0 ? 'VAM en progression' : 'VAM en retrait', text: 'Ta VAM moyenne a ' + (deltas.vamAvg > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.vamAvg) + '% par rapport à la période précédente.' });
+  }
+  if (runWalkByGrade && runWalkByGrade.length) {
+    const tip = runWalkByGrade.find(b => b.walkPct != null && b.walkPct >= b.runPct);
+    if (tip) bullets.push({ title: 'Locomotion', text: 'La marche devient majoritaire à partir de ' + tip.label + ' de pente (estimation ELEV, basée cadence).' });
+  }
+  return bullets.slice(0, 3);
+}
+
 /* --------------------------- 6) UTILITAIRES DOM --------------------------- */
 // Bloc utilisateur de la sidebar (avatar initiale + prénom) — identique à celui de l'Accueil,
 // réutilisé par les autres pages migrées vers la sidebar harmonisée (voir CLAUDE.md section 15).
@@ -1582,6 +1826,62 @@ function zoneDonutSvg(dist, centerValue, centerLabel) {
     '<text x="' + c + '" y="' + (c - 3) + '" text-anchor="middle" font-family="var(--font-display)" font-weight="700" font-size="16" fill="var(--text)">' + escapeHtml(centerValue) + '</text>' +
     '<text x="' + c + '" y="' + (c + 14) + '" text-anchor="middle" font-size="9" fill="var(--muted)">' + escapeHtml(centerLabel) + '</text>' +
   '</svg>';
+}
+
+// Donut générique (page Analyse — répartition locomotion) : même technique que zoneDonutSvg mais
+// couleurs fournies par l'appelant plutôt que fixées aux zones FC.
+function genericDonutSvg(segments, centerValue, centerLabel) {
+  if (!segments || !segments.length) return '';
+  const size = 100, stroke = 13, r = (size - stroke) / 2, c = size / 2;
+  const circumference = 2 * Math.PI * r;
+  let cumulative = 0;
+  const arcs = segments.filter(s => s.pct > 0).map(s => {
+    const len = circumference * (s.pct / 100);
+    const arc = '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="' + s.color + '" stroke-width="' + stroke + '" ' +
+      'stroke-dasharray="' + len.toFixed(1) + ' ' + (circumference - len).toFixed(1) + '" stroke-dashoffset="' + (-cumulative).toFixed(1) + '" transform="rotate(-90 ' + c + ' ' + c + ')"/>';
+    cumulative += len;
+    return arc;
+  }).join('');
+  return '<svg class="zone-donut" viewBox="0 0 ' + size + ' ' + size + '">' + arcs +
+    '<text x="' + c + '" y="' + (c - 2) + '" text-anchor="middle" font-family="var(--font-display)" font-weight="700" font-size="14" fill="var(--text)">' + escapeHtml(centerValue) + '</text>' +
+    '<text x="' + c + '" y="' + (c + 12) + '" text-anchor="middle" font-size="8" fill="var(--muted)">' + escapeHtml(centerLabel) + '</text>' +
+  '</svg>';
+}
+
+// Graphique combiné "Évolution du volume" (page Analyse) : barres = distance (échelle affichée en
+// axe Y), ligne = durée normalisée sur sa propre plage — pas de second axe superposé (même convention
+// que le fond de terrain en arrière-plan des autres graphiques : repère de tendance, pas une lecture
+// exacte au pixel près ; le détail exact reste dans le tooltip).
+function volumeChartSvg(weeks, opts) {
+  opts = opts || {};
+  const titleHtml = opts.hideTitle ? '' : '<h3>Évolution du volume</h3>';
+  if (weeks.length < 2) return '<div class="chart-box">' + titleHtml + '<div class="empty">Pas encore assez de séances pour ce graphique (2 semaines minimum).</div></div>';
+  const w = 620, h = 260, padL = 40, padR = 10, padT = 18, padB = 30;
+  const maxKm = Math.max(1, ...weeks.map(x => x.km));
+  const maxDurH = Math.max(1, ...weeks.map(x => x.durationS / 3600));
+  const groupW = (w - padL - padR) / weeks.length;
+  const barW = groupW * 0.55;
+  const syDur = v => (h - padB) - (v / maxDurH) * (h - padT - padB);
+  let bars = '';
+  weeks.forEach((wk, i) => {
+    const x = padL + i * groupW + (groupW - barW) / 2;
+    const bh = (wk.km / maxKm) * (h - padT - padB);
+    const y = (h - padB) - bh;
+    const tip = escapeHtml('Semaine du ' + fmtDate(wk.startISO) + ' — ' + wk.km.toFixed(1) + ' km · ' + fmtDuration(wk.durationS) + ' · ' + wk.count + ' séance' + (wk.count > 1 ? 's' : ''));
+    bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(bh, 1).toFixed(1) + '" rx="2" fill="var(--accent)" data-tooltip="' + tip + '"/>';
+    if (weeks.length <= 9 || i % Math.ceil(weeks.length / 8) === 0) {
+      bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 10) + '" font-size="11" fill="var(--muted)" text-anchor="middle">' + wk.shortLabel + '</text>';
+    }
+  });
+  const linePts = weeks.map((wk, i) => [padL + i * groupW + groupW / 2, syDur(wk.durationS / 3600)]);
+  const linePath = linePts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  const legend = '<div class="chart-legend"><span><span class="dot" style="background:var(--accent)"></span>Distance (km)</span><span><span class="dot" style="background:var(--secondary)"></span>Durée</span></div>';
+  return '<div class="chart-box">' + titleHtml + legend + '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
+    '<text x="2" y="' + (padT + 6) + '" font-size="12" fill="var(--muted)">' + maxKm.toFixed(0) + ' km</text>' +
+    bars +
+    '<path d="' + linePath + '" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round"/>' +
+  '</svg></div>';
 }
 
 // Aperçu visuel d'une séance pour la carte "Dernière activité" : trace GPS si les coordonnées sont

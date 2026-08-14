@@ -616,6 +616,42 @@ main.activities-main{max-width:1600px;}
 
 /* Sous 641px : la sidebar disparaît, remplacée par une barre de navigation fixe
    en bas d'écran (même surface sombre que la sidebar, icônes Lucide). */
+/* Page Analyse — refonte globale multi-activités (2026-08-14). Réutilise volontairement les
+   composants déjà validés ailleurs (kpi-grid, chart-box, zone-bars, mini-list, insight-card,
+   activity-row) plutôt que d'en recréer des variantes — seuls les éléments propres à cette page
+   (grilles de mise en page, run/walk par pente) sont ajoutés ici. */
+main.analysis-main{max-width:1440px;}
+.analysis-period-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-4px 0 4px;}
+.analysis-custom-dates{display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted);}
+.analysis-custom-dates input[type=date]{width:auto;padding:5px 8px;font-size:.78rem;}
+.analysis-period-label{font-size:.78rem;color:var(--muted);margin:0 0 2px;}
+.analysis-charts-row{display:grid;grid-template-columns:1fr;gap:14px;}
+.analysis-secondary-row{display:grid;grid-template-columns:1fr;gap:14px;}
+.analysis-bottom-row{display:grid;grid-template-columns:1fr;gap:14px;}
+@media (min-width:768px){
+  .analysis-secondary-row{grid-template-columns:1fr 1fr;}
+}
+@media (min-width:1024px){
+  .analysis-charts-row{grid-template-columns:repeat(3,1fr);}
+  .analysis-secondary-row{grid-template-columns:repeat(4,1fr);}
+  .analysis-bottom-row{grid-template-columns:1.4fr 1fr;align-items:start;}
+}
+.analysis-donut-row{display:flex;align-items:center;gap:16px;}
+.provenance-tag{font-size:.68rem;color:var(--muted-2);margin-top:10px;font-style:italic;}
+
+/* Run/Walk par pente — mini barres course/marche empilées par ligne de tranche de pente. */
+.rw-grade-list{display:flex;flex-direction:column;gap:10px;}
+.rw-grade-row{display:grid;grid-template-columns:56px 1fr;gap:10px;align-items:center;}
+.rw-grade-label{font-size:.76rem;color:var(--muted);font-variant-numeric:tabular-nums;}
+.rw-grade-bars{display:flex;flex-direction:column;gap:4px;}
+.rw-grade-bar-line{display:flex;align-items:center;gap:6px;}
+.rw-grade-bar-line .rw-tag{width:44px;flex-shrink:0;font-size:.64rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+.rw-grade-track{flex:1 1 auto;height:6px;border-radius:var(--radius-pill);background:rgba(244,247,245,.08);overflow:hidden;}
+.rw-grade-fill{height:100%;border-radius:var(--radius-pill);}
+.rw-grade-fill.run{background:var(--accent);}
+.rw-grade-fill.walk{background:var(--accent-light);}
+.rw-grade-pct{width:32px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text);font-size:.72rem;flex-shrink:0;}
+
 @media (max-width: 640px) {
   .sidebar{display:none;}
   .mobile-nav{
