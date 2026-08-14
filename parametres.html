@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
@@ -17,7 +17,8 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="assets/logo-full.png" alt="ELEV — Dashboard Trail">
+    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav">
     <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
@@ -25,28 +26,117 @@
     <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
     <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
     <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
+    <div class="sidebar-nav-sep"></div>
     <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
     <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
     <a href="parametres.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
   </nav>
+  <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
 <header class="app-topbar">
-  <h1>Paramètres</h1>
+  <div>
+    <h1>Paramètres</h1>
+    <p class="hint" style="margin-top:2px;">Gérez votre compte, vos préférences et vos données.</p>
+  </div>
   <button id="themeToggle" type="button">☀ Clair</button>
 </header>
 
 <main>
 
   <div class="tabs" id="paramTabs">
-    <button type="button" data-tab="plan" class="active">Plan d'entraînement</button>
-    <button type="button" data-tab="api">Clé API</button>
-    <button type="button" data-tab="donnees">Données</button>
-    <button type="button" data-tab="compte">Compte &amp; synchro</button>
-    <button type="button" data-tab="affichage">Affichage</button>
+    <button type="button" data-tab="general" class="active">Général</button>
+    <button type="button" data-tab="plan">Plan d'entraînement</button>
   </div>
 
-  <div class="tab-panel active" data-panel="plan">
+  <!-- ============ GÉNÉRAL : 6 cartes ============ -->
+  <div class="tab-panel active" data-panel="general">
+
+    <div class="profile-card-grid">
+      <details class="profile-accordion" open>
+        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Compte &amp; profil<span class="acc-sub">Email, mot de passe, langue, fuseau horaire</span></span></summary>
+        <div class="accordion-body" id="cardCompte"></div>
+      </details>
+
+      <details class="profile-accordion" open>
+        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/sliders-horizontal.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Préférences d'application<span class="acc-sub">Thème, unités, semaine</span></span></summary>
+        <div class="accordion-body" id="cardPrefs"></div>
+      </details>
+
+      <details class="profile-accordion" open>
+        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/link.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Connectivité &amp; appareils<span class="acc-sub">Synchro, import, appareils, API</span></span></summary>
+        <div class="accordion-body" id="cardConnect"></div>
+      </details>
+
+      <details class="profile-accordion" open>
+        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/lock.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Données &amp; confidentialité<span class="acc-sub">Exporter, confidentialité, compte</span></span></summary>
+        <div class="accordion-body" id="cardData"></div>
+      </details>
+
+      <details class="profile-accordion" open>
+        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/shield-check.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Sauvegarde &amp; intégrité<span class="acc-sub">Synchro cloud, cache, vérification</span></span></summary>
+        <div class="accordion-body" id="cardBackup"></div>
+      </details>
+
+      <details class="profile-accordion" open>
+        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/info.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">À propos d'ELEV<span class="acc-sub">Version, outils de développement</span></span></summary>
+        <div class="accordion-body" id="cardAbout"></div>
+      </details>
+    </div>
+
+    <div class="settings-banner">
+      <span><strong>Vos données restent votre propriété.</strong> ELEV utilise vos données uniquement pour fournir les fonctionnalités du service.</span>
+    </div>
+
+    <!-- Configuration détaillée de la synchro Supabase (formulaire multi-champs, pas adapté à une simple ligne) -->
+    <section class="card" style="margin-top:14px;" id="supaConfigSection">
+      <h2>Configuration de la synchronisation</h2>
+      <p class="hint">Optionnel. Une fois configuré et connecté, tes données se synchronisent automatiquement entre tous tes appareils (PC, téléphone...) dès qu'ils ont accès à internet. Sans configuration, le dashboard continue de fonctionner normalement en local uniquement.</p>
+      <div class="row">
+        <label class="field" style="flex:1 1 320px;">URL du projet Supabase
+          <input type="text" id="supaUrlInput" placeholder="https://xxxxx.supabase.co">
+        </label>
+        <label class="field" style="flex:1 1 320px;">Clé "anon public"
+          <input type="text" id="supaKeyInput" placeholder="eyJ...">
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="saveSupaConfigBtn" type="button">Enregistrer la configuration</button>
+        <button class="btn danger" id="clearSupaConfigBtn" type="button">Retirer la configuration</button>
+      </div>
+      <div id="supaConfigMsg"></div>
+    </section>
+
+    <section class="card" id="supaAuthCard" style="display:none;margin-top:14px;">
+      <h2>Connexion</h2>
+      <div id="supaAuthStatus"></div>
+      <div class="row" id="supaLoginForm">
+        <label class="field" style="flex:1 1 220px;">Email
+          <input type="email" id="supaEmail" placeholder="toi@exemple.com">
+        </label>
+        <label class="field" style="flex:1 1 180px;">Mot de passe
+          <input type="password" id="supaPassword" placeholder="••••••••">
+        </label>
+        <button class="btn primary" id="supaLoginBtn" type="button" style="align-self:flex-end;">Se connecter</button>
+        <button class="btn" id="supaSignupBtn" type="button" style="align-self:flex-end;">Créer un compte</button>
+      </div>
+      <button class="btn danger" id="supaLogoutBtn" type="button" style="display:none;">Se déconnecter</button>
+      <div id="supaAuthMsg"></div>
+    </section>
+
+    <section class="card" id="supaSyncCard" style="display:none;margin-top:14px;">
+      <h2>Synchro manuelle</h2>
+      <div class="row">
+        <button class="btn" id="supaPushBtn" type="button">Envoyer vers le cloud</button>
+        <button class="btn" id="supaPullBtn" type="button">Récupérer depuis le cloud</button>
+      </div>
+      <div id="supaSyncMsg"></div>
+    </section>
+
+  </div>
+
+  <!-- ============ PLAN D'ENTRAÎNEMENT (inchangé, accessible via #plan) ============ -->
+  <div class="tab-panel" data-panel="plan">
     <section class="card">
       <h2>Plan d'entraînement (CSV)</h2>
       <p class="hint">Deux formats de CSV sont acceptés :</p>
@@ -76,97 +166,6 @@
     </section>
   </div>
 
-  <div class="tab-panel" data-panel="api">
-    <section class="card">
-      <h2>Clé API Claude (pour le retour qualitatif IA — optionnel)</h2>
-      <p class="hint">Votre clé reste uniquement sur cet ordinateur (stockage local du navigateur) et n'est envoyée qu'à l'API Anthropic, jamais ailleurs. Sans clé, le dashboard fonctionne normalement — seul le retour IA par séance (page Historique) ne sera pas disponible.</p>
-      <div class="row">
-        <label class="field" style="flex:1 1 260px;">
-          Clé API (commence par sk-ant-...)
-          <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
-        </label>
-        <button class="btn primary" id="saveKeyBtn" type="button" style="align-self:flex-end;">Enregistrer la clé</button>
-        <button class="btn danger" id="forgetKeyBtn" type="button" style="align-self:flex-end;">Oublier la clé</button>
-      </div>
-      <div id="keyMsg"></div>
-    </section>
-  </div>
-
-  <div class="tab-panel" data-panel="donnees">
-    <section class="card">
-      <h2>Gestion des données</h2>
-      <div class="row">
-        <button class="btn" id="exportBtn" type="button">Exporter toutes les données (JSON)</button>
-        <button class="btn" id="importBtn" type="button">Importer un export JSON</button>
-        <input type="file" id="importFileInput" accept=".json" style="display:none;">
-        <button class="btn danger" id="resetBtn" type="button">Réinitialiser toutes les données</button>
-      </div>
-      <div id="importJsonMsg"></div>
-      <p class="hint">Séances, plan, courses, profil, équipements et clé API sont stockés uniquement dans ce navigateur (localStorage). Rien n'est envoyé sur un serveur, hormis les appels volontaires à l'API Claude. Pour retrouver tes données sur un autre appareil (ex. téléphone), exporte le JSON depuis cet appareil-ci puis importe-le là-bas.</p>
-    </section>
-  </div>
-
-  <div class="tab-panel" data-panel="compte">
-    <section class="card">
-      <h2>Synchronisation entre appareils (Supabase)</h2>
-      <p class="hint">Optionnel. Une fois configuré et connecté, tes données se synchronisent automatiquement entre tous tes appareils (PC, téléphone...) dès qu'ils ont accès à internet. Sans configuration, le dashboard continue de fonctionner normalement en local uniquement.</p>
-      <div class="row">
-        <label class="field" style="flex:1 1 320px;">URL du projet Supabase
-          <input type="text" id="supaUrlInput" placeholder="https://xxxxx.supabase.co">
-        </label>
-        <label class="field" style="flex:1 1 320px;">Clé "anon public"
-          <input type="text" id="supaKeyInput" placeholder="eyJ...">
-        </label>
-      </div>
-      <div class="row">
-        <button class="btn primary" id="saveSupaConfigBtn" type="button">Enregistrer la configuration</button>
-        <button class="btn danger" id="clearSupaConfigBtn" type="button">Retirer la configuration</button>
-      </div>
-      <div id="supaConfigMsg"></div>
-    </section>
-
-    <section class="card" id="supaAuthCard" style="display:none;">
-      <h2>Compte</h2>
-      <div id="supaAuthStatus"></div>
-      <div class="row" id="supaLoginForm">
-        <label class="field" style="flex:1 1 220px;">Email
-          <input type="email" id="supaEmail" placeholder="toi@exemple.com">
-        </label>
-        <label class="field" style="flex:1 1 180px;">Mot de passe
-          <input type="password" id="supaPassword" placeholder="••••••••">
-        </label>
-        <button class="btn primary" id="supaLoginBtn" type="button" style="align-self:flex-end;">Se connecter</button>
-        <button class="btn" id="supaSignupBtn" type="button" style="align-self:flex-end;">Créer un compte</button>
-      </div>
-      <button class="btn danger" id="supaLogoutBtn" type="button" style="display:none;">Se déconnecter</button>
-      <div id="supaAuthMsg"></div>
-    </section>
-
-    <section class="card" id="supaSyncCard" style="display:none;">
-      <h2>Synchro manuelle</h2>
-      <div class="row">
-        <button class="btn" id="supaPushBtn" type="button">Envoyer vers le cloud</button>
-        <button class="btn" id="supaPullBtn" type="button">Récupérer depuis le cloud</button>
-      </div>
-      <div id="supaSyncMsg"></div>
-    </section>
-  </div>
-
-  <div class="tab-panel" data-panel="affichage">
-    <section class="card">
-      <h2>Affichage</h2>
-      <div class="row">
-        <span>Thème : </span>
-        <button class="btn" id="themeToggleBig" type="button">Basculer clair / sombre</button>
-      </div>
-    </section>
-    <section class="card">
-      <h2>Développement</h2>
-      <p class="hint">Outil de diagnostic pour inspecter en détail le contenu d'un fichier .fit (messages, couverture des champs, champs développeur, intégrité) — utile pour comprendre ce qu'une montre a réellement enregistré. N'importe et ne stocke rien.</p>
-      <a class="btn" href="inspecteur.html">Ouvrir le FIT Import Inspector</a>
-    </section>
-  </div>
-
 </main>
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée ci-dessus).</footer>
@@ -185,9 +184,28 @@
 </nav>
 
 <script>
-document.getElementById('themeToggleBig').addEventListener('click', toggleTheme);
+function humanizeTimezoneLocal(tz) {
+  if (!tz) return null;
+  const city = (tz.split('/').pop() || tz).replace(/_/g, ' ');
+  let offset = '';
+  try {
+    const part = new Intl.DateTimeFormat('fr', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName');
+    if (part) offset = part.value.replace('GMT', 'UTC');
+  } catch (e) {}
+  return city + (offset ? ' · ' + offset : '');
+}
+function settingsRow(label, sub, valueHtml, opts) {
+  opts = opts || {};
+  const tag = opts.onClick ? 'button type="button"' : 'div';
+  const closeTag = opts.onClick ? 'button' : 'div';
+  return '<' + tag + ' class="settings-row' + (opts.danger?' danger':'') + '"' + (opts.id ? ' id="'+opts.id+'"' : '') + '>' +
+    '<span><span class="settings-row-label">' + label + '</span>' + (sub ? '<span class="settings-row-sub">'+sub+'</span>' : '') + '</span>' +
+    '<span class="settings-row-value">' + (valueHtml||'') + (opts.onClick ? '<img class="chev" src="'+ICON_S('chevron-right')+'" alt="">' : '') + '</span>' +
+  '</' + closeTag + '>';
+}
+const ICON_S = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
 
-/* --------------------------- ONGLETS --------------------------- */
+/* --------------------------- ONGLETS (Général / Plan) --------------------------- */
 function activateTab(tab) {
   document.querySelectorAll('#paramTabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
@@ -201,7 +219,180 @@ document.querySelectorAll('#paramTabs button').forEach(btn => btn.addEventListen
   if (fromHash && document.querySelector('[data-panel="' + fromHash + '"]')) activateTab(fromHash);
 })();
 
-/* --------------------------- PLAN CSV --------------------------- */
+/* --------------------------- COMPTE & PROFIL --------------------------- */
+async function renderCardCompte() {
+  const box = document.getElementById('cardCompte');
+  const client = getSupabaseClient();
+  const user = client ? await supaGetUser() : null;
+  let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch(e){}
+  box.innerHTML =
+    settingsRow('Email', 'Compte connecté', user ? escapeHtml(user.email) : 'Non connecté') +
+    (user ? settingsRow('Mot de passe', 'Recevoir un lien de réinitialisation par email', '', { id:'resetPasswordBtn', onClick:true }) : '') +
+    settingsRow('Langue', "Langue de l'interface", 'Français') +
+    settingsRow('Fuseau horaire', 'Détecté automatiquement', tz ? escapeHtml(humanizeTimezoneLocal(tz)) : 'Non détecté') +
+    '<div id="compteMsg"></div>' +
+    '<div class="row" style="margin-top:10px;"><a class="link-arrow" href="profil.html">Voir mon profil →</a></div>';
+  const resetBtn = document.getElementById('resetPasswordBtn');
+  if (resetBtn) resetBtn.addEventListener('click', async () => {
+    const c = getSupabaseClient(); const u = await supaGetUser();
+    if (!c || !u) return;
+    const { error } = await c.auth.resetPasswordForEmail(u.email);
+    showMsg('compteMsg', error ? ('Erreur : ' + error.message) : ('Email de réinitialisation envoyé à ' + escapeHtml(u.email) + '.'), error ? 'err' : 'ok');
+  });
+}
+
+/* --------------------------- PRÉFÉRENCES D'APPLICATION --------------------------- */
+function renderCardPrefs() {
+  const box = document.getElementById('cardPrefs');
+  const isLight = document.documentElement.dataset.theme === 'light';
+  box.innerHTML =
+    settingsRow('Thème', "Apparence de l'interface", (isLight ? 'Clair' : 'Sombre'), { id:'themeRowBtn', onClick:true }) +
+    settingsRow('Unités', 'Distance, dénivelé, poids', 'Métrique') +
+    settingsRow('Première journée de la semaine', 'Début de semaine dans ELEV', 'Lundi');
+  document.getElementById('themeRowBtn').addEventListener('click', () => { toggleTheme(); renderCardPrefs(); });
+}
+
+/* --------------------------- CONNECTIVITÉ & APPAREILS --------------------------- */
+async function renderCardConnect() {
+  const box = document.getElementById('cardConnect');
+  const cfg = getSupabaseConfig();
+  const client = getSupabaseClient();
+  let syncLine = 'Non configurée', syncDot = '';
+  let lastSync = null;
+  try { const meta = JSON.parse(localStorage.getItem(SUPA_META_KEY) || 'null'); if (meta && meta.lastRemoteUpdatedAt) lastSync = meta.lastRemoteUpdatedAt; } catch(e){}
+  if (cfg.url && cfg.anonKey) {
+    syncLine = 'Configurée';
+    if (client) { const user = await supaGetUser(); if (user) { syncLine = 'Connectée'; syncDot = '<span class="dot ok"></span>'; } }
+  }
+  const detected = getDetectedDevices(5);
+  const apiKey = getApiKey();
+  box.innerHTML =
+    settingsRow('Synchronisation ELEV', lastSync ? ('Dernière synchro : ' + fmtDate(lastSync.slice(0,10))) : 'Synchronisation de vos données entre appareils', syncDot + syncLine, { id:'goSupaConfig', onClick:true }) +
+    settingsRow('Import de séances', 'Fichiers .fit (manuel)', '', { id:'goImport', onClick:true }) +
+    settingsRow('Appareils détectés', 'Derniers appareils via fichiers FIT', detected.length ? (detected.length + ' appareil' + (detected.length>1?'s':'')) : 'Aucun', { id:'goDevices', onClick:true }) +
+    settingsRow('API IA', 'Utilisée uniquement pour le retour Coach ELEV nécessitant l\'API', apiKey ? ('Configurée (••••' + escapeHtml(apiKey.slice(-4)) + ')') : 'Non configurée') +
+    '<div class="row" style="margin-top:8px;">' +
+      '<label class="field" style="flex:1 1 220px;">Clé API Claude (sk-ant-...)<input type="password" id="apiKeyInput" placeholder="sk-ant-..."></label>' +
+      '<button class="btn small primary" id="saveKeyBtn" type="button" style="align-self:flex-end;">Enregistrer</button>' +
+      '<button class="btn small danger" id="forgetKeyBtn" type="button" style="align-self:flex-end;">Oublier</button>' +
+    '</div>' +
+    '<div id="keyMsg"></div>';
+  document.getElementById('goSupaConfig').addEventListener('click', () => document.getElementById('supaConfigSection').scrollIntoView({behavior:'smooth'}));
+  document.getElementById('goImport').addEventListener('click', () => location.href = 'historique.html');
+  document.getElementById('goDevices').addEventListener('click', () => location.href = 'equipements.html');
+  document.getElementById('saveKeyBtn').addEventListener('click', () => {
+    const val = document.getElementById('apiKeyInput').value.trim();
+    if (!val) { showMsg('keyMsg', 'Entrez une clé avant d\'enregistrer.', 'err'); return; }
+    try { localStorage.setItem(KEY_KEY, val); showMsg('keyMsg', 'Clé enregistrée localement.', 'ok'); renderCardConnect(); }
+    catch (e) { showMsg('keyMsg', 'Erreur de stockage : ' + e.message, 'err'); }
+  });
+  document.getElementById('forgetKeyBtn').addEventListener('click', () => { localStorage.removeItem(KEY_KEY); showMsg('keyMsg', 'Clé oubliée.', 'ok'); renderCardConnect(); });
+}
+
+/* --------------------------- DONNÉES & CONFIDENTIALITÉ --------------------------- */
+function renderCardData() {
+  const box = document.getElementById('cardData');
+  box.innerHTML =
+    settingsRow('Mes données', 'Exporter toutes vos données en JSON', '', { id:'exportBtn', onClick:true }) +
+    settingsRow('Importer un export', 'Restaurer depuis un fichier JSON', '', { id:'importBtn', onClick:true }) +
+    settingsRow('Confidentialité', 'Vos données ne sont accessibles qu\'à votre compte (règles de sécurité Supabase)', '') +
+    settingsRow('Supprimer mon compte', 'La suppression automatisée du compte cloud n\'est pas encore disponible', '', { danger:true }) +
+    '<p class="hint" style="margin-top:2px;">Pour supprimer définitivement ton compte et tes données cloud, une action manuelle est nécessaire via le tableau de bord de ton projet Supabase (Authentication → Users). Une suppression automatisée depuis ELEV n\'est pas encore implémentée.</p>' +
+    settingsRow('Réinitialiser les données locales', 'Efface les données stockées sur cet appareil', '', { id:'resetBtn', onClick:true, danger:true }) +
+    '<input type="file" id="importFileInput" accept=".json" style="display:none;">' +
+    '<div id="importJsonMsg"></div>';
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const data = { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'export-dashboard-trail-' + new Date().toISOString().slice(0,10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFileInput').click());
+  document.getElementById('importFileInput').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+      let added = 0, updated = 0;
+      if (sessions.length) {
+        const idx = loadIndex();
+        sessions.forEach(s => {
+          if (!s || !s.id) return;
+          const isNew = !idx.includes(s.id);
+          if (isNew) idx.push(s.id);
+          saveSession(s.id, s);
+          if (isNew) added++; else updated++;
+        });
+        saveIndex(idx);
+      }
+      if (data.plan) savePlan(data.plan);
+      if (Array.isArray(data.races) && data.races.length) saveRaces(data.races);
+      if (data.profile) saveProfile(data.profile);
+      if (Array.isArray(data.gear)) saveGear(data.gear);
+      if (!sessions.length && !data.plan && !data.races && !data.profile && !data.gear) {
+        showMsg('importJsonMsg', 'Fichier JSON vide ou format non reconnu (attendu : un export généré par ce dashboard).', 'err');
+        return;
+      }
+      showMsg('importJsonMsg', added + ' séance(s) ajoutée(s), ' + updated + ' mise(s) à jour, plus le reste des données importées si présentes dans le fichier.', 'ok');
+    } catch (err) { showMsg('importJsonMsg', 'Erreur lors de la lecture du fichier : ' + err.message, 'err'); }
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    const cfg = getSupabaseConfig();
+    const synced = cfg.url && cfg.anonKey && localStorage.getItem(SUPA_META_KEY);
+    const warn = synced
+      ? 'Supprimer toutes les données LOCALES de cet appareil (séances, plan, courses, profil, équipements, clé API) ? Tes données synchronisées resteront disponibles dans le cloud (récupérables via "Récupérer depuis le cloud").'
+      : 'Supprimer TOUTES les données (séances, plan, courses, profil, équipements, clé API) enregistrées dans ce navigateur ? Aucune synchronisation cloud n\'est active : cette action est IRRÉVERSIBLE. Pense à exporter tes données avant si besoin.';
+    if (!confirm(warn)) return;
+    const idx = loadIndex();
+    idx.forEach(deleteSession);
+    localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(KEY_KEY);
+    localStorage.removeItem(RACES_KEY); localStorage.removeItem(PROFILE_KEY); localStorage.removeItem(GEAR_KEY);
+    localStorage.removeItem(SUPA_META_KEY);
+    showMsg('importJsonMsg', 'Données locales réinitialisées.', 'ok');
+    setTimeout(() => location.reload(), 900);
+  });
+}
+
+/* --------------------------- SAUVEGARDE & INTÉGRITÉ --------------------------- */
+function renderCardBackup() {
+  const box = document.getElementById('cardBackup');
+  const cfg = getSupabaseConfig();
+  const canClearCache = !!(cfg.url && cfg.anonKey && localStorage.getItem(SUPA_META_KEY));
+  box.innerHTML =
+    settingsRow('Vérifier l\'intégrité', 'Recherche les séances liées à un équipement supprimé', '', { id:'checkIntegrityBtn', onClick:true }) +
+    settingsRow('Vider le cache local', canClearCache ? 'Resynchronise depuis le cloud' : 'Disponible une fois la synchronisation cloud active', '', { id:'clearCacheBtn', onClick: canClearCache }) +
+    '<div id="backupMsg"></div>';
+  document.getElementById('checkIntegrityBtn').addEventListener('click', () => {
+    const r = checkDataIntegrity();
+    showMsg('backupMsg', r.ok ? 'Aucun problème détecté.' : (r.orphanGearRefs + ' séance(s) référencent un équipement qui n\'existe plus.'), r.ok ? 'ok' : 'info');
+  });
+  const clearCacheBtn = document.getElementById('clearCacheBtn');
+  if (clearCacheBtn && canClearCache) clearCacheBtn.addEventListener('click', async () => {
+    if (!confirm('Vider le cache local et resynchroniser depuis le cloud ?')) return;
+    const idx = loadIndex();
+    idx.forEach(deleteSession);
+    localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(RACES_KEY); localStorage.removeItem(PROFILE_KEY); localStorage.removeItem(GEAR_KEY);
+    const res = await syncPull();
+    showMsg('backupMsg', res.ok ? 'Cache vidé et données récupérées depuis le cloud.' : ('Cache vidé — erreur de récupération : ' + res.reason), res.ok ? 'ok' : 'err');
+    setTimeout(() => location.reload(), 900);
+  });
+}
+
+/* --------------------------- À PROPOS --------------------------- */
+function renderCardAbout() {
+  const box = document.getElementById('cardAbout');
+  box.innerHTML =
+    settingsRow('Version', "Version actuelle de l'application", 'v' + APP_VERSION) +
+    settingsRow('Outils de développement', 'Diagnostic détaillé d\'un fichier .fit', '', { id:'goInspector', onClick:true });
+  document.getElementById('goInspector').addEventListener('click', () => location.href = 'inspecteur.html');
+}
+
+/* --------------------------- PLAN CSV (inchangé) --------------------------- */
 document.getElementById('planYearInput').value = getPlanYear();
 document.getElementById('planYearInput').addEventListener('change', e => {
   const year = parseInt(e.target.value, 10);
@@ -236,28 +427,21 @@ document.getElementById('clearPlanBtn').addEventListener('click', () => {
     'Semaine,Bloc,Jour,Type de seance,Distance (km),D+ (m),Intensite (RPE),Notes\n' +
     '(plan déjà enregistré — ' + plan.length + ' séances. Recollez un CSV puis "Enregistrer" pour le remplacer.)';
 })();
-
-/* --------------------------- VUE DÉTAILLÉE DU PLAN --------------------------- */
 function renderPlanView() {
   const plan = getPlan();
   const section = document.getElementById('planViewSection');
   if (!plan || !plan.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
   document.getElementById('planViewCount').textContent = '(' + plan.length + ' séances)';
-
   const today = new Date().toISOString().slice(0,10);
   const sorted = plan.slice().sort((a,b) => a.date.localeCompare(b.date));
   const groups = [];
   let current = null;
   sorted.forEach(p => {
     const key = (p.semaine ? 'S' + p.semaine : '') + '|' + (p.bloc || '');
-    if (!current || current.key !== key) {
-      current = { key, semaine: p.semaine, bloc: p.bloc, items: [] };
-      groups.push(current);
-    }
+    if (!current || current.key !== key) { current = { key, semaine: p.semaine, bloc: p.bloc, items: [] }; groups.push(current); }
     current.items.push(p);
   });
-
   let openedOnce = false;
   document.getElementById('planViewBox').innerHTML = groups.map(g => {
     const title = (g.semaine ? 'Semaine ' + g.semaine : '') + (g.bloc ? (g.semaine ? ' — ' : '') + g.bloc : (g.semaine ? '' : 'Séances'));
@@ -284,74 +468,12 @@ function renderPlanView() {
 }
 renderPlanView();
 
-/* --------------------------- CLÉ API --------------------------- */
-document.getElementById('saveKeyBtn').addEventListener('click', () => {
-  const val = document.getElementById('apiKeyInput').value.trim();
-  if (!val) { showMsg('keyMsg', 'Entrez une clé avant d\'enregistrer.', 'err'); return; }
-  try { localStorage.setItem(KEY_KEY, val); showMsg('keyMsg', 'Clé enregistrée localement.', 'ok'); document.getElementById('apiKeyInput').value=''; }
-  catch (e) { showMsg('keyMsg', 'Erreur de stockage : ' + e.message, 'err'); }
-});
-document.getElementById('forgetKeyBtn').addEventListener('click', () => {
-  localStorage.removeItem(KEY_KEY);
-  showMsg('keyMsg', 'Clé oubliée.', 'ok');
-});
-
-/* --------------------------- EXPORT / IMPORT / RESET --------------------------- */
-document.getElementById('exportBtn').addEventListener('click', () => {
-  const data = {
-    sessions: loadAllSessions(),
-    plan: getPlan(),
-    races: getRaces(),
-    profile: getProfile(),
-    gear: getGear(),
-  };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'export-dashboard-trail-' + new Date().toISOString().slice(0,10) + '.json';
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-});
-
-document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFileInput').click());
-document.getElementById('importFileInput').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
-  try {
-    const data = JSON.parse(await file.text());
-    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-    let added = 0, updated = 0;
-    if (sessions.length) {
-      const idx = loadIndex();
-      sessions.forEach(s => {
-        if (!s || !s.id) return;
-        const isNew = !idx.includes(s.id);
-        if (isNew) idx.push(s.id);
-        saveSession(s.id, s);
-        if (isNew) added++; else updated++;
-      });
-      saveIndex(idx);
-    }
-    if (data.plan) savePlan(data.plan);
-    if (Array.isArray(data.races) && data.races.length) saveRaces(data.races);
-    if (data.profile) saveProfile(data.profile);
-    if (Array.isArray(data.gear)) saveGear(data.gear);
-    if (!sessions.length && !data.plan && !data.races && !data.profile && !data.gear) {
-      showMsg('importJsonMsg', 'Fichier JSON vide ou format non reconnu (attendu : un export généré par ce dashboard).', 'err');
-      return;
-    }
-    showMsg('importJsonMsg', added + ' séance(s) ajoutée(s), ' + updated + ' mise(s) à jour, plus le reste des données importées si présentes dans le fichier.', 'ok');
-  } catch (err) { showMsg('importJsonMsg', 'Erreur lors de la lecture du fichier : ' + err.message, 'err'); }
-});
-
-/* --------------------------- COMPTE & SYNCHRO SUPABASE --------------------------- */
+/* --------------------------- COMPTE & SYNCHRO SUPABASE (config détaillée, inchangé) --------------------------- */
 (function initSupaConfigField() {
   const cfg = getSupabaseConfig();
   document.getElementById('supaUrlInput').value = cfg.url;
   document.getElementById('supaKeyInput').value = cfg.anonKey;
 })();
-
 document.getElementById('saveSupaConfigBtn').addEventListener('click', () => {
   const url = document.getElementById('supaUrlInput').value.trim();
   const key = document.getElementById('supaKeyInput').value.trim();
@@ -368,11 +490,12 @@ document.getElementById('clearSupaConfigBtn').addEventListener('click', () => {
   showMsg('supaConfigMsg', 'Configuration retirée.', 'ok');
   refreshSupaUI();
 });
-
 async function refreshSupaUI() {
   const client = getSupabaseClient();
   document.getElementById('supaAuthCard').style.display = client ? 'block' : 'none';
   document.getElementById('supaSyncCard').style.display = 'none';
+  renderCardCompte();
+  renderCardConnect();
   if (!client) return;
   const user = await supaGetUser();
   const statusEl = document.getElementById('supaAuthStatus');
@@ -387,7 +510,6 @@ async function refreshSupaUI() {
     document.getElementById('supaLogoutBtn').style.display = 'none';
   }
 }
-
 document.getElementById('supaSignupBtn').addEventListener('click', async () => {
   const client = getSupabaseClient();
   const email = document.getElementById('supaEmail').value.trim();
@@ -418,7 +540,6 @@ document.getElementById('supaLogoutBtn').addEventListener('click', async () => {
   await refreshSupaUI();
   showMsg('supaAuthMsg', 'Déconnecté (tes données restent en local sur cet appareil).', 'ok');
 });
-
 document.getElementById('supaPushBtn').addEventListener('click', async () => {
   showMsg('supaSyncMsg', 'Envoi en cours…', 'info');
   const res = await syncPush();
@@ -432,22 +553,13 @@ document.getElementById('supaPullBtn').addEventListener('click', async () => {
   else showMsg('supaSyncMsg', 'Erreur : ' + res.reason, 'err');
 });
 
+/* --------------------------- INIT --------------------------- */
+renderCardPrefs();
+renderCardData();
+renderCardBackup();
+renderCardAbout();
 refreshSupaUI();
-
-document.getElementById('resetBtn').addEventListener('click', () => {
-  if (!confirm('Supprimer TOUTES les données (séances, plan, courses, profil, équipements, clé API) enregistrées dans ce navigateur ? Cette action est irréversible. Pensez à exporter vos données avant si besoin.')) return;
-  const idx = loadIndex();
-  idx.forEach(deleteSession);
-  localStorage.removeItem(IDX_KEY);
-  localStorage.removeItem(PLAN_KEY);
-  localStorage.removeItem(KEY_KEY);
-  localStorage.removeItem(RACES_KEY);
-  localStorage.removeItem(PROFILE_KEY);
-  localStorage.removeItem(GEAR_KEY);
-  localStorage.removeItem(SUPA_META_KEY);
-  document.getElementById('planText').value = '';
-  showMsg('importJsonMsg', 'Toutes les données ont été réinitialisées.', 'ok');
-});
+renderSidebarUser();
 </script>
 </body>
 </html>

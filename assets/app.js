@@ -523,6 +523,9 @@ function buildFitInspectorReport(buffer, fileMeta) {
 }
 
 /* --------------------------- 3) STOCKAGE --------------------------- */
+// Version affichée en page Paramètres — source unique, jamais dupliquée ailleurs. Aucune version
+// n'existait avant cette page (ni manifest.json, ni code) : c'est la première déclaration réelle.
+const APP_VERSION = '1.0.0';
 const STORAGE_PREFIX = 'trail:';
 const IDX_KEY = STORAGE_PREFIX + 'index';
 const PLAN_KEY = STORAGE_PREFIX + 'plan';
@@ -770,6 +773,15 @@ function getEquipmentUsage(item) {
     lastUsedDate: lastSession ? lastSession.date : null,
     lastSession,
   };
+}
+
+// Vérification d'intégrité simple (page Paramètres) : uniquement ce qui est réellement vérifiable en
+// local — séances dont le gearId pointe vers un équipement supprimé (référence orpheline). Volontairement
+// limité, pas de contrôle inventé sur des structures qui n'existent pas (voir CLAUDE.md).
+function checkDataIntegrity() {
+  const gearIds = new Set(getGear().map(g => g.id));
+  const orphanSessions = loadAllSessions().filter(s => s.gearId && !gearIds.has(s.gearId));
+  return { orphanGearRefs: orphanSessions.length, ok: orphanSessions.length === 0 };
 }
 
 // Appareils FIT récemment détectés (montre/GPS) qui ne sont pas encore enregistrés comme équipement —
