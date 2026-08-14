@@ -43,6 +43,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
    logo inventé) + wordmark texte — remplace l'ancien pavé blanc du PNG source, qui reste
    disponible dans assets/ pour les autres pages. */
 .sidebar-brand{display:flex;align-items:center;gap:9px;padding:2px 6px 22px;}
+/* Logo plein (logo-full.png, 1254x1254px) utilisé tel quel sur les 7 pages hors Accueil — sans
+   cette règle, l'image s'affiche à sa taille native et casse toute la mise en page de la sidebar. */
+.sidebar-brand > img{width:100%;height:auto;display:block;}
 .sidebar-brand .brand-mark{width:30px;height:30px;flex-shrink:0;filter:invert(66%) sepia(14%) saturate(700%) hue-rotate(50deg) brightness(95%);}
 .sidebar-brand .brand-word{display:flex;flex-direction:column;line-height:1.15;}
 .sidebar-brand .brand-word strong{font-family:var(--font-display);font-size:1.05rem;font-weight:800;color:#F4F7F5;letter-spacing:.01em;}
