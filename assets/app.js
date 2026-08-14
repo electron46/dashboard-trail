@@ -757,8 +757,16 @@ async function autoPullIfNewer() {
    Storage, pour ne plus jamais avoir à redemander une réimportation si l'analyse s'améliore plus tard.
    Entièrement silencieux si la synchro n'est pas configurée ou l'utilisateur non connecté — l'import
    local (localStorage) fonctionne toujours, avec ou sans ceci. */
+// Supabase Storage n'accepte que des clés "sûres" pour une URL (pas d'accents ni de caractères
+// spéciaux) — l'identifiant de séance (client_id), lui, peut contenir des accents (ex. "Course à
+// pied" issu du libellé de sport FIT), donc on le nettoie uniquement pour construire le chemin de
+// stockage, sans toucher à l'identifiant utilisé partout ailleurs dans l'appli.
+const DIACRITICS_RE = new RegExp('[̀-ͯ]', 'g');
+function sanitizeStorageKey(s) {
+  return String(s).normalize('NFD').replace(DIACRITICS_RE, '').replace(/[^a-zA-Z0-9._-]/g, '-');
+}
 async function uploadFitFile(client, userId, clientId, arrayBuffer) {
-  const path = userId + '/' + clientId + '.fit';
+  const path = userId + '/' + sanitizeStorageKey(clientId) + '.fit';
   const { error } = await client.storage.from('fit-files').upload(path, arrayBuffer, {
     contentType: 'application/octet-stream', upsert: true,
   });
