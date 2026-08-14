@@ -334,10 +334,18 @@ function renderMap(s) {
   L.circleMarker([pts[0].lat, pts[0].lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#6B8E4E', fillOpacity: 1 }).addTo(detailMap).bindTooltip('Départ');
   L.circleMarker([pts[pts.length-1].lat, pts[pts.length-1].lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#1C2420', fillOpacity: 1 }).addTo(detailMap).bindTooltip('Arrivée');
 
-  requestAnimationFrame(() => {
-    detailMap.invalidateSize();
-    detailMap.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])), { padding: [16, 16] });
-  });
+  // Recalage taille + zoom sur le tracé. Un seul requestAnimationFrame ne suffit pas toujours :
+  // la grille CSS de la page (carte GPS + colonne d'analyse) peut encore bouger après (chargement
+  // des polices Google Fonts, redimensionnement de fenêtre...), ce qui a déjà produit une carte
+  // calée sur une vue quasi vide du monde entier faute de conteneur correctement dimensionné au
+  // moment du calcul initial. Un ResizeObserver corrige la vue à chaque changement réel de taille.
+  const routeBounds = L.latLngBounds(pts.map(p => [p.lat, p.lon]));
+  const fitToRoute = () => { detailMap.invalidateSize(); detailMap.fitBounds(routeBounds, { padding: [16, 16] }); };
+  requestAnimationFrame(fitToRoute);
+  if (window.ResizeObserver) {
+    let resizeTimer = null;
+    new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(fitToRoute, 120); }).observe(mapEl);
+  }
 }
 function moveMapCursor(lat, lon) {
   if (!detailMap || lat == null || lon == null) return;
