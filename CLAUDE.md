@@ -45,7 +45,7 @@ Fonctionnalités ajoutées après le MVP initial (à la demande de l'utilisateur
 - Gestion des courses via l'interface (ajout/modification/suppression), plus besoin de modifier le code
 - Profil traileur (infos perso, points de vigilance santé réutilisés dans le retour IA, records personnels, objectifs de course)
 - Suivi d'usure des chaussures (km cumulés par paire, seuil d'alerte)
-- Zones de fréquence cardiaque (méthode Karvonen) calculées et modifiables en page Accueil
+- Zones de fréquence cardiaque (méthode Karvonen) : calculées à partir de FC max / FC repos éditées en page Profil ; répartition du temps par zone consultable en lecture seule en page Accueil (résumé compact)
 - Retour IA structuré par séance (persona coach trail : compare au plan, croise plusieurs métriques, distingue écart ponctuel/récurrent via l'historique, signale les alertes santé par niveau de gravité, tient compte du contexte du jour saisi par l'utilisateur)
 - Estimation IA du temps de course (croise technicité du terrain, chaleur attendue, historique d'entraînement et profil physio ; peut être reprise comme temps visé)
 - Plan d'entraînement CSV enrichi : zones FC cibles par phase de séance, D-, bloc/semaine, objectif détaillé — avec vue dépliable par semaine en page Paramètres (les deux formats, riche et simple, restent supportés)
@@ -58,6 +58,7 @@ Fonctionnalités ajoutées après le MVP initial (à la demande de l'utilisateur
 - Profil de performance (page Profil) : radar à 6 axes (endurance, montée, descente, vitesse, résistance, régularité) calculé depuis l'historique des séances, sur des repères fixes documentés
 - Indice de préparation détaillé par course (page Objectifs) : décomposé en 5 sous-scores (volume, dénivelé, sorties longues, intensité, régularité) avec point faible identifié automatiquement, remplace l'ancien pourcentage unique
 - Page Plan en calendrier hebdomadaire : séances planifiées et réalisées côte à côte, jour par jour, avec écart de volume
+- Refonte de la page Accueil en « cockpit de progression » (2 passes UX/UI, voir section 14) : 4 KPI (volume hebdo, dénivelé hebdo, tendance de charge qualitative, préparation de l'objectif principal), section « Cette semaine » fusionnée avec un graphique de tendance (volume/D+ togglable, 12 semaines), Insight ELEV (interprétation déterministe et explicable du volume récent, pas d'IA), carte « Dernière activité » cliquable avec aperçu du tracé GPS ou du profil altimétrique, carte « Objectif principal » avec sous-scores de préparation en points, grille 2 colonnes sur desktop (≥1024px) pour limiter le scroll
 
 Version souhaitée :
 - [x] MVP simple mais utilisable
@@ -77,7 +78,7 @@ Contraintes techniques :
 Résolu : site déployé sur GitHub Pages, accessible depuis PC ou téléphone via navigateur, installable comme PWA sur l'écran d'accueil mobile. Les données restent locales à chaque appareil (`localStorage`), avec synchro Supabase optionnelle pour les retrouver sur un autre appareil.
 
 Contraintes de design :
-Identité de marque ELEV définie et appliquée à tout le site (voir section 14) : palette navy/cloud + vert unique, typographies Raleway (titres) + Inter (texte), thème sombre par défaut. La charte source vit dans `design-system/` (voir section 6) — ne pas la modifier à la main, elle a déjà été importée et déclinée dans `assets/style.css`.
+Identité de marque ELEV définie et appliquée à tout le site (voir section 14) : palette sombre « Mountain Performance Intelligence » (fond quasi noir `#0B0F0E`, surfaces `#121816`/`#18201D`) + vert de marque unique `#6B8E4E` en accent rare, typographies Raleway (titres) + Inter (texte, y compris les valeurs chiffrées via `tabular-nums`), thème sombre par défaut. La charte source vit dans `design-system/` (voir section 6) — ne pas la modifier à la main, sauf son fichier `readme.md` qui documente désormais la palette réellement appliquée (mis à jour à la demande de l'utilisateur après la refonte de l'Accueil).
 
 Contraintes légales, données ou confidentialité :
 Aucune contrainte particulière (usage personnel, aucune donnée de tiers).
@@ -102,7 +103,7 @@ Claude doit proposer une solution simple et adaptée au besoin, en expliquant br
 ## 6. Structure du projet
 
 Dossiers ou fichiers importants :
-- `index.html` — page d'accueil (échéances de la saison, état de préparation vs plan, zones FC Karvonen, estimation IA du temps de course)
+- `index.html` — page d'accueil / cockpit de progression : 4 KPI (volume hebdo, dénivelé hebdo, tendance de charge, préparation objectif principal), Cette semaine + tendance 12 semaines, Insight ELEV, dernière activité, objectif principal, et en cartes secondaires plus discrètes : charge aiguë/chronique, prochaine séance planifiée, répartition FC (lecture seule — édition FC max/repos en page Profil)
 - `historique.html` — import des séances .fit, historique, détail de séance (carte GPS, graphiques allure/FC/altitude synchronisés, comparaison au plan, retour IA structuré)
 - `analyse.html` — comparaison de séances de même distance dans le temps, graphique d'efficacité allure/FC
 - `objectifs.html` — gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (5 sous-scores), estimation IA du temps de course
@@ -110,8 +111,8 @@ Dossiers ou fichiers importants :
 - `profil.html` — profil traileur (infos perso, santé, records, objectifs de course, radar de performance à 6 axes)
 - `equipements.html` — suivi d'usure des chaussures
 - `parametres.html` — plan CSV (import + vue détaillée dépliable par semaine), clé API Claude, export/import des données, synchro Supabase, thème, réinitialisation
-- `assets/style.css` — styles partagés par toutes les pages (identité ELEV : palette navy/cloud/vert, Raleway/Inter, sidebar de navigation, thème sombre par défaut)
-- `assets/app.js` — logique partagée : parsing des fichiers .fit (dont position GPS), parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation / indice de préparation / profil de performance
+- `assets/style.css` — styles partagés par toutes les pages (identité ELEV : palette sombre par défaut + vert de marque, Raleway/Inter, sidebar de navigation compacte, grille 2 colonnes du cockpit Accueil sur desktop)
+- `assets/app.js` — logique partagée : parsing des fichiers .fit (dont position GPS), parsing du plan CSV (deux formats), stockage (localStorage + sync Supabase), formatage, calcul de l'état de préparation / indice de préparation / profil de performance / tendance de charge (qualitative, ratio aiguë/chronique) / Insight ELEV (règles déterministes), rendu SVG partagé (courbes, barres, sparklines, aperçu de tracé GPS/altitude)
 - `assets/icon.svg`, `manifest.json` — icône et manifeste PWA (site installable sur écran d'accueil mobile)
 - `assets/logo-full.png` — logo officiel ELEV (affiché dans la sidebar)
 - `dashboard-trail.html` — ancienne page unique, conservée uniquement comme redirection vers `index.html` (compatibilité d'anciens liens)
@@ -155,12 +156,12 @@ Objectif de l'interface :
 Donner une vue d'ensemble claire de la saison de courses et de l'état de préparation par rapport à chaque échéance, en priorisant visuellement les objectifs principaux.
 
 Pages ou écrans nécessaires :
-- Accueil : vue d'ensemble de la saison (liste des courses avec statut, échéance, état de préparation vs plan en km et D+), gestion des courses, zones FC Karvonen, estimation IA du temps de course
+- Accueil : cockpit de progression — KPI (volume/D+ hebdo, tendance de charge, préparation objectif principal), Insight ELEV, tendance de volume 12 semaines, dernière activité, objectif principal avec sous-scores, plus en secondaire : charge aiguë/chronique, prochaine séance, répartition FC en lecture seule
 - Activités (historique) : import des séances, historique filtrable, graphiques de progression (dont allure par type de terrain), détail de séance (carte GPS, courbes allure/FC/altitude synchronisées, comparaison au plan, retour IA structuré, contexte du jour)
 - Analyse : comparaison de séances de même distance dans le temps, graphique d'efficacité allure vs FC
 - Objectifs : gestion des courses de la saison, frise chronologique, indice de préparation détaillé par course (volume, dénivelé, sorties longues, intensité, régularité), estimation IA du temps de course
 - Plan : calendrier hebdomadaire du plan d'entraînement, séances planifiées vs réalisées jour par jour
-- Profil : infos perso, points de vigilance santé, records personnels, objectifs de course, radar de performance à 6 axes
+- Profil : infos perso, points de vigilance santé, records personnels, objectifs de course, radar de performance à 6 axes, réglage FC max / FC repos (source unique de ces deux valeurs, réutilisées en lecture seule en page Accueil)
 - Équipements : suivi d'usure des chaussures
 - Paramètres : plan CSV (import + vue détaillée par semaine), clé API, export/import des données, synchro Supabase, thème
 
@@ -173,7 +174,7 @@ Contenus importants :
 - Éléments de réassurance : non applicable
 
 Style visuel souhaité :
-Identité de marque ELEV (rebranding complet importé depuis un projet Claude Design System, voir section 14) : palette navy `#0F1720`/`#151E2B` + cloud `#E5E7EB` + vert unique `#6B8E4E` (accent), typographies Raleway (titres) + Inter (texte), thème sombre par défaut (le clair reste disponible via bascule). Sidebar de navigation sur desktop, barre de navigation en bas d'écran sur mobile.
+Identité de marque ELEV (rebranding complet importé depuis un projet Claude Design System, affinée sur deux passes UX/UI depuis, voir section 14) : palette sombre « Mountain Performance Intelligence » — fond `#0B0F0E`, surfaces `#121816`/`#18201D`, texte `#F4F7F5`/`#8E9B95` — avec le vert de marque `#6B8E4E` conservé comme accent unique et rare, typographies Raleway (titres) + Inter (texte, y compris les valeurs chiffrées), thème sombre par défaut (le clair reste disponible via bascule iconique). Sidebar de navigation compacte sur desktop (logo réduit, groupes produit/compte), barre de navigation en bas d'écran sur mobile. Grille 2 colonnes sur desktop pour la page Accueil (limiter le scroll), hiérarchie visuelle entre cartes (KPI compactes, contenu principal, Insight distinctif, contenu secondaire discret).
 
 Références ou inspirations :
 - Projet "ELEV Design System" sur claude.ai/design (palette, typographies, logo, composants) — voir `design-system/readme.md` pour le détail des choix de marque.
@@ -267,6 +268,12 @@ Décisions importantes :
 - Carte GPS du parcours via Leaflet + fond OpenStreetMap (gratuit, sans clé API) plutôt qu'un tracé SVG sans fond de carte — accepté que la zone géographique de la séance soit transmise aux serveurs OSM à chaque affichage (seule entorse au fonctionnement 100% local du site)
 - Radar de performance et indice de préparation détaillé calculés sur des repères fixes documentés dans le code (ex. 60 km/semaine, 2200 m D+/semaine), pas sur une comparaison à d'autres coureurs ni sur un service externe — à ajuster si les repères se révèlent irréalistes à l'usage
 - Site à 8 pages (Accueil, Activités, Analyse, Objectifs, Plan, Profil, Équipements, Paramètres), toutes reliées par la même sidebar / barre de navigation mobile
+- Refonte de l'Accueil en « cockpit de progression » (2 passes) : les métriques génériques type « état de forme / charge sur 100 / récupération » vues sur des maquettes de référence n'ont pas été implémentées telles quelles — aucune donnée de récupération n'est suivie (pas de sommeil, pas de FC repos dans le temps), et la charge d'entraînement est affichée en tendance qualitative (Stable / En hausse / Hausse rapide / En baisse, seuils documentés dans `app.js`) plutôt qu'en faux score sur 100
+- L'Insight ELEV est entièrement déterministe (règles explicites sur le ratio charge aiguë/chronique), sans appel IA ni réseau — à ne pas confondre avec le retour IA post-séance ou l'estimation IA de temps de course, qui restent de vrais appels à l'API Claude
+- FC max / FC repos ne se règlent qu'en page Profil (source unique) ; la page Accueil n'affiche plus qu'une répartition Z1-Z5 en lecture seule sur les 30 derniers jours
+- Palette resserrée vers un thème plus sombre et plus contrasté (« Mountain Performance Intelligence ») en gardant le vert de marque existant plutôt que le vert plus fluorescent vu sur les maquettes de référence, jugé moins cohérent avec l'identité déjà en place
+- Aperçu visuel de la dernière activité basé sur les données réelles de la séance (tracé GPS simplifié ou profil altimétrique en SVG), jamais une photo générique de montagne
+- `design-system/readme.md` documente désormais la charte réellement appliquée (palette, typographies, décisions de couleur) plutôt que la proposition initiale, qui divergeait sur plusieurs points (accent, police)
 
 Choix refusés :
 - Aucun à ce jour.
@@ -279,6 +286,8 @@ Claude doit expliquer les options simplement, recommander une option, puis atten
 Questions à clarifier :
 - Synchronisation Supabase : disponible et fonctionnelle, mais à confirmer à l'usage si elle reste pertinente une fois testée sur plusieurs appareils, ou si l'export/import JSON manuel suffit dans la pratique.
 - Logo `assets/logo-full.png` (800 Ko) : fonctionne bien en l'état (mis en cache après le premier chargement), mais pourrait être compressé si la taille devient gênante.
+- `design-system/` reste un dossier non suivi par Git (comme avant la refonte), y compris son `readme.md` mis à jour : à confirmer si l'utilisateur souhaite l'inclure dans le dépôt maintenant qu'il documente la charte réelle.
+- Le regroupement visuel « navigation produit / compte » dans la sidebar (léger séparateur) n'a été ajouté qu'à la page Accueil lors de la refonte ; les 7 autres pages gardent l'ancien menu sans ce séparateur — à harmoniser si une prochaine refonte touche ces pages.
 
 Si une information manque :
 Claude doit faire une hypothèse raisonnable, l'indiquer clairement, puis avancer si le risque est faible. Si le risque est élevé, Claude doit demander validation avant d'agir.
