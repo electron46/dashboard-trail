@@ -462,6 +462,24 @@ function buildAllureDisplayPoints(points) {
     i = j;
   }
 
+  // Lissage (moyenne mobile, ~1% des points) : l'allure instantanée GPS est intrinsèquement
+  // bruitée point à point (variations de vitesse d'une seconde à l'autre même en effort régulier),
+  // et LTTB a justement tendance à conserver ces pics de bruit plutôt qu'à les lisser. Sans ce
+  // lissage, la courbe reste hachée même une fois les vraies pauses exclues. Le lissage ne
+  // traverse jamais un gap (les points de pause restent exclus de la moyenne) et ne touche que la
+  // valeur affichée/tooltip, jamais la donnée stockée.
+  const smoothRadius = Math.max(3, Math.min(10, Math.round(display.length * 0.004)));
+  const rawPaces = display.map(p => p.paceSecKm);
+  display.forEach((p, idx) => {
+    if (p.paceSecKm == null) return;
+    let sum = 0, count = 0;
+    for (let k = Math.max(0, idx - smoothRadius); k <= Math.min(display.length - 1, idx + smoothRadius); k++) {
+      if (rawPaces[k] == null) continue;
+      sum += rawPaces[k]; count++;
+    }
+    p.paceSecKm = count ? sum / count : p.paceSecKm;
+  });
+
   // Échelle robuste (percentile 2-98%) sur les points restants (hors pauses) : une poignée de
   // quasi-arrêts encore présents (en dessous du seuil de pause mais très lents) ne doit pas
   // étirer tout le graphe — ils restent visibles, juste aplatis au bord (voir clamp dans elevChartSvg).
