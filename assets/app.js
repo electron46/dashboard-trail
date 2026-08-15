@@ -1731,6 +1731,58 @@ document.addEventListener('keydown', (e) => {
   const open = document.querySelector('.modal-backdrop.open');
   if (open) open.classList.remove('open');
 });
+
+// Gestion du focus clavier des modales (P1 de l'audit accessibilité, voir CLAUDE.md — jusqu'ici
+// seule la fermeture au clavier était gérée). Chaque page ouvre ses modales en ajoutant/retirant
+// la classe 'open' sur .modal-backdrop, souvent via innerHTML dynamique : un MutationObserver
+// unique détecte ces changements plutôt que d'exiger que chaque page appelle une fonction dédiée.
+(function initModalFocusManagement() {
+  let lastFocused = null;
+  const focusableSel = 'input:not([disabled]),select:not([disabled]),textarea:not([disabled]),button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
+
+  function onOpen(backdrop) {
+    lastFocused = document.activeElement;
+    const first = backdrop.querySelector(focusableSel);
+    if (first) first.focus();
+  }
+  function onClose() {
+    if (lastFocused && document.body.contains(lastFocused) && typeof lastFocused.focus === 'function') lastFocused.focus();
+    lastFocused = null;
+  }
+  function watch(el) {
+    if (el.dataset.elevFocusWatched) return;
+    el.dataset.elevFocusWatched = '1';
+    new MutationObserver(muts => {
+      muts.forEach(m => {
+        if (m.attributeName !== 'class') return;
+        el.classList.contains('open') ? onOpen(el) : onClose();
+      });
+    }).observe(el, { attributes: true });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const backdrop = document.querySelector('.modal-backdrop.open');
+    if (!backdrop) return;
+    const focusables = Array.from(backdrop.querySelectorAll(focusableSel)).filter(el => el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0], last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  // app.js est chargé dans <head> (avant que <body> n'existe) sur toutes les pages : l'observation
+  // du body doit donc attendre DOMContentLoaded, contrairement au keydown ci-dessus qui peut
+  // s'enregistrer immédiatement.
+  document.addEventListener('DOMContentLoaded', () => {
+    new MutationObserver(muts => {
+      muts.forEach(m => m.addedNodes.forEach(n => {
+        if (n.nodeType !== 1) return;
+        if (n.classList && n.classList.contains('modal-backdrop')) watch(n);
+        n.querySelectorAll && n.querySelectorAll('.modal-backdrop').forEach(watch);
+      }));
+    }).observe(document.body, { childList: true, subtree: true });
+    document.querySelectorAll('.modal-backdrop').forEach(watch);
+  });
+})();
 function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str ?? ''; return d.innerHTML; }
 // Redimensionne une image côté navigateur avant stockage en localStorage (évite de saturer le quota avec des photos pleine taille).
 function resizeImageFile(file, maxDim) {
