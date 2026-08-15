@@ -1612,6 +1612,96 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
 }
 
 /* --------------------------- 6) UTILITAIRES DOM --------------------------- */
+
+/* Navigation partagée (sidebar desktop + barre mobile à 5 destinations + panneau "Plus").
+   Source unique de la liste des pages : avant, chacune des 9 pages HTML dupliquait sa propre
+   copie figée du menu (libellés, icônes, classe "active"), ce qui les faisait dériver au fil
+   des refontes successives. Desktop : liste complète, inchangée dans son contenu. Mobile :
+   la barre ne peut raisonnablement afficher que ~5 entrées sur un écran de poche (au-delà, les
+   libellés se tassent ou se tronquent) — Plan/Profil/Équipements/Paramètres rejoignent donc un
+   panneau "Plus" accessible (focus renvoyé au bouton à la fermeture, Échap, clic extérieur). */
+const NAV_ITEMS = [
+  { href: 'index.html', icon: 'home', label: "Aujourd'hui", mobile: true },
+  { href: 'historique.html', icon: 'route', label: 'Activités', mobile: true },
+  { href: 'analyse.html', icon: 'trending-up', label: 'Progression', mobile: true },
+  { href: 'objectifs.html', icon: 'target', label: 'Objectif', mobile: true },
+  { href: 'plan.html', icon: 'calendar', label: 'Plan', mobile: false },
+  { href: 'profil.html', icon: 'user', label: 'Profil', mobile: false, sep: true },
+  { href: 'equipements.html', icon: 'footprints', label: 'Équipements', mobile: false },
+  { href: 'parametres.html', icon: 'settings', label: 'Paramètres', mobile: false },
+];
+function navIconUrl(name) { return 'https://unpkg.com/lucide-static@latest/icons/' + name + '.svg'; }
+
+// activeHref : à passer explicitement par les pages qui ne correspondent à aucune entrée du menu
+// telles quelles (ex. activite.html?id=... doit surligner "Activités", pas rester sans repère).
+function renderAppNav(activeHref) {
+  const current = activeHref || (location.pathname.split('/').pop() || 'index.html');
+
+  const sidebarEl = document.getElementById('sidebarNav');
+  if (sidebarEl) {
+    sidebarEl.innerHTML = NAV_ITEMS.map(item => {
+      const active = item.href === current;
+      return (item.sep ? '<div class="sidebar-nav-sep"></div>' : '') +
+        '<a href="' + item.href + '" class="sidebar-link' + (active ? ' active' : '') + '"' + (active ? ' aria-current="page"' : '') + '>' +
+        '<img src="' + navIconUrl(item.icon) + '" alt="">' + escapeHtml(item.label) + '</a>';
+    }).join('');
+  }
+
+  const mobileEl = document.getElementById('mobileNav');
+  if (!mobileEl) return;
+  const mobileItems = NAV_ITEMS.filter(i => i.mobile);
+  const moreItems = NAV_ITEMS.filter(i => !i.mobile);
+  const moreActive = moreItems.some(i => i.href === current);
+  mobileEl.innerHTML = mobileItems.map(item => {
+    const active = item.href === current;
+    return '<a href="' + item.href + '" class="' + (active ? 'active' : '') + '"' + (active ? ' aria-current="page"' : '') + '>' +
+      '<img src="' + navIconUrl(item.icon) + '" alt="">' + escapeHtml(item.label) + '</a>';
+  }).join('') +
+    '<button type="button" id="navMoreBtn" class="' + (moreActive ? 'active' : '') + '" aria-haspopup="true" aria-expanded="false" aria-controls="navMoreSheet">' +
+    '<img src="' + navIconUrl('more-horizontal') + '" alt="">Plus</button>';
+
+  // Panneau "Plus" : un seul construit par page (pas un par appel), attaché au body pour ne pas
+  // hériter d'un empilement/overflow imprévu d'un conteneur parent.
+  let backdrop = document.getElementById('navMoreBackdrop');
+  if (!backdrop) {
+    backdrop = document.createElement('div');
+    backdrop.id = 'navMoreBackdrop';
+    backdrop.className = 'nav-sheet-backdrop';
+    document.body.appendChild(backdrop);
+  }
+  let sheet = document.getElementById('navMoreSheet');
+  if (!sheet) {
+    sheet = document.createElement('nav');
+    sheet.id = 'navMoreSheet';
+    sheet.className = 'nav-sheet';
+    sheet.setAttribute('aria-label', 'Plus de pages');
+    document.body.appendChild(sheet);
+  }
+  sheet.innerHTML = '<div class="nav-sheet-handle" aria-hidden="true"></div>' + moreItems.map(item => {
+    const active = item.href === current;
+    return '<a href="' + item.href + '" class="' + (active ? 'active' : '') + '"' + (active ? ' aria-current="page"' : '') + '>' +
+      '<img src="' + navIconUrl(item.icon) + '" alt="">' + escapeHtml(item.label) + '</a>';
+  }).join('');
+
+  const moreBtn = document.getElementById('navMoreBtn');
+  function onSheetKeydown(e) { if (e.key === 'Escape') closeSheet(); }
+  function openSheet() {
+    backdrop.classList.add('open'); sheet.classList.add('open');
+    moreBtn.setAttribute('aria-expanded', 'true');
+    const firstLink = sheet.querySelector('a');
+    if (firstLink) firstLink.focus();
+    document.addEventListener('keydown', onSheetKeydown);
+  }
+  function closeSheet() {
+    backdrop.classList.remove('open'); sheet.classList.remove('open');
+    moreBtn.setAttribute('aria-expanded', 'false');
+    moreBtn.focus();
+    document.removeEventListener('keydown', onSheetKeydown);
+  }
+  moreBtn.addEventListener('click', () => { sheet.classList.contains('open') ? closeSheet() : openSheet(); });
+  backdrop.addEventListener('click', closeSheet);
+}
+
 // Bloc utilisateur de la sidebar (avatar initiale + prénom) — identique à celui de l'Accueil,
 // réutilisé par les autres pages migrées vers la sidebar harmonisée (voir CLAUDE.md section 15).
 function renderSidebarUser() {
@@ -1627,9 +1717,20 @@ function renderSidebarUser() {
 function showMsg(elId, text, kind) {
   const el = document.getElementById(elId);
   if (!el) return;
-  el.innerHTML = '<div class="msg ' + kind + '">' + text + '</div>';
+  // aria-live="polite" : ces messages (résultat d'import, sauvegarde, erreur...) doivent être
+  // annoncés par un lecteur d'écran même si le focus reste ailleurs sur la page.
+  el.innerHTML = '<div class="msg ' + kind + '" role="status" aria-live="polite">' + text + '</div>';
   if (kind === 'ok') setTimeout(() => { if (el.firstChild) el.innerHTML=''; }, 5000);
 }
+
+// Fermeture au clavier (Échap) de toute modale ouverte (.modal-backdrop.open) — geste attendu
+// partout où des modales existent (Objectifs, Équipements...), auparavant seul le clic sur le
+// fond ou un bouton dédié fermait. Un seul gestionnaire partagé plutôt qu'un par page/modale.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = document.querySelector('.modal-backdrop.open');
+  if (open) open.classList.remove('open');
+});
 function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str ?? ''; return d.innerHTML; }
 // Redimensionne une image côté navigateur avant stockage en localStorage (évite de saturer le quota avec des photos pleine taille).
 function resizeImageFile(file, maxDim) {

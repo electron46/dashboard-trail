@@ -20,17 +20,7 @@
     <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
-  <nav class="sidebar-nav">
-    <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-    <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-    <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-    <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-    <div class="sidebar-nav-sep"></div>
-    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-    <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-    <a href="parametres.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-  </nav>
+  <nav class="sidebar-nav" id="sidebarNav"></nav>
   <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
@@ -172,16 +162,7 @@
 </div>
 </div>
 
-<nav class="mobile-nav">
-  <a href="index.html"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-  <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-  <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-  <a href="plan.html"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-  <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-  <a href="parametres.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-</nav>
+<nav class="mobile-nav" id="mobileNav"></nav>
 
 <script>
 function humanizeTimezoneLocal(tz) {
@@ -553,12 +534,31 @@ document.getElementById('supaPullBtn').addEventListener('click', async () => {
   else showMsg('supaSyncMsg', 'Erreur : ' + res.reason, 'err');
 });
 
+/* --------------------------- ACCORDÉONS : repliés par défaut sur mobile --------------------------- */
+// Desktop : les 6 sections restent ouvertes en même temps (vue d'ensemble). Mobile : repliées par
+// défaut (moins de défilement à l'arrivée) et une seule ouverte à la fois (évite d'empiler 6 sections
+// dépliées d'affilée). Seuil aligné sur celui déjà utilisé par .profile-card-grid (passage à 1 colonne).
+function initSettingsAccordions() {
+  const accordions = Array.from(document.querySelectorAll('.profile-card-grid > .profile-accordion'));
+  const isMobile = window.matchMedia('(max-width:760px)').matches;
+  accordions.forEach(acc => { acc.open = !isMobile; });
+  if (isMobile) {
+    accordions.forEach(acc => {
+      acc.addEventListener('toggle', () => {
+        if (acc.open) accordions.forEach(other => { if (other !== acc) other.open = false; });
+      });
+    });
+  }
+}
+initSettingsAccordions();
+
 /* --------------------------- INIT --------------------------- */
 renderCardPrefs();
 renderCardData();
 renderCardBackup();
 renderCardAbout();
 refreshSupaUI();
+try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderSidebarUser();
 </script>
 </body>

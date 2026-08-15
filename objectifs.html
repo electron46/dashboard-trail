@@ -20,17 +20,7 @@
     <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
-  <nav class="sidebar-nav">
-    <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-    <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-    <a href="objectifs.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-    <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-    <div class="sidebar-nav-sep"></div>
-    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-    <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-    <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-  </nav>
+  <nav class="sidebar-nav" id="sidebarNav"></nav>
   <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
@@ -151,16 +141,7 @@
 </div>
 </div>
 
-<nav class="mobile-nav">
-  <a href="index.html"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-  <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-  <a href="objectifs.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-  <a href="plan.html"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-  <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-  <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-</nav>
+<nav class="mobile-nav" id="mobileNav"></nav>
 
 <div class="modal-backdrop" id="raceModalBackdrop">
   <div class="modal">
@@ -384,7 +365,7 @@ function renderGoalHero() {
       '</div>' +
       '<div class="goal-hero-pills">' + pills + '</div>' +
     '</div>' +
-    '<div class="metrics-grid" style="grid-template-columns:auto repeat(3,minmax(140px,1fr));margin-top:18px;">' +
+    '<div class="metrics-grid goal-hero-metrics" style="margin-top:18px;">' +
       '<div class="goal-hero-score">' +
         '<div class="goal-ring-big">' + ringSvg(readiness.overall || 0, 96, readiness.overall != null ? readiness.overall + '%' : '—') + '</div>' +
         '<div class="goal-score-meta">' +
@@ -926,6 +907,7 @@ document.getElementById('raceAiUseBtn').addEventListener('click', () => {
   document.getElementById('raceTempsVise').value = val.trim();
 });
 
+try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderSidebarUser();
 renderGoalPage();
 </script>

@@ -79,6 +79,24 @@ header.app-topbar .app-topbar-actions{display:flex;align-items:center;gap:10px;f
 /* Navigation mobile : barre fixe en bas d'écran, masquée sur desktop (voir media query) */
 .mobile-nav{display:none;}
 
+/* Panneau "Plus" (nav mobile à 5 destinations) : feuille glissée depuis le bas + fond assombri.
+   Défini hors de la media query mobile pour rester masqué proprement (transform + display) même
+   si la fenêtre est redimensionnée pendant qu'il est ouvert. */
+.nav-sheet-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:30;}
+.nav-sheet-backdrop.open{display:block;}
+.nav-sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--border);
+  border-radius:16px 16px 0 0;padding:10px 8px calc(10px + env(safe-area-inset-bottom));z-index:31;
+  transform:translateY(100%);transition:transform 180ms ease;box-shadow:0 -8px 24px rgba(0,0,0,.3);}
+.nav-sheet.open{transform:translateY(0);}
+.nav-sheet-handle{width:36px;height:4px;border-radius:2px;background:var(--border);margin:2px auto 12px;}
+.nav-sheet a{display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:44px;box-sizing:border-box;
+  border-radius:var(--radius-md);text-decoration:none;color:var(--text);font-size:.92rem;font-weight:500;}
+.nav-sheet a img{width:18px;height:18px;filter:invert(55%);flex-shrink:0;}
+.nav-sheet a:hover{background:var(--bg);}
+.nav-sheet a.active{color:var(--accent-light);font-weight:700;}
+.nav-sheet a.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
+@media (prefers-reduced-motion:reduce){ .nav-sheet{transition:none;} }
+
 main{max-width:1360px;margin:0 auto;padding:20px 28px 28px;display:flex;flex-direction:column;gap:16px;width:100%;box-sizing:border-box;}
 section.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 22px;box-shadow:none;}
 section.card h2{margin:0 0 14px;font-family:var(--font-display);font-size:1.05rem;font-weight:700;letter-spacing:-.005em;}
@@ -365,7 +383,19 @@ tr.session-row:hover{background:var(--bg);}
 .empty{color:var(--muted);font-size:.85rem;padding:14px;text-align:center;}
 
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0;}
-.metric{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;background:var(--panel-raised,var(--panel));}
+.metric{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;background:var(--panel-raised,var(--panel));min-width:0;}
+/* Grille hero (anneau de score + 3 KPI) réutilisée par Objectifs et Plan (.goal-hero-score) : la
+   version desktop (colonne "auto" + 3 colonnes >=140px) n'a nulle part où rétrécir sous ~390px de
+   large — c'était la cause du débordement horizontal identifié sur mobile (voir CLAUDE.md section 14,
+   passe Objectifs responsive). Convertie de style inline à classe pour pouvoir la cibler ici. */
+.goal-hero-metrics{grid-template-columns:auto repeat(3,minmax(140px,1fr));}
+@media (max-width:640px){
+  .goal-hero-metrics{grid-template-columns:1fr 1fr;}
+  .goal-hero-metrics .goal-hero-score{grid-column:1 / -1;}
+}
+@media (max-width:360px){
+  .goal-hero-metrics{grid-template-columns:1fr;}
+}
 .metric .lbl{font-family:var(--font-mono);font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
 .metric .val{font-family:var(--font-mono);font-size:1.1rem;font-weight:500;}
 .metric .val.na{font-family:var(--font-sans);color:var(--muted);font-weight:400;font-size:.9rem;}
@@ -436,6 +466,15 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 
 /* Onglets internes (ex. page Paramètres) */
 .tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:0;}
+/* Sur mobile, une rangée de 6-7 onglets (ex. Objectifs) qui passe à la ligne (flex-wrap) prend
+   beaucoup de hauteur et casse le rythme de lecture. Alternative plus légère qu'un accordéon complet :
+   une seule ligne défilante horizontalement, contenue dans son propre conteneur (ne pousse jamais la
+   largeur de la page — contrairement au défaut corrigé sur .goal-hero-metrics ci-dessus). */
+@media (max-width:640px){
+  .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tabs button{flex:0 0 auto;padding:13px 13px;min-height:44px;box-sizing:border-box;}
+}
 .tabs button{font:inherit;font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:none;border:1px solid transparent;border-bottom:2px solid transparent;padding:10px 13px;cursor:pointer;margin-bottom:-1px;transition:color 150ms,border-color 150ms;}
 .tabs button:hover{color:var(--text);}
 .tabs button.active{color:var(--text);border-bottom-color:var(--accent);font-weight:700;}
@@ -889,6 +928,13 @@ main.analysis-main{max-width:1440px;}
   .mobile-nav a img{width:18px;height:18px;filter:invert(55%);}
   .mobile-nav a.active{color:var(--accent-light,#A8C47F);}
   .mobile-nav a.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
+  /* Bouton "Plus" : même gabarit que les liens, réinitialisé (c'est un <button>, pas un <a>). */
+  .mobile-nav button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;
+    background:none;border:none;padding:8px 2px;min-height:44px;box-sizing:border-box;
+    font-family:var(--font-sans);font-size:.62rem;color:#8E9B95;cursor:pointer;}
+  .mobile-nav button img{width:18px;height:18px;filter:invert(55%);}
+  .mobile-nav button.active{color:var(--accent-light,#A8C47F);}
+  .mobile-nav button.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
   main{padding:16px 16px 78px;}
   footer.app{padding-bottom:78px;}
   header.app-topbar{padding:14px 16px;}
