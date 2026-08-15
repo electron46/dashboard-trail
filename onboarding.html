@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bienvenue — ELEV Dashboard Trail</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="theme-color" content="#0B0F0E">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/app.js"></script>
+<style>
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+  .onboard-card{width:100%;max-width:620px;}
+  .onboard-steps{display:flex;align-items:center;gap:8px;margin-bottom:18px;}
+  .onboard-steps .dot{width:8px;height:8px;border-radius:50%;background:var(--border);}
+  .onboard-steps .dot.done,.onboard-steps .dot.current{background:var(--accent);}
+  .onboard-steps span{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-left:4px;}
+  .onboard-eyebrow{font-size:.72rem;color:var(--accent-light);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:6px;}
+  .onboard-title{font-family:var(--font-display);font-size:1.5rem;font-weight:700;margin:0 0 6px;}
+  .onboard-sub{color:var(--muted);margin:0 0 20px;}
+  .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media (max-width:560px){ .mode-grid{grid-template-columns:1fr;} }
+  .mode-card{background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;text-align:left;cursor:pointer;font:inherit;color:var(--text);width:100%;}
+  .mode-card:hover{border-color:var(--accent-light);}
+  .mode-card.recommended{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+  .mode-card h3{margin:2px 0 6px;font-size:1rem;}
+  .mode-card p{margin:0 0 12px;color:var(--muted);font-size:.85rem;line-height:1.4;}
+  .onboard-footnote{color:var(--muted-2);font-size:.78rem;margin-top:16px;}
+  .onboard-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;}
+  .onboard-back{margin-top:14px;}
+</style>
+</head>
+<body>
+
+<section class="card onboard-card">
+  <div class="onboard-steps" id="stepDots" aria-hidden="true"></div>
+
+  <!-- Étape 1 : choix du mode -->
+  <div id="step1">
+    <div class="onboard-eyebrow">Bienvenue dans ELEV</div>
+    <h1 class="onboard-title">Comment veux-tu utiliser tes données ?</h1>
+    <p class="onboard-sub">Tu pourras changer d'avis plus tard, dans Paramètres → Connectivité &amp; appareils.</p>
+    <div class="mode-grid">
+      <button type="button" class="mode-card recommended" id="chooseLocal">
+        <div class="badge principal">Recommandé</div>
+        <h3>Sur cet appareil</h3>
+        <p>Démarre tout de suite, sans compte. Tes données restent dans ce navigateur.</p>
+        <span class="btn primary">Continuer en local</span>
+      </button>
+      <button type="button" class="mode-card" id="chooseSync">
+        <div class="badge secondaire">Multi-appareils</div>
+        <h3>Avec synchronisation</h3>
+        <p>Retrouve tes activités sur téléphone et ordinateur avec un compte ELEV.</p>
+        <span class="btn">Créer un compte / se connecter</span>
+      </button>
+    </div>
+    <p class="onboard-footnote">Configuration avancée et auto-hébergement disponibles dans Paramètres → Options avancées.</p>
+  </div>
+
+  <!-- Étape 2 : profil minimum -->
+  <div id="step2" style="display:none;">
+    <div class="onboard-eyebrow">Étape 2 sur 3</div>
+    <h1 class="onboard-title">Comment veux-tu qu'on t'appelle ?</h1>
+    <p class="onboard-sub">Facultatif — tu peux compléter le reste de ton profil plus tard.</p>
+    <label class="field">Prénom ou nom
+      <input type="text" id="onbName" placeholder="Ex. Nicolas" autocomplete="given-name">
+    </label>
+    <div class="onboard-actions">
+      <button type="button" class="btn primary" id="step2Next">Continuer</button>
+      <button type="button" class="btn ghost" id="step2Skip">Passer cette étape</button>
+    </div>
+    <div class="onboard-back"><a href="#" id="step2Back" class="hint">&larr; Retour</a></div>
+  </div>
+
+  <!-- Étape 3 : première activité -->
+  <div id="step3" style="display:none;">
+    <div class="onboard-eyebrow">Étape 3 sur 3</div>
+    <h1 class="onboard-title">Importe ta première activité</h1>
+    <p class="onboard-sub">Un fichier .fit exporté de ta montre suffit pour voir tes premières données. Tu peux aussi explorer l'app d'abord.</p>
+    <div class="onboard-actions">
+      <a class="btn primary" href="historique.html?openImport=1" id="step3Import">Importer un fichier .fit</a>
+      <button type="button" class="btn ghost" id="step3Skip">Découvrir sans importer</button>
+    </div>
+    <div class="onboard-back"><a href="#" id="step3Back" class="hint">&larr; Retour</a></div>
+  </div>
+</section>
+
+<script>
+const STEP_KEY = 'trail:onboardingStep';
+const DONE_KEY = 'trail:onboardingDone';
+const params = new URLSearchParams(location.search);
+
+function currentStep() {
+  const fromUrl = parseInt(params.get('step'), 10);
+  if (fromUrl >= 1 && fromUrl <= 3) return fromUrl;
+  const saved = parseInt(localStorage.getItem(STEP_KEY), 10);
+  return (saved >= 1 && saved <= 3) ? saved : 1;
+}
+
+function showStep(n) {
+  [1, 2, 3].forEach(i => { document.getElementById('step' + i).style.display = (i === n) ? 'block' : 'none'; });
+  try { localStorage.setItem(STEP_KEY, String(n)); } catch (e) {}
+  document.getElementById('stepDots').innerHTML = [1, 2, 3].map(i =>
+    '<span class="dot ' + (i < n ? 'done' : (i === n ? 'current' : '')) + '"></span>'
+  ).join('') + '<span>Étape ' + n + ' sur 3</span>';
+}
+
+function finishOnboarding(dest) {
+  try { localStorage.setItem(DONE_KEY, '1'); localStorage.removeItem(STEP_KEY); } catch (e) {}
+  location.href = dest || 'index.html';
+}
+
+showStep(currentStep());
+
+document.getElementById('chooseLocal').addEventListener('click', () => showStep(2));
+document.getElementById('chooseSync').addEventListener('click', () => {
+  try { localStorage.setItem(STEP_KEY, '2'); } catch (e) {}
+  location.href = 'connexion.html?next=' + encodeURIComponent('onboarding.html?step=2');
+});
+
+document.getElementById('step2Next').addEventListener('click', () => {
+  const name = document.getElementById('onbName').value.trim();
+  if (name) patchProfile({ nom: name });
+  showStep(3);
+});
+document.getElementById('step2Skip').addEventListener('click', () => showStep(3));
+document.getElementById('step2Back').addEventListener('click', (e) => { e.preventDefault(); showStep(1); });
+
+document.getElementById('step3Import').addEventListener('click', () => finishOnboarding());
+document.getElementById('step3Skip').addEventListener('click', () => finishOnboarding());
+document.getElementById('step3Back').addEventListener('click', (e) => { e.preventDefault(); showStep(2); });
+</script>
+</body>
+</html>

@@ -13,6 +13,18 @@
 <script src="assets/app.js"></script>
 </head>
 <body>
+<script>
+// Première visite : aucune séance locale, aucun nom de profil, onboarding jamais terminé
+// -> on envoie vers l'accueil du produit avant qu'il n'affiche des cartes vides.
+(function redirectToOnboardingIfNeeded() {
+  try {
+    if (localStorage.getItem('trail:onboardingDone')) return;
+    const hasData = loadIndex().length > 0 || !!(getProfile().nom || '').trim();
+    if (hasData) { localStorage.setItem('trail:onboardingDone', '1'); return; }
+    location.replace('onboarding.html');
+  } catch (e) {}
+})();
+</script>
 
 <div class="app-shell">
 <aside class="sidebar">
@@ -20,17 +32,7 @@
     <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
-  <nav class="sidebar-nav">
-    <a href="index.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-    <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-    <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-    <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-    <div class="sidebar-nav-sep"></div>
-    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-    <a href="equipements.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-    <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-  </nav>
+  <nav class="sidebar-nav" id="sidebarNav"></nav>
   <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
@@ -107,16 +109,7 @@
 </div>
 </div>
 
-<nav class="mobile-nav">
-  <a href="index.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-  <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-  <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-  <a href="plan.html"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-  <a href="equipements.html"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-  <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-</nav>
+<nav class="mobile-nav" id="mobileNav"></nav>
 
 <script>
 function renderGearAlert() {
@@ -159,25 +152,29 @@ function mainObjectiveRace() {
 const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
 function renderKpis() {
   const grid = document.getElementById('kpiGrid');
+  // Aucune séance du tout : 3 cartes remplies de "Non disponible" n'aident personne à démarrer.
+  // Un seul message d'action, cohérent avec celui déjà utilisé par la carte "Dernière activité".
+  if (!loadAllSessions().length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="empty-title">Commence ton suivi</div>' +
+      '<p>Importe ta première activité pour voir apparaître tes indicateurs (volume, tendance de charge, préparation à ton objectif).</p>' +
+      '<a class="btn small accent" href="historique.html">Importer ma première activité</a></div>';
+    return;
+  }
   const stats = getWeeklyStats();
   const recentWeeks = getRecentWeeklyVolumes(8);
   const fmtDelta = pct => pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%');
   const arrow = pct => pct == null ? '' : (pct >= 0 ? '<span class="arrow">▲</span>' : '<span class="arrow">▼</span>');
   const cards = [];
 
+  // Limité à 3 indicateurs (volume, tendance de charge, préparation objectif) : le dénivelé
+  // hebdomadaire reste visible juste en dessous, dans "Cette semaine" — pas retiré, juste plus
+  // affiché en double au sommet de la page (voir CLAUDE.md, Mission 3 du plan UX/UI).
   cards.push({
     icon: 'route', label: 'Volume hebdomadaire',
     value: stats ? fmtNum(stats.distanceKm, ' km', 1) : null,
     sub: stats ? (arrow(stats.distanceDeltaPct) + fmtDelta(stats.distanceDeltaPct) + ' vs sem. précédente') : 'Pas de séance enregistrée',
     status: stats && stats.distanceDeltaPct != null && stats.distanceDeltaPct >= 0 ? 'ok' : null,
     spark: recentWeeks.map(w => w.km),
-  });
-  cards.push({
-    icon: 'mountain-snow', label: 'Dénivelé hebdomadaire',
-    value: stats ? fmtNum(stats.ascent, ' m D+', 0) : null,
-    sub: stats ? (arrow(stats.ascentDeltaPct) + fmtDelta(stats.ascentDeltaPct) + ' vs sem. précédente') : 'Pas de séance enregistrée',
-    status: stats && stats.ascentDeltaPct != null && stats.ascentDeltaPct >= 0 ? 'ok' : null,
-    spark: recentWeeks.map(w => w.dplus),
   });
 
   const trend = getTrainingTrend();
@@ -454,6 +451,7 @@ function renderAll() {
   renderNextPlanned();
   renderFcSummary();
 }
+try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderAll(); // premier rendu depuis le cache local, avant même la vérification de connexion
 // Rappelé par assets/authgate.js une fois la session confirmée, après avoir resynchronisé les
 // séances depuis Supabase (source de vérité) — voir syncActivitiesWithSupabase() dans app.js.

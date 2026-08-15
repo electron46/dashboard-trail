@@ -20,17 +20,7 @@
     <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
-  <nav class="sidebar-nav">
-    <a href="index.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-    <a href="historique.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-    <a href="analyse.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-    <a href="objectifs.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-    <a href="plan.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-    <div class="sidebar-nav-sep"></div>
-    <a href="profil.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-    <a href="equipements.html" class="sidebar-link active"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-    <a href="parametres.html" class="sidebar-link"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-  </nav>
+  <nav class="sidebar-nav" id="sidebarNav"></nav>
   <div class="sidebar-user" id="sidebarUser"></div>
 </aside>
 <div class="app-main">
@@ -47,54 +37,58 @@
 
 <main>
 
-  <section class="kpi-grid" id="kpiGrid"></section>
+  <section class="kpi-grid" id="kpiGrid" style="display:none;"></section>
 
   <div id="detectBannerBox"></div>
 
-  <section class="card">
-    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;">
-      <div class="tabs" id="equipTabs" style="border-bottom:none;">
-        <button type="button" data-tab="tous" class="active">Tous</button>
-        <button type="button" data-tab="chaussures">Chaussures</button>
-        <button type="button" data-tab="montre">Montres / GPS</button>
-        <button type="button" data-tab="accessoire">Accessoires</button>
-        <button type="button" data-tab="autre">Autres</button>
+  <div id="equipEmptyState" style="display:none;"></div>
+
+  <div id="equipDataSections" style="display:none;">
+    <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;">
+        <div class="tabs" id="equipTabs" style="border-bottom:none;">
+          <button type="button" data-tab="tous" class="active">Tous</button>
+          <button type="button" data-tab="chaussures">Chaussures</button>
+          <button type="button" data-tab="montre">Montres / GPS</button>
+          <button type="button" data-tab="accessoire">Accessoires</button>
+          <button type="button" data-tab="autre">Autres</button>
+        </div>
+        <label class="field" style="flex:0 0 auto;min-width:170px;">
+          <select id="equipSort">
+            <option value="utilises">Trier par : Plus utilisés</option>
+            <option value="recents">Plus récents</option>
+            <option value="km">Kilométrage</option>
+            <option value="etat">État</option>
+            <option value="nom">Nom</option>
+          </select>
+        </label>
       </div>
-      <label class="field" style="flex:0 0 auto;min-width:170px;">
-        <select id="equipSort">
-          <option value="utilises">Trier par : Plus utilisés</option>
-          <option value="recents">Plus récents</option>
-          <option value="km">Kilométrage</option>
-          <option value="etat">État</option>
-          <option value="nom">Nom</option>
-        </select>
-      </label>
-    </div>
-    <div class="equip-table-head">
-      <span></span><span>Équipement</span><span>Catégorie</span><span>Kilométrage / usage</span><span>État</span><span>Dernière utilisation</span><span></span>
-    </div>
-    <div class="equip-list" id="equipList"></div>
-  </section>
+      <div class="equip-table-head">
+        <span></span><span>Équipement</span><span>Catégorie</span><span>Kilométrage / usage</span><span>État</span><span>Dernière utilisation</span><span></span>
+      </div>
+      <div class="equip-list" id="equipList"></div>
+    </section>
 
-  <section class="card" style="margin-top:14px;">
-    <div class="row" style="align-items:flex-start;justify-content:space-between;">
-      <p class="hint" style="margin:0;">Le kilométrage des chaussures est calculé automatiquement à partir des activités auxquelles elles sont associées (page Activités, détail de séance). Vous pouvez ajouter un kilométrage initial pour tenir compte de l'utilisation avant ELEV.</p>
-    </div>
-  </section>
+    <section class="card" style="margin-top:14px;">
+      <div class="row" style="align-items:flex-start;justify-content:space-between;">
+        <p class="hint" style="margin:0;">Le kilométrage des chaussures est calculé automatiquement à partir des activités auxquelles elles sont associées (page Activités, détail de séance). Vous pouvez ajouter un kilométrage initial pour tenir compte de l'utilisation avant ELEV.</p>
+      </div>
+    </section>
 
-  <div class="analysis-charts-row" style="margin-top:14px;">
-    <section class="card card-compact">
-      <h2>Répartition par catégorie</h2>
-      <div id="catBreakdownBox"></div>
-    </section>
-    <section class="card card-compact">
-      <h2>État des équipements</h2>
-      <div id="statusBreakdownBox"></div>
-    </section>
-    <section class="card card-compact">
-      <h2>Dernières utilisations</h2>
-      <div id="lastUsedBox"></div>
-    </section>
+    <div class="analysis-charts-row" style="margin-top:14px;">
+      <section class="card card-compact">
+        <h2>Répartition par catégorie</h2>
+        <div id="catBreakdownBox"></div>
+      </section>
+      <section class="card card-compact">
+        <h2>État des équipements</h2>
+        <div id="statusBreakdownBox"></div>
+      </section>
+      <section class="card card-compact">
+        <h2>Dernières utilisations</h2>
+        <div id="lastUsedBox"></div>
+      </section>
+    </div>
   </div>
 
 </main>
@@ -103,16 +97,7 @@
 </div>
 </div>
 
-<nav class="mobile-nav">
-  <a href="index.html"><img src="https://unpkg.com/lucide-static@latest/icons/home.svg" alt="">Accueil</a>
-  <a href="historique.html"><img src="https://unpkg.com/lucide-static@latest/icons/route.svg" alt="">Activités</a>
-  <a href="analyse.html"><img src="https://unpkg.com/lucide-static@latest/icons/trending-up.svg" alt="">Analyse</a>
-  <a href="objectifs.html"><img src="https://unpkg.com/lucide-static@latest/icons/target.svg" alt="">Objectifs</a>
-  <a href="plan.html"><img src="https://unpkg.com/lucide-static@latest/icons/calendar.svg" alt="">Plan</a>
-  <a href="profil.html"><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="">Profil</a>
-  <a href="equipements.html" class="active"><img src="https://unpkg.com/lucide-static@latest/icons/footprints.svg" alt="">Équipements</a>
-  <a href="parametres.html"><img src="https://unpkg.com/lucide-static@latest/icons/settings.svg" alt="">Paramètres</a>
-</nav>
+<nav class="mobile-nav" id="mobileNav"></nav>
 
 <!-- ============ MODALE AJOUT / ÉDITION ============ -->
 <div class="modal-backdrop" id="gearModalBackdrop">
@@ -461,13 +446,30 @@ document.getElementById('detailArchiveBtn').addEventListener('click', () => {
 });
 
 /* --------------------------- ORCHESTRATION --------------------------- */
+// Tant qu'aucun équipement n'existe, les KPI (4 cartes à "0") et les filtres/tri (rien à filtrer)
+// n'aident pas à démarrer — masqués au profit d'un message d'action unique. Réapparaissent
+// automatiquement dès le premier équipement ajouté (renderAll() est rappelé après chaque sauvegarde).
+function renderEmptyState() {
+  const hasGear = getGear().length > 0;
+  document.getElementById('kpiGrid').style.display = hasGear ? '' : 'none';
+  document.getElementById('equipDataSections').style.display = hasGear ? '' : 'none';
+  const emptyBox = document.getElementById('equipEmptyState');
+  if (hasGear) { emptyBox.style.display = 'none'; emptyBox.innerHTML = ''; return; }
+  emptyBox.style.display = 'block';
+  emptyBox.innerHTML = '<section class="card"><div class="empty-state"><div class="empty-title">Ajoute tes chaussures de trail</div>' +
+    '<p>ELEV calcule automatiquement leur kilométrage à partir des activités associées et t\'alerte quand leur usure doit être surveillée.</p>' +
+    '<button class="btn small accent" id="emptyGearCta" type="button">Ajouter mes chaussures</button></div></section>';
+  document.getElementById('emptyGearCta').addEventListener('click', () => openGearModal(null, { categorie: 'chaussures' }));
+}
 function renderAll() {
+  renderEmptyState();
   renderKpis();
   renderDetectBanner();
   renderList();
   renderSummaries();
 }
 renderAll();
+try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderSidebarUser();
 </script>
 </body>
