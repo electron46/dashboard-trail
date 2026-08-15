@@ -2925,4 +2925,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   autoPullIfNewer();
+  initTopbarScrollState();
 });
+
+/* Topbar sticky : bascule .scrolled dès que le contenu défile derrière elle (voile + flou,
+   voir assets/style.css). `main` est le conteneur qui défile réellement sur ces pages
+   (body ne scrolle pas), donc l'écoute cible `main`, pas `window`. */
+function initTopbarScrollState() {
+  const topbar = document.querySelector('header.app-topbar');
+  if (!topbar) return;
+  const update = () => topbar.classList.toggle('scrolled', window.scrollY > 4);
+  window.addEventListener('scroll', update, { passive: true });
+  update();
+}
