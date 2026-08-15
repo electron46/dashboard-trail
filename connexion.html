@@ -7,16 +7,21 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 <style>
   body{display:flex;align-items:center;justify-content:center;min-height:100vh;}
-  .login-card{width:100%;max-width:380px;margin:24px;}
-  .login-card h1{margin-bottom:4px;}
+  /* Premier contact possible avec ELEV : un très léger tracé topographique en fond, cohérent avec
+     le halo global déjà appliqué au body (voir assets/style.css) — pas de landing marketing,
+     juste un repère d'identité discret derrière la carte de connexion. */
+  .login-card{position:relative;width:100%;max-width:380px;margin:24px;border-radius:var(--radius-xl);box-shadow:0 24px 60px rgba(0,0,0,.35);}
+  .login-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:var(--radius-xl) var(--radius-xl) 0 0;background:linear-gradient(90deg,transparent,var(--accent-light),transparent);}
+  .login-card h1{margin-bottom:4px;font-size:1.6rem;letter-spacing:-.01em;}
   .login-card .field{display:flex;flex-direction:column;gap:4px;margin-top:12px;}
-  .login-card input{padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg);color:var(--text);}
+  .login-card input{padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg);color:var(--text);transition:border-color var(--dur-fast) var(--ease-standard);}
+  .login-card input:focus{border-color:var(--accent-light);}
   .login-actions{display:flex;gap:8px;margin-top:16px;}
 </style>
 </head>
