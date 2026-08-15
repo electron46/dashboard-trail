@@ -2978,7 +2978,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   autoPullIfNewer();
   initTopbarScrollState();
+  initSpotlight();
 });
+
+/* Spotlight au pointeur (carte Objectif principal, cartes KPI) — un seul listener delegue au
+   document plutot qu'un par carte, desactive d'office sur tactile/pointeur imprecis/reduced-motion
+   (voir la media query miroir dans assets/style.css). Cout minime : juste deux variables CSS mises
+   a jour au survol, aucune mesure de layout couteuse (pas de resize observer). */
+function initSpotlight() {
+  if (!window.matchMedia || !matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  if (matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  let raf = null, pending = null;
+  document.addEventListener('mousemove', (e) => {
+    const card = e.target.closest && e.target.closest('.objective-card,.kpi-card');
+    if (!card) return;
+    pending = { card, e };
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = null;
+      if (!pending) return;
+      const { card, e } = pending;
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%');
+      card.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%');
+    });
+  }, { passive: true });
+}
 
 /* Topbar sticky : bascule .scrolled dès que le contenu défile derrière elle (voile + flou,
    voir assets/style.css). `main` est le conteneur qui défile réellement sur ces pages
