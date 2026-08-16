@@ -642,24 +642,26 @@ html[data-theme="light"] .kpi-card::after{display:none;}
    des boîtes. Voir CLAUDE.md, section 14, "Signature & WOW Pass V2". */
 .scene{position:relative;box-sizing:border-box;padding:0;}
 
-/* Terrain Line : silhouette basée sur une vraie série d'altitude (elevTerrainLineSvg, assets/app.js).
-   Renvoie une chaîne vide si aucune donnée n'est disponible — jamais de relief inventé pour
-   remplir un espace. Couche absolue très discrète, sous le contenu qui reste dans le flux normal. */
-.terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none;}
-.terrain-line-svg .terrain-fill{fill:var(--chart-fill-top);opacity:0;animation:elev-terrain-fill-in 700ms var(--ease-standard) 550ms both;}
-.terrain-line-svg .terrain-stroke{fill:none;stroke:var(--accent-light);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;stroke-dasharray:2000;stroke-dashoffset:2000;animation:elev-terrain-draw 1400ms var(--ease-emphasized) both;}
-html[data-theme="light"] .terrain-line-svg{opacity:.3;}
+/* ELEV Terrain Profile : silhouette basée sur une vraie série distance/altitude (elevTerrainLineSvg,
+   assets/app.js). Renvoie une chaîne vide si aucune donnée n'est disponible — jamais de relief
+   inventé pour remplir un espace. Couche absolue confinée à une BANDE BASSE maîtrisée (pas toute
+   la hauteur du hero — le tracé ne doit jamais couper les métriques au-dessus) ; le composant gère
+   lui-même ses couleurs/dégradés par instance (attributs SVG), cette feuille ne fixe donc plus de
+   `fill`/`stroke` génériques ici (un ancien override cassait le dégradé propre au composant). */
+.terrain-line-svg{position:absolute;left:0;right:0;bottom:0;width:100%;height:200px;pointer-events:none;}
+.terrain-line-svg .terrain-fill{opacity:0;animation:elev-terrain-fill-in 700ms var(--ease-standard) 550ms both;}
+.terrain-line-svg .terrain-stroke{stroke-dasharray:2400;stroke-dashoffset:2400;animation:elev-terrain-draw 1200ms var(--ease-emphasized) both;}
 /* Le relief se DESSINE (tracé progressif du contour, comme un profil qu'on relève) plutôt que de
    simplement s'estomper — la donnée s'organise sous les yeux, ce n'est pas un fade-in générique.
    Jamais de mouvement sous prefers-reduced-motion : le tracé est immédiatement complet. */
-@keyframes elev-terrain-draw{from{stroke-dashoffset:2000;}to{stroke-dashoffset:0;}}
+@keyframes elev-terrain-draw{from{stroke-dashoffset:2400;}to{stroke-dashoffset:0;}}
 @keyframes elev-terrain-fill-in{from{opacity:0;}to{opacity:1;}}
-html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-terrain-fill-in-light;}
-@keyframes elev-terrain-fill-in-light{from{opacity:0;}to{opacity:1;}}
 @media (prefers-reduced-motion:reduce){
   .terrain-line-svg .terrain-stroke{animation:none;stroke-dashoffset:0;}
   .terrain-line-svg .terrain-fill{animation:none;opacity:1;}
 }
+@media (min-width:768px){ .terrain-line-svg{height:230px;} }
+@media (min-width:1024px){ .terrain-line-svg{height:250px;} }
 
 /* Home Rail (Final WOW Pass) : le fil vertical rectiligne + pastilles de la V2 ressemblait trop à
    une timeline SaaS générique (retour explicite) — retiré. La continuité entre les 3 grands
@@ -688,6 +690,8 @@ html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-ter
    par initHeroTerrainTransition (rAF, jamais de scroll détourné) ; reste statique et pleinement
    visible sous prefers-reduced-motion. */
 .rail-stop--hero{overflow:visible;}
+/* left/width fixés en pixels par initFullBleedBackdrops (app.js) — le -28px ici n'est qu'un repli
+   avant l'exécution du script (évite un flash étroit le temps du premier calcul). */
 .terrain-backdrop{position:absolute;top:-20px;left:-28px;right:-28px;height:clamp(340px,48vw,560px);pointer-events:none;overflow:hidden;z-index:0;}
 .tb-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 42%;filter:saturate(.82) brightness(.8) contrast(1.06);}
 .tb-photo-mask{position:absolute;inset:0;background:
@@ -717,7 +721,7 @@ html[data-theme="light"] .tb-photo-mask{background:
 .pulse-hero-metric--dominant .l{display:block;margin-top:6px;font-size:.92rem;color:var(--muted);}
 .pulse-hero-metric--dominant .l .arrow{font-size:.75rem;}
 .pulse-hero-metric--dominant .l.status-ok{color:var(--success);}
-.pulse-floating-metrics{display:flex;flex-wrap:wrap;gap:20px 32px;}
+.pulse-floating-metrics{display:flex;flex-wrap:wrap;gap:20px 32px;margin-bottom:12px;}
 .floating-metric{display:flex;flex-direction:column;gap:3px;}
 .floating-metric .v{font-family:var(--font-display);font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
 .floating-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
@@ -727,7 +731,7 @@ html[data-theme="light"] .tb-photo-mask{background:
 .pulse-trend-line .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
 @media (min-width:640px){ .pulse-main{flex-direction:row;align-items:flex-end;gap:26px 48px;} }
 @media (min-width:768px){ .pulse-scene{min-height:440px;} .pulse-content{min-height:420px;} .pulse-hero-metric--dominant .v{font-size:5.6rem;} }
-@media (min-width:1024px){ .pulse-scene{min-height:560px;} .pulse-content{min-height:540px;padding:34px 12px 4px;} .pulse-hero-metric--dominant .v{font-size:6.4rem;} .terrain-backdrop{height:clamp(500px,46vw,680px);} }
+@media (min-width:1024px){ .pulse-scene{min-height:480px;} .pulse-content{min-height:460px;padding:34px 12px 4px;} .pulse-hero-metric--dominant .v{font-size:6.4rem;} .terrain-backdrop{height:clamp(500px,44vw,620px);} }
 
 /* Training Landscape + ELEV Insight — plus de card autour : le graphique EST la scène, pas un
    élément posé dans une boîte. Sur ce même arrêt du rail, "Dernière activité" + "Prochaine séance"
@@ -737,11 +741,16 @@ html[data-theme="light"] .tb-photo-mask{background:
 .rail-stop--split{display:grid;grid-template-columns:1fr;gap:20px;align-items:start;}
 @media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.4fr 1fr;gap:32px;} }
 .landscape-side{display:flex;flex-direction:column;gap:16px;}
-.landscape-scene{position:relative;padding:0;overflow:hidden;border-radius:var(--radius-xl);}
+/* Full-bleed réel (Home Terrain Experience) : plus de max-width/rayon/cadre — la scène s'étend
+   jusqu'aux bords véritables (sidebar ↔ bord du viewport), voir initFullBleedBackdrops (app.js).
+   `.landscape-bg-wrap` est positionné/dimensionné en pixels par JS ; le contenu texte reste dans
+   `.landscape-content`, à largeur de lecture normale. */
+.landscape-scene{position:relative;padding:0;}
+.landscape-bg-wrap{position:absolute;top:0;bottom:0;pointer-events:none;overflow:hidden;}
 /* Fond atmosphérique (elev-secondary-dark.webp) — utilisé une seule fois sur toute la page ici,
    très assombri, jamais un doublon du terrain réel du hero (voir CLAUDE.md). */
-.landscape-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 30%;opacity:.4;filter:saturate(.7) brightness(.55);pointer-events:none;}
-.landscape-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.55) 0%,var(--bg) 92%),linear-gradient(90deg,rgba(11,15,14,.5) 0%,rgba(11,15,14,0) 25%);pointer-events:none;}
+.landscape-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 30%;opacity:.4;filter:saturate(.7) brightness(.55);}
+.landscape-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.55) 0%,var(--bg) 92%),linear-gradient(90deg,rgba(11,15,14,.5) 0%,rgba(11,15,14,0) 25%);}
 .landscape-content{position:relative;padding:22px 24px;}
 @media (min-width:768px){ .landscape-content{padding:26px 30px;} }
 .landscape-scene h2{position:relative;margin:0 0 4px;padding-left:11px;font-family:var(--font-display);font-size:1.05rem;font-weight:700;letter-spacing:-.005em;}
@@ -773,13 +782,19 @@ html[data-theme="light"] .tb-photo-mask{background:
    course/le countdown/le readiness vivent directement dans l'espace ouvert du dernier arrêt du
    rail. Réutilise .objective-card en mode "ouvert" (voir override ci-dessous) : même logique/
    données, mais plus de rectangle qui l'enferme. */
-.summit-scene{position:relative;padding:26px 26px 24px;overflow:hidden;border-radius:var(--radius-xl);min-height:280px;}
-.summit-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 40%;opacity:.55;filter:saturate(.8) brightness(.62);pointer-events:none;}
-.summit-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.2) 0%,rgba(11,15,14,.55) 60%,var(--bg) 100%),linear-gradient(90deg,rgba(11,15,14,.55) 0%,rgba(11,15,14,0) 30%);pointer-events:none;}
+.summit-scene{position:relative;padding:26px 26px 24px;min-height:340px;display:flex;flex-direction:column;justify-content:flex-end;}
+.summit-bg-wrap{position:absolute;top:0;bottom:0;pointer-events:none;overflow:hidden;}
+.summit-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 40%;opacity:.6;filter:saturate(.85) brightness(.65);}
+.summit-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.15) 0%,rgba(11,15,14,.5) 65%,var(--bg) 100%),linear-gradient(90deg,rgba(11,15,14,.55) 0%,rgba(11,15,14,0) 30%);}
 .summit-scene .objective-card{position:relative;max-width:640px;}
 .summit-scene .objective-card h3{font-size:clamp(1.6rem,3vw,2.2rem);}
 .summit-scene .obj-percent{font-size:3.4rem;}
 .summit-no-profile{margin:14px 0 0;padding:10px 14px;border-radius:var(--radius-md);background:rgba(11,15,14,.5);border:1px dashed var(--border);font-size:.82rem;color:var(--muted);max-width:440px;}
+/* Profil GPX réel de l'objectif : conteneur propre (pas le pinning global bas-de-hero du Pulse,
+   pensé pour une scène bien plus haute) — le composant partagé reste le même, seule l'enveloppe
+   change de taille. */
+.summit-profile{position:relative;height:190px;margin-top:14px;max-width:560px;}
+.summit-profile .terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;}
 @media (min-width:768px){ .summit-scene{padding:32px 34px 28px;} }
 
 /* Utilitaire standard : visible par les lecteurs d'écran, retiré du rendu visuel. Ajouté suite à

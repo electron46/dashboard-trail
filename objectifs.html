@@ -167,6 +167,10 @@
       <label class="field">Type de course (optionnel)
         <input type="text" id="raceType" placeholder="ex. Ultra Trail, Trail court, Kilomètre vertical...">
       </label>
+      <label class="field">Parcours GPX (optionnel)
+        <input type="file" id="raceGpxFile" accept=".gpx">
+      </label>
+      <p class="hint" id="raceGpxStatus" style="margin:-4px 0 4px;"></p>
 
       <h4 class="modal-section">Objectif</h4>
       <label class="field">Statut
@@ -710,11 +714,44 @@ function renderGoalPage() {
   }
 }
 
+/* --------------------------- IMPORT GPX (objectif) ---------------------------
+   Le champ est facultatif : distance/D+ restent modifiables à la main après import (l'utilisateur
+   garde la main). `pendingGpxData` porte le résultat du parsing tant que la modale est ouverte —
+   sauvegardé sur la course uniquement au clic sur "Enregistrer" (jamais avant, jamais silencieusement). */
+let pendingGpxData = null;
+document.getElementById('raceGpxFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const status = document.getElementById('raceGpxStatus');
+  if (!file) { pendingGpxData = null; status.textContent = ''; return; }
+  status.textContent = 'Lecture du fichier…';
+  try {
+    const text = await file.text();
+    const parsed = parseGpxText(text);
+    if (!parsed) {
+      pendingGpxData = null;
+      status.textContent = 'Fichier GPX illisible ou sans trace exploitable (aucun point distance/altitude valide).';
+      return;
+    }
+    pendingGpxData = parsed;
+    document.getElementById('raceDistance').value = parsed.distanceKm;
+    document.getElementById('raceDenivele').value = parsed.denivele;
+    status.textContent = 'Parcours lu : ' + parsed.distanceKm + ' km, D+ ' + parsed.denivele + ' m, D- ' + parsed.deniveleNeg + ' m, altitude ' + parsed.altMin + ' à ' + parsed.altMax + ' m — distance et D+ préremplis, modifiables ci-dessus.';
+  } catch (err) {
+    pendingGpxData = null;
+    status.textContent = 'Erreur de lecture du fichier GPX.';
+  }
+});
+
 /* --------------------------- MODALE AJOUT/ÉDITION --------------------------- */
 let editingRaceId = null;
 function openRaceModal(id) {
   editingRaceId = id || null;
   const race = id ? getRaces().find(r => r.id === id) : null;
+  pendingGpxData = null;
+  document.getElementById('raceGpxFile').value = '';
+  document.getElementById('raceGpxStatus').textContent = race && race.gpxSummary
+    ? 'Parcours déjà importé : ' + race.gpxSummary.distanceKm + ' km, D+ ' + race.gpxSummary.denivele + ' m. Choisis un nouveau fichier pour le remplacer.'
+    : '';
   document.getElementById('raceModalTitle').textContent = race ? 'Modifier la course' : 'Ajouter une course';
   document.getElementById('raceName').value = race ? race.name : '';
   document.getElementById('raceDate').value = race ? race.date : '';
@@ -758,7 +795,15 @@ document.getElementById('saveRaceBtn').addEventListener('click', () => {
   // Fusionne avec la course existante pour ne pas perdre une estimation IA déjà générée / son archivage.
   const existing = editingRaceId ? getRaces().find(r => r.id === editingRaceId) : null;
   const createdAt = existing ? existing.createdAt : new Date().toISOString();
-  const race = upsertRace(Object.assign({}, existing, { id: editingRaceId, name, date, distanceKm, denivele, type, statut, tempsVise, technicite, chaleur, notes, createdAt }));
+  // Le profil GPX n'est mis à jour QUE si un nouveau fichier vient d'être lu cette session de la
+  // modale (pendingGpxData) — sinon on conserve celui déjà enregistré (existing.gpxProfile), pour
+  // ne jamais l'effacer silencieusement lors d'une simple correction de date ou de notes.
+  const gpxPatch = pendingGpxData
+    ? { gpxProfile: pendingGpxData.points, gpxSummary: {
+        distanceKm: pendingGpxData.distanceKm, denivele: pendingGpxData.denivele,
+        deniveleNeg: pendingGpxData.deniveleNeg, altMin: pendingGpxData.altMin, altMax: pendingGpxData.altMax } }
+    : {};
+  const race = upsertRace(Object.assign({}, existing, { id: editingRaceId, name, date, distanceKm, denivele, type, statut, tempsVise, technicite, chaleur, notes, createdAt }, gpxPatch));
   closeRaceModal();
   selectedRaceId = race.id;
   renderGoalPage();

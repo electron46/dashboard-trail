@@ -64,7 +64,7 @@
            fusion (vignette + fondu vers #0B0F0E, jamais de ligne nette) ; Layer C = topographie
            très discrète (voir elevMountainBackdropSvg, contourOnly). La vraie Terrain Line
            (donnée réelle) vit dans .pulse-scene, au-dessus de tout ceci. -->
-      <div class="terrain-backdrop" id="terrainBackdrop" aria-hidden="true">
+      <div class="terrain-backdrop bleed-bg" id="terrainBackdrop" aria-hidden="true">
         <img class="tb-photo" alt="" src="assets/images/elev-hero-mountain.webp" fetchpriority="high" decoding="async">
         <div class="tb-photo-mask"></div>
         <div id="terrainBackdropSvgLayer"></div>
@@ -311,8 +311,10 @@ function renderLandscape() {
   }
 
   box.innerHTML =
-    '<img class="landscape-bg" src="assets/images/elev-secondary-dark.webp" alt="" loading="lazy" decoding="async">' +
-    '<div class="landscape-bg-mask"></div>' +
+    '<div class="landscape-bg-wrap bleed-bg">' +
+      '<img class="landscape-bg" src="assets/images/elev-secondary-dark.webp" alt="" loading="lazy" decoding="async">' +
+      '<div class="landscape-bg-mask"></div>' +
+    '</div>' +
     '<div class="landscape-content">' +
     '<h2>Paysage d\'entraînement</h2>' +
     '<div class="week-stats-inline">' + weekGrid + '</div>' +
@@ -433,21 +435,34 @@ function renderSummit() {
     progressHtml = '<p class="hint" style="margin:0;">Pas encore assez de données pour calculer l\'indice de préparation.</p>';
   }
 
-  // Pas de profil altimétrique réel pour l'objectif à ce jour (les courses sont saisies
-  // manuellement, sans import GPX) — état honnête plutôt qu'un relief inventé qui laisserait
-  // croire à un vrai parcours (voir rapport de session : import GPX = fonctionnalité à part
-  // entière, non construite dans cette passe visuelle).
-  const noProfileHtml = '<p class="summit-no-profile">Aucun profil altimétrique disponible pour cet objectif. L\'import GPX n\'est pas encore proposé — la fiche course reste saisie manuellement.</p>';
+  // Profil réel de l'objectif : uniquement si un GPX a été importé (page Objectifs → import GPX).
+  // Jamais de relief inventé quand cette donnée n'existe pas — état honnête à la place.
+  let objectiveProfileHtml = '<p class="summit-no-profile">Aucun profil altimétrique disponible pour cet objectif. <a href="objectifs.html">Importe un GPX</a> pour visualiser le vrai terrain de la course.</p>';
+  if (Array.isArray(r.gpxProfile) && r.gpxProfile.length >= 2) {
+    const alts = r.gpxProfile.map(p => p.alt);
+    const xs = r.gpxProfile.map(p => p.distKm);
+    const labels = [
+      { at: 'start', kind: 'depart', title: 'DÉPART', sub: Math.round(alts[0]) + ' m' },
+      { at: 'peak', kind: 'culminant', title: 'POINT CULMINANT', sub: Math.round(Math.max(...alts)) + ' m' },
+      { at: 'end', kind: 'arrivee', title: 'ARRIVÉE', sub: fmtNum(xs[xs.length - 1], ' km', 1) },
+    ];
+    const profileSvg = elevTerrainLineSvg(alts, { height: 200, variant: 'hero', labels });
+    const desc = elevTerrainDescription(alts, xs[xs.length - 1]);
+    objectiveProfileHtml = '<div class="summit-profile">' + profileSvg + '</div>' +
+      '<p class="visually-hidden">' + escapeHtml(desc) + '</p>';
+  }
 
   box.innerHTML =
-    '<img class="summit-bg" src="assets/images/elev-target-summit.webp" alt="" loading="lazy" decoding="async">' +
-    '<div class="summit-bg-mask"></div>' +
+    '<div class="summit-bg-wrap bleed-bg">' +
+      '<img class="summit-bg" src="assets/images/elev-target-summit.webp" alt="" loading="lazy" decoding="async">' +
+      '<div class="summit-bg-mask"></div>' +
+    '</div>' +
     '<div class="objective-card">' +
     '<p class="obj-eyebrow"><img src="' + ICON('target') + '" alt="">' + statutLabel(r.statut) + '</p>' +
     '<h3>' + escapeHtml(r.name) + '</h3>' +
     '<div class="obj-pills">' + pills + '</div>' +
     progressHtml +
-    noProfileHtml +
+    objectiveProfileHtml +
     '<div class="row" style="margin-top:14px;"><a class="btn small" href="objectifs.html">Voir mon objectif →</a></div>' +
   '</div>';
 }
@@ -526,6 +541,7 @@ try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponi
 renderAll(); // premier rendu depuis le cache local, avant même la vérification de connexion
 initScrollReveal(); // révélation progressive des scènes sous le pli (IntersectionObserver, non bloquant)
 initHeroTerrainTransition(); // transition "mountain → terrain → data" au scroll (jamais de scroll détourné)
+initFullBleedBackdrops('.bleed-bg'); // Hero/Training Landscape/Target Summit : fonds pleine largeur réels
 // Rappelé par assets/authgate.js une fois la session confirmée, après avoir resynchronisé les
 // séances depuis Supabase (source de vérité) — voir syncActivitiesWithSupabase() dans app.js.
 async function onAuthReady() { await syncActivitiesWithSupabase(); renderAll(); }

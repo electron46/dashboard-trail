@@ -2670,16 +2670,44 @@ function sessionPreviewSvg(session, opts) {
    sub }` rendus via `elevTerrainLabel` — jamais un point inventé (voir index.html, renderPulse).
    `opts.contour` ajoute les lignes de niveau discrètes déjà utilisées sur le profil d'Activité. */
 let _terrainProfileId = 0;
+// Fenêtre de lissage (moyenne mobile) appliquée à l'altitude avant tracé — réduit le bruit GPS/
+// baro (quelques mètres d'écart point à point) sans changer le relief réel, même principe déjà
+// utilisé pour l'allure sur le détail de séance (voir CLAUDE.md). Purement un traitement de
+// rendu : la donnée source (min/max/D+ affichés en texte) n'est jamais recalculée dessus.
+function _smoothAltitudes(values, windowSize) {
+  if (values.length < windowSize * 2) return values.slice();
+  const half = Math.floor(windowSize / 2);
+  return values.map((_, i) => {
+    const start = Math.max(0, i - half), end = Math.min(values.length, i + half + 1);
+    const slice = values.slice(start, end);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  });
+}
+// Amplitude visuelle minimale (mètres) utilisée pour l'échelle du tracé — un profil presque plat
+// (quelques mètres de D+ réel) ne doit jamais être étiré pour remplir toute la hauteur disponible,
+// ce qui le ferait ressembler à un relief accidenté qu'il n'est pas (voir CLAUDE.md, "ne pas
+// exagérer artificiellement les profils presque plats"). Le relief réel reste lisible : un profil
+// vraiment montagneux (D+ > ce seuil) continue d'utiliser toute la hauteur normalement.
+const TERRAIN_MIN_VISUAL_SPAN_M = 80;
 function elevTerrainLineSvg(altValues, opts) {
   opts = opts || {};
   if (!altValues || altValues.length < 2) return '';
   const id = 'tp' + (_terrainProfileId++);
   const variant = opts.variant || 'hero';
   const w = opts.width || 1000, h = opts.height || 220;
-  const minA = Math.min(...altValues), maxA = Math.max(...altValues);
-  const span = (maxA - minA) || 1;
-  const stepX = w / (altValues.length - 1);
-  const pts = altValues.map((a, i) => [i * stepX, h - 4 - ((a - minA) / span) * (h - 16)]);
+  const smoothed = opts.smooth === false ? altValues : _smoothAltitudes(altValues, 5);
+  const minA = Math.min(...smoothed), maxA = Math.max(...smoothed);
+  const realSpan = maxA - minA;
+  // Marge interne verticale généreuse (viewBox) : le tracé occupe une bande maîtrisée, jamais
+  // bord à bord — évite qu'il ne "coupe" les labels ou touche les limites du composant.
+  const padTop = h * 0.32, padBottom = h * 0.1;
+  const drawH = h - padTop - padBottom;
+  const span = Math.max(realSpan, TERRAIN_MIN_VISUAL_SPAN_M);
+  // Centre la portion réellement occupée dans la bande de dessin quand le span visuel dépasse le
+  // span réel (profil plat) — sinon le relief se retrouverait plaqué en bas de la bande.
+  const visualOffset = (span - realSpan) / 2;
+  const stepX = w / (smoothed.length - 1);
+  const pts = smoothed.map((a, i) => [i * stepX, h - padBottom - (((a - minA) + visualOffset) / span) * drawH]);
   const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
   const area = path + ' L' + w + ',' + h + ' L0,' + h + ' Z';
 
@@ -2884,6 +2912,112 @@ function initHeroTerrainTransition() {
     if (!ticking) { requestAnimationFrame(apply); ticking = true; }
   }, { passive: true });
   apply();
+}
+
+/* --------------------------- IMPORT GPX (objectifs) ---------------------------
+   Parse un fichier GPX (trkpt lat/lon/ele) pour préremplir la distance/D+ d'un objectif ET
+   conserver le vrai profil distance→altitude (jamais transformé en image — les points restent
+   des données, régénérables en SVG/carte à tout moment). Distance cumulée calculée par haversine
+   (mètres), jamais par simple index — un GPX a des points inégalement espacés. Le fichier peut
+   contenir plusieurs milliers de points : simplifié à ~300 points par échantillonnage régulier en
+   DISTANCE (pas en index) pour rester léger côté stockage/rendu tout en préservant sommets/creux
+   significatifs à cette résolution. */
+function _haversineM(lat1, lon1, lat2, lon2) {
+  const R = 6371000, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function parseGpxText(xmlText) {
+  const xml = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (xml.querySelector('parsererror')) return null;
+  const trkpts = Array.from(xml.querySelectorAll('trkpt'));
+  if (trkpts.length < 2) return null;
+  const raw = trkpts.map(pt => {
+    const lat = parseFloat(pt.getAttribute('lat')), lon = parseFloat(pt.getAttribute('lon'));
+    const eleEl = pt.querySelector('ele');
+    const alt = eleEl ? parseFloat(eleEl.textContent) : null;
+    return { lat, lon, alt };
+  }).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon) && Number.isFinite(p.alt));
+  if (raw.length < 2) return null;
+
+  let distM = 0;
+  const withDist = raw.map((p, i) => {
+    if (i > 0) distM += _haversineM(raw[i-1].lat, raw[i-1].lon, p.lat, p.lon);
+    return { distKm: distM / 1000, alt: p.alt, lat: p.lat, lon: p.lon };
+  });
+
+  // Échantillonnage régulier en distance (~300 points cible) — préserve la silhouette réelle.
+  const totalKm = withDist[withDist.length - 1].distKm;
+  const targetPoints = 300;
+  const stepKm = totalKm / targetPoints;
+  const points = [];
+  let nextD = 0, wi = 0;
+  for (let i = 0; i < withDist.length; i++) {
+    if (withDist[i].distKm >= nextD || i === withDist.length - 1) {
+      points.push(withDist[i]);
+      nextD += stepKm;
+    }
+  }
+  if (points[points.length - 1] !== withDist[withDist.length - 1]) points.push(withDist[withDist.length - 1]);
+
+  // D+/D- calculés sur l'altitude LISSÉE (moyenne mobile) avant sommation des deltas — sur
+  // altitude brute, le bruit GPS/baro (quelques mètres d'écart point à point, avec ~1700 points)
+  // s'accumule et gonfle artificiellement le dénivelé total (mesuré : 5011 m calculé en brut sur
+  // ce fichier réel contre ~3500 m officiellement documentés pour cette course). Même logique que
+  // le lissage du tracé affiché (_smoothAltitudes) — la donnée de distance/altitude par point
+  // n'est elle-même jamais modifiée, seul le calcul de gain/perte l'utilise lissée.
+  const smoothedForGainLoss = _smoothAltitudes(withDist.map(p => p.alt), 9);
+  let gain = 0, loss = 0;
+  for (let i = 1; i < smoothedForGainLoss.length; i++) {
+    const d = smoothedForGainLoss[i] - smoothedForGainLoss[i-1];
+    if (d > 0) gain += d; else loss += -d;
+  }
+  const alts = withDist.map(p => p.alt);
+  return {
+    points: points.map(p => ({ distKm: +p.distKm.toFixed(3), alt: Math.round(p.alt), lat: p.lat, lon: p.lon })),
+    distanceKm: +totalKm.toFixed(2),
+    denivele: Math.round(gain),
+    deniveleNeg: Math.round(loss),
+    altMin: Math.round(Math.min(...alts)),
+    altMax: Math.round(Math.max(...alts)),
+  };
+}
+
+/* --------------------------- FULL-BLEED (Home Terrain Experience) ---------------------------
+   `<main>` reste centré avec une largeur max (`max-width:1360px;margin:0 auto`) sur toutes les
+   pages — comportement volontairement inchangé partout ailleurs. Sur l'Accueil, les 3 grandes
+   scènes (Pulse/Landscape/Summit) doivent au contraire déborder jusqu'aux bords réels (sidebar à
+   gauche, bord du viewport à droite), quelle que soit la largeur d'écran — y compris sur un écran
+   très large où <main> se retrouve entouré de marges. Un calcul CSS pur (`calc(50vw - 50%)`) se
+   trompe ici car <main> n'est pas centré dans TOUT le viewport (la sidebar occupe déjà 220px à
+   gauche) : on mesure donc réellement `.app-main` (qui, lui, occupe exactement l'espace entre la
+   sidebar et le bord droit) et on positionne chaque fond en pixels. Recalculé au resize
+   (rAF-throttlé, pas de layout thrashing continu). */
+function initFullBleedBackdrops(selector) {
+  const appMain = document.querySelector('.app-main');
+  if (!appMain) return;
+  let ticking = false;
+  function apply() {
+    const mainRect = appMain.getBoundingClientRect();
+    if (!mainRect.width) return; // mise en page pas encore stable — un des appels différés ci-dessous réessaiera
+    document.querySelectorAll(selector).forEach(bg => {
+      const scene = bg.parentElement; // scène position:relative la plus proche (conteneur direct du fond)
+      const sceneRect = scene.getBoundingClientRect();
+      bg.style.left = (mainRect.left - sceneRect.left) + 'px';
+      bg.style.width = mainRect.width + 'px';
+    });
+    ticking = false;
+  }
+  // Premier calcul potentiellement trop tôt (avant le premier paint / chargement des images qui
+  // peuvent changer la hauteur des scènes) : on le répète volontairement via rAF + un court délai,
+  // en plus du calcul immédiat — coût négligeable (quelques lectures de layout), robustesse réelle.
+  apply();
+  requestAnimationFrame(apply);
+  setTimeout(apply, 200);
+  window.addEventListener('resize', () => {
+    if (!ticking) { requestAnimationFrame(apply); ticking = true; }
+  }, { passive: true });
 }
 
 /* --------------------------- RÉVÉLATION AU SCROLL (Phase 2, contrôlée) ---------------------------
