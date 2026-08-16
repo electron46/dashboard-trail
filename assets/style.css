@@ -1066,7 +1066,9 @@ main.analysis-main{max-width:1440px;}
   .mobile-nav button.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
   main{padding:16px 16px 78px;}
   footer.app{padding-bottom:78px;}
-  header.app-topbar{padding:14px 16px;}
+  /* Topbar sticky en haut d'écran : sur un téléphone à encoche, l'espace système (notch/île
+     dynamique) doit s'ajouter au padding plutôt que de passer dessous. */
+  header.app-topbar{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;}
   /* Cibles tactiles < 44px releve pendant l'audit accessibilite (voir CLAUDE.md) — corrige au
      seul endroit ou ca compte reellement (le tactile), la densite desktop reste inchangee. */
   #themeToggle{width:44px;height:44px;}
