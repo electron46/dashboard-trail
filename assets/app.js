@@ -2979,7 +2979,74 @@ document.addEventListener('DOMContentLoaded', () => {
   autoPullIfNewer();
   initTopbarScrollState();
   initSpotlight();
+  initCommandPalette();
 });
+
+/* Palette de commandes (Ctrl/Cmd+K) — P3 volontairement optionnel : la navigation normale
+   (sidebar, barre mobile) reste toujours l'unique voie nécessaire, ceci n'est qu'un raccourci en
+   plus. Ne s'affiche que si NAV_ITEMS existe (toutes les pages qui appellent renderAppNav()) et
+   qu'aucun champ de saisie n'a déjà le focus (pour ne jamais voler un raccourci Ctrl+K natif d'un
+   champ de texte). Réutilise .modal-backdrop : la gestion du focus déjà en place (voir plus haut)
+   s'applique automatiquement, aucune duplication de logique.
+*/
+function initCommandPalette() {
+  if (typeof NAV_ITEMS === 'undefined' || document.getElementById('cmdkBackdrop')) return;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop cmdk-backdrop';
+  backdrop.id = 'cmdkBackdrop';
+  backdrop.innerHTML =
+    '<div class="modal cmdk-modal">' +
+      '<input type="text" class="cmdk-input" id="cmdkInput" placeholder="Aller à…" autocomplete="off">' +
+      '<div class="cmdk-list" id="cmdkList"></div>' +
+    '</div>';
+  document.body.appendChild(backdrop);
+
+  const input = backdrop.querySelector('#cmdkInput');
+  const list = backdrop.querySelector('#cmdkList');
+  let activeIdx = 0;
+
+  function renderList(query) {
+    const q = (query || '').trim().toLowerCase();
+    const items = NAV_ITEMS.filter(it => !q || it.label.toLowerCase().includes(q));
+    activeIdx = 0;
+    list.innerHTML = items.length ? items.map((it, i) =>
+      '<a href="' + it.href + '" class="cmdk-item' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '">' +
+        '<img src="' + navIconUrl(it.icon) + '" alt="">' + escapeHtml(it.label) +
+      '</a>'
+    ).join('') : '<div class="cmdk-empty">Aucune page ne correspond.</div>';
+    list.dataset.hrefs = JSON.stringify(items.map(it => it.href));
+  }
+  function move(delta) {
+    const links = list.querySelectorAll('.cmdk-item');
+    if (!links.length) return;
+    links[activeIdx]?.classList.remove('active');
+    activeIdx = (activeIdx + delta + links.length) % links.length;
+    links[activeIdx].classList.add('active');
+    links[activeIdx].scrollIntoView({ block: 'nearest' });
+  }
+  function openPalette() {
+    renderList('');
+    input.value = '';
+    backdrop.classList.add('open');
+  }
+  document.addEventListener('keydown', (e) => {
+    const isTypingField = /^(input|textarea|select)$/i.test(document.activeElement?.tagName || '') && document.activeElement !== input;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !isTypingField) {
+      e.preventDefault();
+      backdrop.classList.contains('open') ? backdrop.classList.remove('open') : openPalette();
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.classList.remove('open'); });
+  input.addEventListener('input', () => renderList(input.value));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (e.key === 'Enter') {
+      const hrefs = JSON.parse(list.dataset.hrefs || '[]');
+      if (hrefs[activeIdx]) location.href = hrefs[activeIdx];
+    }
+  });
+}
 
 /* Spotlight au pointeur (carte Objectif principal, cartes KPI) — un seul listener delegue au
    document plutot qu'un par carte, desactive d'office sur tactile/pointeur imprecis/reduced-motion
