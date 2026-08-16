@@ -2650,19 +2650,31 @@ function sessionPreviewSvg(session, opts) {
   return '';
 }
 
-/* --------------------------- ELEV TERRAIN LINE (Phase 2, primitive partagée) ---------------------------
-   Silhouette d'altitude en pleine largeur, pensée pour vivre en fond de scène (Performance Pulse de
-   l'Accueil). Toujours construite à partir d'une vraie série de valeurs (jamais un relief inventé) :
-   si moins de 2 valeurs sont fournies, retourne une chaîne vide et l'appelant retombe simplement sans
-   fond de terrain. Décorative (aria-hidden) — l'information reste disponible ailleurs en texte normal.
-   `opts.markPeak` (optionnel) place un repère sur le point le plus haut de la série. `opts.contour`
-   (optionnel) ajoute les mêmes lignes de niveau discrètes que le profil altimétrique de la page
-   Activité (`elevChartSvg` opts.terrain) — même langage visuel "carte topographique" réutilisé ici
-   plutôt qu'un nouveau motif de fond générique (voir recherche 21st.dev "Background Paths",
-   réinterprétée comme relief réel plutôt que courbes décoratives). */
+/* --------------------------- ELEV TERRAIN PROFILE (composant partagé) ---------------------------
+   Silhouette d'altitude "brillante" en pleine largeur — UN SEUL composant réutilisé partout où un
+   profil d'altitude doit s'afficher (aujourd'hui : Performance Pulse de l'Accueil). Toujours
+   construite à partir d'une vraie série de valeurs (jamais un relief inventé) : si moins de 2
+   valeurs sont fournies, retourne une chaîne vide et l'appelant retombe simplement sans profil.
+   Décorative (aria-hidden) — l'information reste disponible ailleurs en texte normal (voir
+   `elevTerrainDescription` pour la description accessible).
+
+   Construction en couches concentriques sur LE MÊME chemin géométrique (pas un tracé différent
+   par effet) : remplissage → halo extérieur → halo intérieur → ligne principale → cœur clair.
+   `opts.variant` règle l'intensité du halo :
+     - 'hero'    (défaut) : halo généreux, utilisé en grand fond de scène.
+     - 'compact' : ligne plus fine, halo réduit — listes/historique (pas encore branché nulle part
+       à ce jour, prévu pour une prochaine page).
+     - 'ghost'   : quasi invisible, pure matière visuelle.
+   `opts.markPeak` place un simple repère sur le point le plus haut (sans label).
+   `opts.labels` (optionnel) : tableau de repères réels `{ at:'start'|'end'|'peak', kind, title,
+   sub }` rendus via `elevTerrainLabel` — jamais un point inventé (voir index.html, renderPulse).
+   `opts.contour` ajoute les lignes de niveau discrètes déjà utilisées sur le profil d'Activité. */
+let _terrainProfileId = 0;
 function elevTerrainLineSvg(altValues, opts) {
   opts = opts || {};
   if (!altValues || altValues.length < 2) return '';
+  const id = 'tp' + (_terrainProfileId++);
+  const variant = opts.variant || 'hero';
   const w = opts.width || 1000, h = opts.height || 220;
   const minA = Math.min(...altValues), maxA = Math.max(...altValues);
   const span = (maxA - minA) || 1;
@@ -2670,13 +2682,15 @@ function elevTerrainLineSvg(altValues, opts) {
   const pts = altValues.map((a, i) => [i * stepX, h - 4 - ((a - minA) / span) * (h - 16)]);
   const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
   const area = path + ' L' + w + ',' + h + ' L0,' + h + ' Z';
+
+  let peakIdx = 0;
+  altValues.forEach((a, i) => { if (a > altValues[peakIdx]) peakIdx = i; });
   let peakMarker = '';
   if (opts.markPeak) {
-    let peakIdx = 0;
-    altValues.forEach((a, i) => { if (a > altValues[peakIdx]) peakIdx = i; });
     const p = pts[peakIdx];
     peakMarker = '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="4" fill="var(--accent-light)"/>';
   }
+
   let contourSvg = '';
   if (opts.contour) {
     // Couleur/opacité choisies pour rester visibles malgré la double atténuation (opacité du
@@ -2688,12 +2702,102 @@ function elevTerrainLineSvg(altValues, opts) {
       return '<line x1="0" y1="' + cy + '" x2="' + w + '" y2="' + cy + '" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="3,5" opacity="0.55"/>';
     }).join('');
   }
-  return '<svg class="terrain-line-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+
+  // Repères réels (départ / point culminant / arrivée...) — jamais inventés, positionnés à partir
+  // des points réels de la série fournie par l'appelant.
+  let labelsSvg = '';
+  if (opts.labels && opts.labels.length && variant !== 'compact' && variant !== 'ghost') {
+    labelsSvg = opts.labels.map(l => {
+      const idx = l.at === 'start' ? 0 : l.at === 'end' ? pts.length - 1 : l.at === 'peak' ? peakIdx : null;
+      if (idx == null) return '';
+      const p = pts[idx];
+      return elevTerrainLabel(l.kind, l.title, l.sub, p[0], p[1], w);
+    }).join('');
+  }
+
+  const glowOuterW = variant === 'hero' ? 18 : variant === 'compact' ? 8 : 0;
+  const glowInnerW = variant === 'hero' ? 8 : variant === 'compact' ? 5 : 0;
+  const lineW = variant === 'ghost' ? 1.5 : variant === 'compact' ? 2 : 3;
+  const coreW = variant === 'ghost' ? 0 : variant === 'compact' ? 0.8 : 1.1;
+  const areaOpacity = variant === 'ghost' ? 0.5 : 1;
+
+  return '<svg class="terrain-line-svg terrain-line-svg--' + variant + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+    '<defs>' +
+      '<linearGradient id="' + id + 'Area" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="#5BFF8D" stop-opacity="' + (0.18 * areaOpacity).toFixed(2) + '"/>' +
+        '<stop offset="40%" stop-color="#37B868" stop-opacity="' + (0.07 * areaOpacity).toFixed(2) + '"/>' +
+        '<stop offset="100%" stop-color="#0B0F0E" stop-opacity="0"/>' +
+      '</linearGradient>' +
+      (glowOuterW ? '<filter id="' + id + 'Outer" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="7"/></filter>' : '') +
+      (glowInnerW ? '<filter id="' + id + 'Inner" x="-10%" y="-40%" width="120%" height="180%"><feGaussianBlur stdDeviation="2.5"/></filter>' : '') +
+    '</defs>' +
     contourSvg +
-    '<path class="terrain-fill" d="' + area + '"/>' +
-    '<path class="terrain-stroke" d="' + path + '"/>' +
+    '<path class="terrain-fill" fill="url(#' + id + 'Area)" d="' + area + '"/>' +
+    (glowOuterW ? '<path fill="none" stroke="rgba(69,255,124,.16)" stroke-width="' + glowOuterW + '" stroke-linecap="round" stroke-linejoin="round" filter="url(#' + id + 'Outer)" d="' + path + '"/>' : '') +
+    (glowInnerW ? '<path fill="none" stroke="rgba(78,255,132,.35)" stroke-width="' + glowInnerW + '" stroke-linecap="round" stroke-linejoin="round" filter="url(#' + id + 'Inner)" d="' + path + '"/>' : '') +
+    '<path class="terrain-stroke" fill="none" stroke="#4FE67B" stroke-width="' + lineW + '" stroke-linecap="round" stroke-linejoin="round" d="' + path + '"/>' +
+    (coreW ? '<path fill="none" stroke="rgba(220,255,229,.88)" stroke-width="' + coreW + '" stroke-linecap="round" stroke-linejoin="round" d="' + path + '"/>' : '') +
     peakMarker +
+    labelsSvg +
   '</svg>';
+}
+
+// Icônes réutilisées depuis les assets fournis (elev-label-*.svg) — mêmes tracés, recentrés sur
+// (0,0) pour être positionnés dynamiquement. Un seul point de vérité pour le style des labels.
+const TERRAIN_LABEL_KINDS = {
+  depart: { width: 168,
+    icon: '<circle r="5" fill="#0B0F0E" stroke="#BFFFD0" stroke-width="1.5"/><path d="M-2 3V-5l7 2.5-7 2.5" stroke="#BFFFD0" stroke-width="1.4" stroke-linejoin="round" fill="none"/>' },
+  arrivee: { width: 168,
+    icon: '<path d="M-5-5h10v10h-10z" stroke="#D6FFE0" stroke-width="1.2" fill="none"/><path d="M-5-5h5v5h-5m5 0h5v5h-5m0 0h-5v-5h5m0 0v-5h5" stroke="#D6FFE0" stroke-width="1.1" fill="none"/>' },
+  culminant: { width: 224,
+    icon: '<path d="m-8 5 7.5-12 3.3 5.1 2.1-2.8 4.1 9.7h-17Z" fill="#5BFF8D" fill-opacity=".18" stroke="#D6FFE0" stroke-width="1.5" stroke-linejoin="round"/><circle cx="-.5" cy="-7" r="1.8" fill="#E7F8EC"/>' },
+  checkpoint: { width: 168,
+    icon: '<circle r="6" fill="none" stroke="#D6FFE0" stroke-width="1.4"/><circle r="2" fill="#D6FFE0"/>' },
+  objectif: { width: 168,
+    icon: '<circle r="7" fill="none" stroke="#D6FFE0" stroke-width="1.3"/><circle r="3.4" fill="none" stroke="#D6FFE0" stroke-width="1.1"/><circle r="1" fill="#E7F8EC"/>' },
+};
+/* Label dynamique attaché à un point réel du profil (départ/arrivée/point culminant/checkpoint/
+   objectif) — reprend le langage visuel des assets elev-label-*.svg fournis, mais avec du VRAI
+   texte dans le SVG (title + sub, ex. "1 380 M · KM 24,6") plutôt qu'une image figée, pour rester
+   accessible/traduisible/à jour. `title`/`sub` doivent toujours venir de données réellement
+   calculées — jamais un checkpoint ou une valeur inventée. Le label est recadré horizontalement
+   (clampé) pour ne jamais sortir du viewBox du profil. */
+function elevTerrainLabel(kind, title, sub, px, py, w) {
+  const def = TERRAIN_LABEL_KINDS[kind];
+  if (!def) return '';
+  const lw = def.width, lh = 34, half = lw / 2, gap = 16;
+  const cx = Math.max(half + 2, Math.min(w - half - 2, px));
+  const cardTop = py - gap - lh;
+  const text = sub ? (title + ' · ' + sub) : title;
+  return '<g class="terrain-label" aria-hidden="true">' +
+    '<line x1="' + px.toFixed(1) + '" y1="' + (py - 3).toFixed(1) + '" x2="' + cx.toFixed(1) + '" y2="' + (cardTop + lh).toFixed(1) + '" stroke="#5BFF8D" stroke-opacity=".55"/>' +
+    '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="2.6" fill="#D6FFE0"/>' +
+    '<g transform="translate(' + cx.toFixed(1) + ',' + cardTop.toFixed(1) + ')">' +
+      '<rect x="' + (-half).toFixed(1) + '" y="0" width="' + lw + '" height="' + lh + '" rx="10" fill="#0B0F0E" fill-opacity=".9" stroke="#5BFF8D" stroke-opacity=".32"/>' +
+      '<g transform="translate(' + (-half + 18) + ',' + (lh / 2) + ')">' + def.icon + '</g>' +
+      '<text x="' + (-half + 32) + '" y="' + (lh / 2 + 4) + '" fill="#E7F8EC" font-family="Inter,Arial,sans-serif" font-size="10.5" font-weight="700" letter-spacing="1.1">' + escapeHtml(text) + '</text>' +
+    '</g>' +
+  '</g>';
+}
+
+/* Description accessible du profil (rule 33) : les repères visuels (halo, labels flottants) sont
+   décoratifs — cette phrase porte l'information réelle pour les lecteurs d'écran. Visuellement
+   masquée (voir .visually-hidden). */
+function elevTerrainDescription(altValues, distanceKm) {
+  if (!altValues || altValues.length < 2) return '';
+  const min = Math.round(Math.min(...altValues)), max = Math.round(Math.max(...altValues));
+  let gain = 0, loss = 0;
+  for (let i = 1; i < altValues.length; i++) {
+    const d = altValues[i] - altValues[i - 1];
+    if (d > 0) gain += d; else loss += -d;
+  }
+  const parts = [
+    distanceKm != null ? fmtNum(distanceKm, ' km', 1) : null,
+    'D+ ' + Math.round(gain) + ' m',
+    'D- ' + Math.round(loss) + ' m',
+    'altitude ' + min + ' à ' + max + ' m',
+  ].filter(Boolean);
+  return 'Profil altimétrique réel : ' + parts.join(', ') + '.';
 }
 
 /* --------------------------- ELEV TERRAIN BACKDROP (Home WOW Pass) ---------------------------

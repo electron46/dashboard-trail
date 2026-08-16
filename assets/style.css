@@ -707,7 +707,6 @@ html[data-theme="light"] .tb-photo-mask{background:
    Line, altitude de la dernière sortie) occupe tout l'espace disponible derrière les métriques,
    avec un léger halo qui le distingue clairement des reliefs décoratifs du backdrop. */
 .pulse-scene{position:relative;min-height:340px;padding:6px 0 0;}
-.pulse-scene > svg.terrain-line-svg .terrain-stroke{filter:drop-shadow(0 0 5px rgba(168,196,127,.5));}
 .pulse-content{position:relative;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;padding:18px 0 4px;}
 .pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
 /* Hiérarchie extrême : UNE valeur domine (readiness si calculable, sinon volume), en très grande
@@ -738,7 +737,13 @@ html[data-theme="light"] .tb-photo-mask{background:
 .rail-stop--split{display:grid;grid-template-columns:1fr;gap:20px;align-items:start;}
 @media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.4fr 1fr;gap:32px;} }
 .landscape-side{display:flex;flex-direction:column;gap:16px;}
-.landscape-scene{padding:0;}
+.landscape-scene{position:relative;padding:0;overflow:hidden;border-radius:var(--radius-xl);}
+/* Fond atmosphérique (elev-secondary-dark.webp) — utilisé une seule fois sur toute la page ici,
+   très assombri, jamais un doublon du terrain réel du hero (voir CLAUDE.md). */
+.landscape-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 30%;opacity:.4;filter:saturate(.7) brightness(.55);pointer-events:none;}
+.landscape-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.55) 0%,var(--bg) 92%),linear-gradient(90deg,rgba(11,15,14,.5) 0%,rgba(11,15,14,0) 25%);pointer-events:none;}
+.landscape-content{position:relative;padding:22px 24px;}
+@media (min-width:768px){ .landscape-content{padding:26px 30px;} }
 .landscape-scene h2{position:relative;margin:0 0 4px;padding-left:11px;font-family:var(--font-display);font-size:1.05rem;font-weight:700;letter-spacing:-.005em;}
 .landscape-scene h2::before{content:'';position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:2px;background:linear-gradient(180deg,var(--accent-light),var(--accent));}
 /* L'insight n'est plus posé dans une pastille pleine largeur : un connecteur vertical descend du
@@ -768,10 +773,14 @@ html[data-theme="light"] .tb-photo-mask{background:
    course/le countdown/le readiness vivent directement dans l'espace ouvert du dernier arrêt du
    rail. Réutilise .objective-card en mode "ouvert" (voir override ci-dessous) : même logique/
    données, mais plus de rectangle qui l'enferme. */
-.summit-scene{padding:0;}
-.summit-scene .objective-card{max-width:640px;}
+.summit-scene{position:relative;padding:26px 26px 24px;overflow:hidden;border-radius:var(--radius-xl);min-height:280px;}
+.summit-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 40%;opacity:.55;filter:saturate(.8) brightness(.62);pointer-events:none;}
+.summit-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.2) 0%,rgba(11,15,14,.55) 60%,var(--bg) 100%),linear-gradient(90deg,rgba(11,15,14,.55) 0%,rgba(11,15,14,0) 30%);pointer-events:none;}
+.summit-scene .objective-card{position:relative;max-width:640px;}
 .summit-scene .objective-card h3{font-size:clamp(1.6rem,3vw,2.2rem);}
 .summit-scene .obj-percent{font-size:3.4rem;}
+.summit-no-profile{margin:14px 0 0;padding:10px 14px;border-radius:var(--radius-md);background:rgba(11,15,14,.5);border:1px dashed var(--border);font-size:.82rem;color:var(--muted);max-width:440px;}
+@media (min-width:768px){ .summit-scene{padding:32px 34px 28px;} }
 
 /* Utilitaire standard : visible par les lecteurs d'écran, retiré du rendu visuel. Ajouté suite à
    la recherche ui-ux-pro-max (domaine ux, "Heading Hierarchy") : Performance Pulse n'avait aucun
