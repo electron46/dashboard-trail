@@ -714,8 +714,10 @@ html[data-theme="light"] .kpi-card::after{display:none;}
 .period-select button:hover{color:var(--text);}
 .period-select button.active{background:var(--accent);border-color:var(--accent);color:var(--accent-text);font-weight:600;}
 
-/* Empty state générique (objectif, activité...) — le dashboard doit rester soigné même sans données */
-.empty-state{text-align:center;padding:26px 16px;color:var(--muted);}
+/* Empty state générique (objectif, activité...) — le dashboard doit rester soigné même sans données.
+   Bordure pointillée douce plutôt qu'un simple bloc de texte centré : signale visuellement "un
+   emplacement de contenu qui attend d'être rempli", cohérent avec .dropzone qui a le même langage. */
+.empty-state{text-align:center;padding:30px 18px;color:var(--muted);border:1px dashed var(--border);border-radius:var(--radius-md);}
 .empty-state .empty-title{font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--text);margin-bottom:4px;}
 .empty-state p{margin:0 0 14px;font-size:.86rem;}
 
