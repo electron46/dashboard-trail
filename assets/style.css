@@ -331,7 +331,8 @@ section.card.card-compact h2::before{display:none;}
 /* Page Paramètres (refonte) */
 .settings-row{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--border);background:none;border-left:none;border-right:none;border-top:none;cursor:default;font:inherit;color:inherit;}
 .settings-row:last-child{border-bottom:none;}
-button.settings-row{cursor:pointer;}
+button.settings-row{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard);border-radius:var(--radius-sm);}
+button.settings-row:hover{background:rgba(244,247,245,.03);}
 .settings-row-label{font-weight:600;font-size:.86rem;display:block;}
 .settings-row.danger .settings-row-label{color:var(--danger);}
 .settings-row-sub{font-size:.72rem;color:var(--muted);display:block;margin-top:1px;}
@@ -413,11 +414,11 @@ label.field{display:flex;flex-direction:column;gap:4px;font-size:.82rem;color:va
 
 table{width:100%;border-collapse:collapse;font-size:.86rem;}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
-th{color:var(--muted);font-weight:500;font-size:.68rem;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.06em;}
+th{color:var(--muted);font-weight:600;font-size:.68rem;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.06em;}
 td{font-family:var(--font-mono);}
 td.sans{font-family:var(--font-sans);}
-tr.session-row{cursor:pointer;}
-tr.session-row:hover{background:var(--bg);}
+tr.session-row{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard);}
+tr.session-row:hover{background:var(--panel-raised);}
 
 .badge{display:inline-block;padding:3px 10px;border-radius:var(--radius-pill);font-size:.68rem;font-weight:600;font-family:var(--font-sans);text-transform:uppercase;letter-spacing:.06em;}
 .badge.principal{background:var(--accent);color:var(--accent-text);border:1px solid var(--accent);}
@@ -557,7 +558,8 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 
 /* Cases à cocher en pilules (jours, créneaux...) */
 .checkbox-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
-.checkbox-pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:var(--radius-pill);padding:5px 11px;font-size:.8rem;cursor:pointer;background:var(--panel);}
+.checkbox-pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:var(--radius-pill);padding:5px 11px;font-size:.8rem;cursor:pointer;background:var(--panel);transition:border-color var(--dur-fast) var(--ease-standard),background var(--dur-fast) var(--ease-standard);}
+.checkbox-pill:hover{border-color:var(--border-strong);}
 .checkbox-pill input{width:auto;accent-color:var(--accent);}
 .checkbox-pill:has(input:checked){background:var(--bg);border-color:var(--muted-2);font-weight:600;}
 
@@ -710,12 +712,15 @@ html[data-theme="light"] .kpi-card::after{display:none;}
 
 /* Sélecteur à onglets pills (période, métrique de graphique...) */
 .period-select{display:flex;gap:4px;flex-wrap:wrap;}
-.period-select button{font:inherit;font-family:var(--font-sans);font-size:.78rem;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-pill);padding:6px 14px;cursor:pointer;transition:background 150ms,color 150ms;}
+.period-select button{font:inherit;font-family:var(--font-sans);font-size:.78rem;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-pill);padding:6px 14px;cursor:pointer;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard);}
+.period-select button:hover:not(.active){border-color:var(--border-strong);color:var(--text);}
 .period-select button:hover{color:var(--text);}
 .period-select button.active{background:var(--accent);border-color:var(--accent);color:var(--accent-text);font-weight:600;}
 
-/* Empty state générique (objectif, activité...) — le dashboard doit rester soigné même sans données */
-.empty-state{text-align:center;padding:26px 16px;color:var(--muted);}
+/* Empty state générique (objectif, activité...) — le dashboard doit rester soigné même sans données.
+   Bordure pointillée douce plutôt qu'un simple bloc de texte centré : signale visuellement "un
+   emplacement de contenu qui attend d'être rempli", cohérent avec .dropzone qui a le même langage. */
+.empty-state{text-align:center;padding:30px 18px;color:var(--muted);border:1px dashed var(--border);border-radius:var(--radius-md);}
 .empty-state .empty-title{font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--text);margin-bottom:4px;}
 .empty-state p{margin:0 0 14px;font-size:.86rem;}
 
@@ -1056,6 +1061,11 @@ main.analysis-main{max-width:1440px;}
   main{padding:16px 16px 78px;}
   footer.app{padding-bottom:78px;}
   header.app-topbar{padding:14px 16px;}
+  /* Cibles tactiles < 44px releve pendant l'audit accessibilite (voir CLAUDE.md) — corrige au
+     seul endroit ou ca compte reellement (le tactile), la densite desktop reste inchangee. */
+  #themeToggle{width:44px;height:44px;}
+  .chip-btn{min-height:44px;box-sizing:border-box;display:inline-flex;align-items:center;}
+  .filter-select,.filter-search{min-height:44px;box-sizing:border-box;}
   /* KPI en grille 2 colonnes fixe (l'auto-fit retombe sur 1 colonne à cette largeur) */
   .kpi-grid{grid-template-columns:1fr 1fr;}
   /* Valeurs textuelles ("Hausse rapide", "En baisse") plus longues que les valeurs numériques :
