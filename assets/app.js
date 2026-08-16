@@ -2679,9 +2679,13 @@ function elevTerrainLineSvg(altValues, opts) {
   }
   let contourSvg = '';
   if (opts.contour) {
+    // Couleur/opacité choisies pour rester visibles malgré la double atténuation (opacité du
+    // fond de terrain déjà à .55 en CSS, voir .terrain-line-svg) — un stroke "border" (7% de
+    // blanc) devenait invisible une fois combiné. var(--text) à faible opacité garde un vrai
+    // contraste de trait sans dominer visuellement le relief.
     contourSvg = [0.3, 0.55, 0.8].map(f => {
       const cy = (h * f).toFixed(1);
-      return '<line x1="0" y1="' + cy + '" x2="' + w + '" y2="' + cy + '" stroke="var(--border)" stroke-dasharray="2,4" opacity="0.5"/>';
+      return '<line x1="0" y1="' + cy + '" x2="' + w + '" y2="' + cy + '" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="3,5" opacity="0.55"/>';
     }).join('');
   }
   return '<svg class="terrain-line-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
