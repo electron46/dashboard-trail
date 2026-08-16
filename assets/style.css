@@ -634,29 +634,46 @@ html[data-theme="light"] .kpi-card::after{display:none;}
 .kpi-card .kpi-sub.status-danger{color:var(--danger);}
 
 /* --------------------------------------------------------------------------------------------
-   PHASE 2 — "THE TERRAIN IS THE INTERFACE" : primitives de scène (Accueil uniquement pour
-   l'instant). Les données vivent dans l'espace plutôt que dans des cards empilées. Les scènes
-   partagent le même traitement de fond que .insight-card (surface-3 + filet de bord dégradé),
-   restent lisibles à plat sans animation, et le texte garde l'ordre naturel du DOM — l'accent
-   visuel (fond de terrain) est purement décoratif (aria-hidden), jamais porteur d'information.
-   Voir CLAUDE.md, section 14, refonte "Signature & WOW Pass". */
-.scene{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--surface-3);box-sizing:border-box;animation:elev-rise var(--dur-page) var(--ease-emphasized) both;}
-.scene::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent-light),var(--accent),transparent);opacity:.7;}
-@media (prefers-reduced-motion:reduce){ .scene{animation:none;} }
+   PHASE 2 V2 — "THE TERRAIN IS THE INTERFACE" (Accueil uniquement pour l'instant).
+   V1 remplaçait "card" par "scene" en gardant le même paradigme rectangle+fond+bordure+radius
+   empilé verticalement. V2 ouvre réellement la composition : plus de cadre autour des 3 grands
+   moments (Performance Pulse / Training Landscape / Target Summit) — le fond de page devient le
+   canvas, et un fil vertical unique (.home-rail) les relie au lieu de connecteurs isolés entre
+   des boîtes. Voir CLAUDE.md, section 14, "Signature & WOW Pass V2". */
+.scene{position:relative;box-sizing:border-box;padding:0;}
 
 /* Terrain Line : silhouette basée sur une vraie série d'altitude (elevTerrainLineSvg, assets/app.js).
    Renvoie une chaîne vide si aucune donnée n'est disponible — jamais de relief inventé pour
    remplir un espace. Couche absolue très discrète, sous le contenu qui reste dans le flux normal. */
-.terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none;animation:elev-terrain-in 900ms var(--ease-emphasized) both;}
-.terrain-line-svg .terrain-fill{fill:var(--chart-fill-top);}
-.terrain-line-svg .terrain-stroke{fill:none;stroke:var(--accent-light);stroke-width:2;stroke-linejoin:round;}
+.terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none;}
+.terrain-line-svg .terrain-fill{fill:var(--chart-fill-top);opacity:0;animation:elev-terrain-fill-in 700ms var(--ease-standard) 550ms both;}
+.terrain-line-svg .terrain-stroke{fill:none;stroke:var(--accent-light);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;stroke-dasharray:2000;stroke-dashoffset:2000;animation:elev-terrain-draw 1400ms var(--ease-emphasized) both;}
 html[data-theme="light"] .terrain-line-svg{opacity:.3;}
-/* Révélation douce du relief à l'arrivée sur la page ("la donnée s'organise", pas une card qui
-   bouge parce qu'elle peut bouger) — jamais de mouvement pour un utilisateur en reduced-motion. */
-@keyframes elev-terrain-in{from{opacity:0;transform:scaleY(.94);transform-origin:bottom;}to{opacity:.55;transform:scaleY(1);}}
-html[data-theme="light"] .terrain-line-svg{animation-name:elev-terrain-in-light;}
-@keyframes elev-terrain-in-light{from{opacity:0;transform:scaleY(.94);transform-origin:bottom;}to{opacity:.3;transform:scaleY(1);}}
-@media (prefers-reduced-motion:reduce){ .terrain-line-svg{animation:none;} }
+/* Le relief se DESSINE (tracé progressif du contour, comme un profil qu'on relève) plutôt que de
+   simplement s'estomper — la donnée s'organise sous les yeux, ce n'est pas un fade-in générique.
+   Jamais de mouvement sous prefers-reduced-motion : le tracé est immédiatement complet. */
+@keyframes elev-terrain-draw{from{stroke-dashoffset:2000;}to{stroke-dashoffset:0;}}
+@keyframes elev-terrain-fill-in{from{opacity:0;}to{opacity:1;}}
+html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-terrain-fill-in-light;}
+@keyframes elev-terrain-fill-in-light{from{opacity:0;}to{opacity:1;}}
+@media (prefers-reduced-motion:reduce){
+  .terrain-line-svg .terrain-stroke{animation:none;stroke-dashoffset:0;}
+  .terrain-line-svg .terrain-fill{animation:none;opacity:1;}
+}
+
+/* Home Rail : fil vertical unique qui traverse les 3 grands moments de l'Accueil (remplace les
+   connecteurs isolés de V1 entre des boîtes séparées) — chaque arrêt s'allume au scroll plutôt
+   que la scène entière apparaissant/disparaissant en bloc. Sur mobile, le rail reste (motif de
+   navigation vertical déjà familier), seule sa marge se resserre. */
+.home-rail{position:relative;padding-left:22px;}
+.home-rail::before{content:'';position:absolute;top:6px;bottom:6px;left:5px;width:2px;background:linear-gradient(180deg,var(--accent-light),var(--border) 40%,var(--border) 60%,var(--accent-light));opacity:.35;}
+.rail-stop{position:relative;padding:26px 0;}
+.rail-stop:first-child{padding-top:4px;}
+.rail-stop:last-child{padding-bottom:4px;}
+.rail-stop::before{content:'';position:absolute;top:30px;left:-22px;width:9px;height:9px;border-radius:50%;background:var(--muted-2);box-shadow:0 0 0 4px var(--bg);transition:background var(--dur-page) var(--ease-standard),box-shadow var(--dur-page) var(--ease-standard);}
+.rail-stop:first-child::before,.rail-stop.is-visible::before{background:var(--accent-light);box-shadow:0 0 0 4px var(--bg),0 0 10px 1px rgba(168,196,127,.5);}
+@media (min-width:640px){ .home-rail{padding-left:32px;} .rail-stop::before{left:-32px;width:11px;height:11px;} }
+@media (prefers-reduced-motion:reduce){ .rail-stop::before{transition:none;} }
 
 /* ELEV Signal : réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
    actuel, détection) — jamais un simple titre de section. Base commune à l'eyebrow existant
@@ -664,9 +681,10 @@ html[data-theme="light"] .terrain-line-svg{animation-name:elev-terrain-in-light;
 .elev-signal{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-light);}
 .elev-signal img{width:13px;height:13px;filter:invert(78%) sepia(20%) saturate(500%) hue-rotate(50deg);}
 
-/* Performance Pulse (CURRENT STATE) */
-.pulse-scene{padding:24px 22px 22px;}
-.pulse-content{position:relative;}
+/* Performance Pulse (CURRENT STATE) — pas de cadre : la scène vit à même le fond de page (le
+   canvas), le terrain réel occupe tout l'espace disponible derrière les métriques. */
+.pulse-scene{min-height:240px;padding:6px 0 0;}
+.pulse-content{position:relative;min-height:220px;display:flex;flex-direction:column;justify-content:space-between;padding:18px 0 4px;}
 .pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px;}
 .pulse-ready-badge{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;border-radius:var(--radius-lg);padding:4px 6px 4px 4px;margin:-4px -6px -4px -4px;transition:background var(--dur-fast) var(--ease-standard);}
 .pulse-ready-badge:hover{background:rgba(107,142,78,.1);}
@@ -687,45 +705,51 @@ html[data-theme="light"] .terrain-line-svg{animation-name:elev-terrain-in-light;
 .pulse-trend-line .kpi-status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted-2);flex-shrink:0;}
 .pulse-trend-line .kpi-status-dot.status-ok{background:var(--success);box-shadow:0 0 6px 1px var(--success-soft);}
 .pulse-trend-line .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
-@media (min-width:768px){ .pulse-scene{padding:32px 32px 26px;} .pulse-hero-metric .v{font-size:3.1rem;} }
+@media (min-width:768px){ .pulse-scene{min-height:300px;} .pulse-hero-metric .v{font-size:3.4rem;} }
+@media (min-width:1024px){ .pulse-content{padding:26px 12px 4px;} }
 
-/* Training Landscape + ELEV Insight (TRAINING LANDSCAPE) */
-.landscape-row{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
-@media (min-width:1024px){ .landscape-row{grid-template-columns:2fr 1fr;} }
+/* Training Landscape + ELEV Insight — plus de card autour : le graphique EST la scène, pas un
+   élément posé dans une boîte. Sur ce même arrêt du rail, "Dernière activité" + "Prochaine séance"
+   restent volontairement des éléments plus compacts à droite (contenu secondaire, cf. règle "les
+   cards restent pertinentes pour les données secondaires"), mais sans reprendre le même cadre
+   surface/bordure que l'ancienne V1 — seule "Dernière activité" garde une vraie card (cf. plus bas). */
+.rail-stop--split{display:grid;grid-template-columns:1fr;gap:20px;align-items:start;}
+@media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.1fr 1fr;gap:28px;} }
 .landscape-side{display:flex;flex-direction:column;gap:16px;}
-.landscape-scene{padding:22px 24px;}
+.landscape-scene{padding:0;}
 .landscape-scene h2{position:relative;margin:0 0 4px;padding-left:11px;font-family:var(--font-display);font-size:1.05rem;font-weight:700;letter-spacing:-.005em;}
 .landscape-scene h2::before{content:'';position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:2px;background:linear-gradient(180deg,var(--accent-light),var(--accent));}
-@media (min-width:768px){ .landscape-scene{padding:26px 30px;} }
-/* L'insight s'accroche visuellement au graphique juste au-dessus (connecteur = pastille alignée
-   au bord gauche) plutôt que de vivre dans une card séparée ailleurs sur la page. */
-.landscape-callout{position:relative;display:flex;gap:11px;align-items:flex-start;margin-top:16px;padding:14px 16px;border-radius:var(--radius-md);background:var(--accent-soft);}
-.landscape-callout.status-rising_fast{background:rgba(217,184,91,.12);}
-.landscape-callout.status-falling{background:var(--panel-raised);}
-.landscape-callout .dot{width:8px;height:8px;border-radius:50%;background:var(--accent-light);margin-top:6px;flex-shrink:0;box-shadow:0 0 0 4px var(--accent-soft);}
-.landscape-callout.status-rising_fast .dot{background:var(--warn);box-shadow:0 0 0 4px rgba(217,184,91,.18);}
-.landscape-callout.status-falling .dot{background:var(--muted-2);box-shadow:none;}
-.landscape-callout .body{min-width:0;}
+/* L'insight n'est plus posé dans une pastille pleine largeur : un connecteur vertical descend du
+   bord du graphique (où vit la donnée la plus récente) vers le texte, comme une annotation plutôt
+   qu'une seconde card. */
+.landscape-callout{position:relative;margin-top:4px;padding-left:20px;max-width:520px;}
+.landscape-callout::before{content:'';position:absolute;top:-14px;left:0;width:2px;height:14px;background:var(--accent-light);}
+.landscape-callout::after{content:'';position:absolute;top:-15px;left:-3px;width:8px;height:8px;border-radius:50%;background:var(--accent-light);box-shadow:0 0 0 4px var(--accent-soft);}
+.landscape-callout.status-rising_fast::before{background:var(--warn);}
+.landscape-callout.status-rising_fast::after{background:var(--warn);box-shadow:0 0 0 4px rgba(217,184,91,.18);}
+.landscape-callout.status-falling::before,.landscape-callout.status-falling::after{background:var(--muted-2);box-shadow:none;}
 .landscape-callout .body .elev-signal{margin-bottom:5px;}
 .landscape-callout .body strong{display:block;font-family:var(--font-display);font-size:.94rem;color:var(--text);}
 .landscape-callout .body p{margin:3px 0 0;font-size:.86rem;color:var(--muted);line-height:1.55;}
 .landscape-callout .body p .delta{color:var(--text);}
 
-/* Next Checkpoint : bande fine plutôt qu'une card encadrée classique de plus. */
-.checkpoint-strip{position:relative;padding:16px 18px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);animation:elev-rise var(--dur-page) var(--ease-emphasized) both;}
-@media (prefers-reduced-motion:reduce){ .checkpoint-strip{animation:none;} }
+/* Next Checkpoint : plus de cadre — un point sur un segment de trajectoire, directement dans le
+   flux, pas une carte de plus au même niveau que "Dernière activité". */
+.checkpoint-strip{position:relative;padding:2px 0 6px;}
 .checkpoint-strip .eyebrow{margin:0 0 14px;font-family:var(--font-sans);font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
 .checkpoint-track{position:relative;height:2px;background:var(--border);border-radius:2px;margin:0 4px 16px;}
 .checkpoint-track .dot{position:absolute;top:50%;left:8%;width:10px;height:10px;border-radius:50%;background:var(--accent-light);box-shadow:0 0 0 4px var(--accent-soft);transform:translate(-50%,-50%);}
 .checkpoint-body strong{display:block;font-family:var(--font-display);font-size:1rem;font-weight:700;}
 .checkpoint-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
 
-/* Target Summit (objectif principal) : scène pleine largeur plutôt qu'une card de plus dans une
-   grille — c'est le point final de la narration de l'accueil. Réutilise .objective-card tel quel
-   pour le contenu (aucun changement de logique), seule l'enveloppe change. */
-.summit-scene{padding:26px 26px 24px;}
-@media (min-width:768px){ .summit-scene{padding:32px 34px 28px;} }
-.summit-scene .objective-card h3{font-size:1.5rem;}
+/* Target Summit (objectif principal) : aucun cadre — destination finale de la narration, la
+   course/le countdown/le readiness vivent directement dans l'espace ouvert du dernier arrêt du
+   rail. Réutilise .objective-card en mode "ouvert" (voir override ci-dessous) : même logique/
+   données, mais plus de rectangle qui l'enferme. */
+.summit-scene{padding:0;}
+.summit-scene .objective-card{max-width:640px;}
+.summit-scene .objective-card h3{font-size:clamp(1.6rem,3vw,2.2rem);}
+.summit-scene .obj-percent{font-size:3.4rem;}
 
 /* Utilitaire standard : visible par les lecteurs d'écran, retiré du rendu visuel. Ajouté suite à
    la recherche ui-ux-pro-max (domaine ux, "Heading Hierarchy") : Performance Pulse n'avait aucun
@@ -738,20 +762,6 @@ html[data-theme="light"] .terrain-line-svg{animation-name:elev-terrain-in-light;
 .reveal-on-scroll.is-visible{opacity:1;transform:translateY(0);}
 @media (prefers-reduced-motion:reduce){ .reveal-on-scroll{opacity:1;transform:none;transition:none;} }
 
-/* Connecteur entre scènes : trajectoire fine qui relie Performance Pulse → Training Landscape →
-   Target Summit, avec un repère qui "s'allume" quand la scène suivante entre dans le viewport —
-   matérialise la continuité de la narration sans dupliquer un profil de terrain sur chaque scène
-   (voir recherche 21st.dev "SVG follow scroll" / "relie les sections, porte des checkpoints").
-   Purement décoratif, masqué sous 768px pour ne pas ajouter de bruit vertical sur mobile. */
-.scene-connector{display:none;}
-@media (min-width:768px){
-  .scene-connector{display:flex;justify-content:center;height:26px;position:relative;}
-  .scene-connector::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--border);transition:background var(--dur-page) var(--ease-standard);}
-  .scene-connector::after{content:'';position:absolute;top:50%;left:50%;width:7px;height:7px;border-radius:50%;background:var(--muted-2);transform:translate(-50%,-50%);transition:background var(--dur-page) var(--ease-standard),box-shadow var(--dur-page) var(--ease-standard);}
-  .scene-connector.is-visible::before{background:var(--accent-light);}
-  .scene-connector.is-visible::after{background:var(--accent-light);box-shadow:0 0 0 4px var(--accent-soft);}
-  @media (prefers-reduced-motion:reduce){ .scene-connector::before,.scene-connector.is-visible::before,.scene-connector::after,.scene-connector.is-visible::after{transition:none;} }
-}
 
 /* Insight ELEV — surface teintée vert très légère (pas une bordure de couleur) pour que ce
    soit reconnaissable comme une fonctionnalité de marque, sans ressembler à une alerte
