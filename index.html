@@ -53,33 +53,38 @@
 
   <div id="gearAlertBox"></div>
 
-  <!-- CURRENT STATE : Performance Pulse — les indicateurs vivent dans une scène continue (terrain
-       réel de la dernière sortie en fond), plutôt que dans des cards KPI empilées. -->
-  <section class="pulse-scene" aria-label="État actuel" id="pulseScene"></section>
+  <!-- Home Rail : les 3 grands moments de la narration (État actuel → Paysage d'entraînement →
+       Objectif) partagent un même fil vertical plutôt que d'être des boîtes indépendantes
+       empilées — le trait s'allume progressivement au scroll (voir .home-rail, assets/style.css). -->
+  <div class="home-rail">
 
-  <div class="scene-connector reveal-on-scroll" aria-hidden="true"></div>
+    <div class="rail-stop">
+      <!-- CURRENT STATE : Performance Pulse — aucun cadre : le fond de la page est le canvas,
+           le terrain réel de la dernière sortie vit directement derrière les métriques. -->
+      <section class="pulse-scene" aria-label="État actuel" id="pulseScene"></section>
+    </div>
 
-  <div class="landscape-row">
+    <div class="rail-stop rail-stop--split reveal-on-scroll">
+      <!-- TRAINING LANDSCAPE + ELEV INSIGHT : la tendance occupe toute la place, l'insight naît
+           du graphique via un connecteur plutôt que de vivre dans une card à part. -->
+      <section class="landscape-scene" aria-label="Paysage d'entraînement" id="landscapeScene"></section>
 
-    <!-- TRAINING LANDSCAPE + ELEV INSIGHT : la tendance et l'observation qui en découle
-         partagent la même scène — l'insight s'accroche visuellement au graphique. -->
-    <section class="landscape-scene reveal-on-scroll" aria-label="Paysage d'entraînement" id="landscapeScene"></section>
+      <div class="landscape-side">
+        <!-- NEXT CHECKPOINT : un point sur une trajectoire, pas une card. -->
+        <div class="checkpoint-strip" id="checkpointStrip"></div>
+        <section class="card">
+          <h2>Dernière activité</h2>
+          <div id="lastActivityBox"></div>
+        </section>
+      </div>
+    </div>
 
-    <div class="landscape-side reveal-on-scroll">
-      <!-- NEXT CHECKPOINT : bande fine, pas une card de plus. -->
-      <div class="checkpoint-strip" id="checkpointStrip"></div>
-      <section class="card">
-        <h2>Dernière activité</h2>
-        <div id="lastActivityBox"></div>
-      </section>
+    <div class="rail-stop reveal-on-scroll">
+      <!-- TARGET SUMMIT : l'objectif principal, destination finale de la narration. -->
+      <section class="summit-scene" aria-label="Objectif principal" id="summitScene"></section>
     </div>
 
   </div>
-
-  <div class="scene-connector reveal-on-scroll" aria-hidden="true"></div>
-
-  <!-- TARGET SUMMIT : l'objectif principal, point final de la narration de l'accueil. -->
-  <section class="summit-scene reveal-on-scroll" aria-label="Objectif principal" id="summitScene"></section>
 
   <div class="dash-secondary-grid dash-full reveal-on-scroll">
     <section class="card card-compact">
