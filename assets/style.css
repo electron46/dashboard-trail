@@ -647,10 +647,16 @@ html[data-theme="light"] .kpi-card::after{display:none;}
 /* Terrain Line : silhouette basée sur une vraie série d'altitude (elevTerrainLineSvg, assets/app.js).
    Renvoie une chaîne vide si aucune donnée n'est disponible — jamais de relief inventé pour
    remplir un espace. Couche absolue très discrète, sous le contenu qui reste dans le flux normal. */
-.terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none;}
+.terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none;animation:elev-terrain-in 900ms var(--ease-emphasized) both;}
 .terrain-line-svg .terrain-fill{fill:var(--chart-fill-top);}
 .terrain-line-svg .terrain-stroke{fill:none;stroke:var(--accent-light);stroke-width:2;stroke-linejoin:round;}
 html[data-theme="light"] .terrain-line-svg{opacity:.3;}
+/* Révélation douce du relief à l'arrivée sur la page ("la donnée s'organise", pas une card qui
+   bouge parce qu'elle peut bouger) — jamais de mouvement pour un utilisateur en reduced-motion. */
+@keyframes elev-terrain-in{from{opacity:0;transform:scaleY(.94);transform-origin:bottom;}to{opacity:.55;transform:scaleY(1);}}
+html[data-theme="light"] .terrain-line-svg{animation-name:elev-terrain-in-light;}
+@keyframes elev-terrain-in-light{from{opacity:0;transform:scaleY(.94);transform-origin:bottom;}to{opacity:.3;transform:scaleY(1);}}
+@media (prefers-reduced-motion:reduce){ .terrain-line-svg{animation:none;} }
 
 /* ELEV Signal : réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
    actuel, détection) — jamais un simple titre de section. Base commune à l'eyebrow existant
