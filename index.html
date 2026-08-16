@@ -58,7 +58,10 @@
        empilées — le trait s'allume progressivement au scroll (voir .home-rail, assets/style.css). -->
   <div class="home-rail">
 
-    <div class="rail-stop">
+    <div class="rail-stop rail-stop--hero">
+      <!-- ELEV Terrain Backdrop : environnement (silhouettes de montagnes + ciel + topographie,
+           décoratif, jamais une donnée) derrière le premier viewport. Voir elevMountainBackdropSvg. -->
+      <div class="terrain-backdrop" id="terrainBackdrop" aria-hidden="true"></div>
       <!-- CURRENT STATE : Performance Pulse — aucun cadre : le fond de la page est le canvas,
            le terrain réel de la dernière sortie vit directement derrière les métriques. -->
       <section class="pulse-scene" aria-label="État actuel" id="pulseScene"></section>
@@ -176,13 +179,15 @@ function renderPulse() {
 
   // Terrain Line : altitude réelle de la dernière sortie, échantillonnée pour rester légère.
   // Vide (donc aucun fond) si la séance n'a pas de trace d'altitude — jamais de relief fabriqué.
+  // Pas de contour ici (opts.contour) : le Terrain Backdrop derrière porte déjà sa propre couche
+  // topographique décorative — superposer les deux créerait un doublon visuel inutile.
   let terrainSvg = '';
   const altSeries = lastSession && Array.isArray(lastSession.series) ? lastSession.series.filter(p => p.alt != null) : [];
   if (altSeries.length >= 2) {
     const alts = altSeries.map(p => p.alt);
     const step = Math.max(1, Math.floor(alts.length / 160));
     const sampled = alts.filter((_, i) => i % step === 0);
-    terrainSvg = elevTerrainLineSvg(sampled, { height: 220, contour: true });
+    terrainSvg = elevTerrainLineSvg(sampled, { height: 220 });
   }
 
   const arrow = pct => pct == null ? '' : '<span class="arrow">' + (pct >= 0 ? '▲' : '▼') + '</span>';
@@ -190,12 +195,29 @@ function renderPulse() {
     ? arrow(stats.distanceDeltaPct) + (stats.distanceDeltaPct >= 0 ? '+' : '') + stats.distanceDeltaPct + '% vs sem. précédente'
     : 'Cette semaine';
 
-  const readyBadge = (race && readiness && readiness.overall != null)
-    ? '<a class="pulse-ready-badge" href="objectifs.html" title="Préparation — ' + escapeHtml(race.name) + '">' +
-        ringSvg(readiness.overall) +
-        '<span><strong>' + readiness.overall + '%</strong><span>prêt · ' + escapeHtml(race.name) + '</span></span>' +
-      '</a>'
-    : '';
+  // Hiérarchie extrême (Home WOW Pass) : UNE seule information domine le hero, en très grand.
+  // La préparation à l'objectif (readiness) prend le pas sur le volume quand elle est calculable
+  // — c'est la donnée la plus synthétique et la plus actionnable. Sinon, repli honnête sur le
+  // volume hebdomadaire (déjà le cas en V1/V2) : jamais de readiness affiché sans être calculé.
+  const hasReadiness = race && readiness && readiness.overall != null;
+  const dominantHtml = hasReadiness
+    ? '<div class="pulse-hero-metric pulse-hero-metric--dominant">' +
+        '<span class="v">' + readiness.overall + '<small>%</small></span>' +
+        '<span class="l">prêt pour ' + escapeHtml(race.name) + '</span>' +
+      '</div>'
+    : '<div class="pulse-hero-metric pulse-hero-metric--dominant">' +
+        '<span class="v">' + fmtNum(stats.distanceKm, ' km', 1) + '</span>' +
+        '<span class="l' + (stats.distanceDeltaPct != null && stats.distanceDeltaPct >= 0 ? ' status-ok' : '') + '">' + heroSub + '</span>' +
+      '</div>';
+
+  // Si la readiness domine le hero, le volume redescend au rang de métrique secondaire (avec les
+  // autres) plutôt que d'être répété deux fois — jamais deux informations dominantes à la fois.
+  const secondaryMetrics = [
+    hasReadiness ? { v: fmtNum(stats.distanceKm, ' km', 1), l: 'Volume · ' + heroSub.replace(/<[^>]+>/g, '') } : null,
+    { v: fmtNum(stats.ascent, ' m', 0), l: 'D+ cette semaine' },
+    { v: fmtDuration(stats.durationS), l: 'Temps d\'effort' },
+    { v: String(stats.sessionsCount), l: 'Sorties' },
+  ].filter(Boolean);
 
   box.innerHTML =
     terrainSvg +
@@ -203,17 +225,11 @@ function renderPulse() {
       '<h2 class="visually-hidden">État actuel</h2>' +
       '<div class="pulse-eyebrow">' +
         '<span class="elev-signal"><img src="' + ICON('activity') + '" alt="">État actuel</span>' +
-        readyBadge +
       '</div>' +
       '<div class="pulse-main">' +
-        '<div class="pulse-hero-metric">' +
-          '<span class="v">' + fmtNum(stats.distanceKm, ' km', 1) + '</span>' +
-          '<span class="l' + (stats.distanceDeltaPct != null && stats.distanceDeltaPct >= 0 ? ' status-ok' : '') + '">' + heroSub + '</span>' +
-        '</div>' +
+        dominantHtml +
         '<div class="pulse-floating-metrics">' +
-          '<div class="floating-metric"><span class="v">' + fmtNum(stats.ascent, ' m', 0) + '</span><span class="l">D+ cette semaine</span></div>' +
-          '<div class="floating-metric"><span class="v">' + fmtDuration(stats.durationS) + '</span><span class="l">Temps d\'effort</span></div>' +
-          '<div class="floating-metric"><span class="v">' + stats.sessionsCount + '</span><span class="l">Sorties</span></div>' +
+          secondaryMetrics.map(m => '<div class="floating-metric"><span class="v">' + m.v + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +
         '</div>' +
       '</div>' +
       (trend ? '<div class="pulse-trend-line"><span class="kpi-status-dot' + (trendStatus[trend.level] ? ' status-' + trendStatus[trend.level] : '') + '"></span>' + escapeHtml(trend.label) + ' — ' + escapeHtml(trendSubs[trend.level]) + '</div>' : '') +
@@ -466,6 +482,7 @@ function renderFcSummary() {
 function renderAll() {
   renderGreeting();
   renderGearAlert();
+  document.getElementById('terrainBackdrop').innerHTML = elevMountainBackdropSvg();
   renderPulse();
   renderLandscape();
   renderLastActivity();
@@ -477,6 +494,7 @@ function renderAll() {
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderAll(); // premier rendu depuis le cache local, avant même la vérification de connexion
 initScrollReveal(); // révélation progressive des scènes sous le pli (IntersectionObserver, non bloquant)
+initHeroTerrainTransition(); // transition "mountain → terrain → data" au scroll (jamais de scroll détourné)
 // Rappelé par assets/authgate.js une fois la session confirmée, après avoir resynchronisé les
 // séances depuis Supabase (source de vérité) — voir syncActivitiesWithSupabase() dans app.js.
 async function onAuthReady() { await syncActivitiesWithSupabase(); renderAll(); }

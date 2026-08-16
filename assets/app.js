@@ -2696,6 +2696,81 @@ function elevTerrainLineSvg(altValues, opts) {
   '</svg>';
 }
 
+/* --------------------------- ELEV TERRAIN BACKDROP (Home WOW Pass) ---------------------------
+   Environnement visuel du hero de l'Accueil : ciel dégradé + 3 chaînes de montagnes en silhouette
+   (profondeur/matière) + 2 arcs topographiques très discrets. Entièrement décoratif (aria-hidden),
+   PAS de photographie — choix délibéré (voir CLAUDE.md/rapport de session) : impossible de garantir
+   les droits d'usage d'une image trouvée en ligne, et une dépendance distante fragile/lourde va à
+   l'encontre des contraintes de performance et de simplicité du projet. Les silhouettes sont
+   générées par un générateur pseudo-aléatoire à seed fixe (déterministe : même rendu à chaque
+   chargement, jamais un relief "vivant" qui pourrait se confondre avec une vraie donnée). La vraie
+   Terrain Line (altitude réelle, voir elevTerrainLineSvg) reste une couche distincte au-dessus,
+   volontairement plus nette (trait plus contrasté) pour qu'on ne confonde jamais matière et donnée. */
+function _elevRidgePath(seed, w, baseline, amp, segments) {
+  let s = seed >>> 0;
+  const rand = () => { s = (s * 1103515245 + 12345) >>> 0; return (s % 10000) / 10000; };
+  const step = w / segments;
+  let d = 'M0,' + baseline.toFixed(1);
+  let prevX = 0, prevY = baseline;
+  for (let i = 1; i <= segments; i++) {
+    const x = i * step;
+    const y = baseline - rand() * amp;
+    const cx = (prevX + x) / 2;
+    d += ' Q' + cx.toFixed(1) + ',' + prevY.toFixed(1) + ' ' + x.toFixed(1) + ',' + y.toFixed(1);
+    prevX = x; prevY = y;
+  }
+  return d;
+}
+let _terrainBackdropId = 0;
+function elevMountainBackdropSvg() {
+  const id = 'tb' + (_terrainBackdropId++);
+  const w = 1200, h = 480;
+  const back = _elevRidgePath(7, w, 200, 65, 7);
+  const mid = _elevRidgePath(23, w, 288, 105, 6);
+  const front = _elevRidgePath(41, w, 392, 132, 5);
+  return '<svg class="terrain-backdrop-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">' +
+    '<defs>' +
+      '<linearGradient id="' + id + 'Sky" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.18"/>' +
+        '<stop offset="45%" stop-color="var(--accent)" stop-opacity="0.05"/>' +
+        '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>' +
+      '</linearGradient>' +
+      '<linearGradient id="' + id + 'Front" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.32"/>' +
+        '<stop offset="100%" stop-color="var(--bg)" stop-opacity="1"/>' +
+      '</linearGradient>' +
+    '</defs>' +
+    '<rect x="0" y="0" width="' + w + '" height="' + (h * 0.65) + '" fill="url(#' + id + 'Sky)"/>' +
+    '<path class="tb-contour" d="M0,110 Q300,80 600,120 T' + w + ',100" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="2,7" opacity="0.09"/>' +
+    '<path class="tb-contour" d="M0,165 Q300,132 600,172 T' + w + ',150" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="2,7" opacity="0.09"/>' +
+    '<path class="tb-ridge tb-ridge-back" d="' + back + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="var(--accent)" opacity="0.09"/>' +
+    '<path class="tb-ridge tb-ridge-mid" d="' + mid + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="var(--accent)" opacity="0.15"/>' +
+    '<path class="tb-ridge tb-ridge-front" d="' + front + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="url(#' + id + 'Front)"/>' +
+  '</svg>';
+}
+
+/* Transition "MOUNTAIN → TERRAIN → DATA" au scroll (Home WOW Pass) : le backdrop s'estompe et
+   remonte très légèrement tandis qu'on quitte le premier viewport — jamais de scroll détourné
+   (aucune interception de la molette/du geste, juste une opacité/transform dérivée de la position
+   de scroll), coût quasi nul (2 propriétés, throttlé par requestAnimationFrame). Inactif sous
+   prefers-reduced-motion : le backdrop reste alors visible et statique. */
+function initHeroTerrainTransition() {
+  const backdrop = document.querySelector('.terrain-backdrop');
+  if (!backdrop || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const range = 560;
+  let ticking = false;
+  function apply() {
+    const p = Math.max(0, Math.min(1, window.scrollY / range));
+    backdrop.style.opacity = String(1 - p * 0.85);
+    backdrop.style.transform = 'translateY(' + (p * 40).toFixed(1) + 'px)';
+    ticking = false;
+  }
+  window.addEventListener('scroll', () => {
+    if (!ticking) { requestAnimationFrame(apply); ticking = true; }
+  }, { passive: true });
+  apply();
+}
+
 /* --------------------------- RÉVÉLATION AU SCROLL (Phase 2, contrôlée) ---------------------------
    Adapte le principe "scroll reveal" identifié via ui-ux-pro-max (domaine gsap : fade + léger
    déplacement vertical au passage dans le viewport) sans dépendance externe (pas de GSAP/Framer) —
