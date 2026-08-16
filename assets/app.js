@@ -2712,6 +2712,27 @@ function elevChartSvg(points, opts) {
     }
   }
 
+  // Signature "relief" (profil altimétrique uniquement, opts.terrain) — évoque la montagne sans
+  // être une illustration : lignes de niveau discrètes façon carte topographique, une silhouette
+  // "à l'arrière" plus compressée pour donner de la profondeur (comme des chaînes de montagnes qui
+  // s'estompent), et un repère sur le point culminant. Aucun changement pour Allure/FC (opts.terrain
+  // absent) — même rendu qu'avant.
+  let terrainBackSvg = '', contourSvg = '', peakSvg = '';
+  if (opts.terrain) {
+    const backSy = y => sy(minY + (y - minY) * 0.5);
+    terrainBackSvg = '<path d="' + areaFor(runs, p => backSy(p[key])) + '" fill="var(--accent)" opacity="0.07" stroke="none" transform="translate(0,-6)"/>';
+    contourSvg = [0.25, 0.5, 0.75].map(f => {
+      const cy = (padT + (h - padB - padT) * f).toFixed(1);
+      return '<line x1="' + padL + '" y1="' + cy + '" x2="' + (w - padR) + '" y2="' + cy + '" stroke="var(--border)" stroke-dasharray="2,4" opacity="0.6"/>';
+    }).join('');
+    const peak = points.reduce((best, p) => (p[key] != null && (!best || p[key] > best[key])) ? p : best, null);
+    if (peak) {
+      const px = sx(peak.x).toFixed(1), py = sy(peak[key]).toFixed(1);
+      peakSvg = '<circle cx="' + px + '" cy="' + py + '" r="3.5" fill="var(--accent-light)" stroke="var(--panel)" stroke-width="1.5"/>' +
+        '<text x="' + px + '" y="' + (Number(py) - 9) + '" font-size="12" fill="var(--accent-light)" text-anchor="middle" font-weight="600">' + Math.round(peak[key]) + ' m</text>';
+    }
+  }
+
   const fmtY = v => opts.yFormat ? opts.yFormat(v) : Math.round(v);
   const yTopLabel = opts.invertY ? fmtY(minY) : fmtY(maxY);
   const yBottomLabel = opts.invertY ? fmtY(maxY) : fmtY(minY);
@@ -2722,7 +2743,9 @@ function elevChartSvg(points, opts) {
     (opts.axisHint ? '<div class="elev-chart-hint">' + escapeHtml(opts.axisHint) + '</div>' : '') +
     '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
       '<defs><linearGradient id="' + id + 'Fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--chart-fill-top)"/><stop offset="100%" stop-color="var(--chart-fill-bottom)"/></linearGradient></defs>' +
+      contourSvg +
       backgroundSvg +
+      terrainBackSvg +
       '<path d="' + areaPath + '" fill="url(#' + id + 'Fill)" stroke="none"/>' +
       '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
       '<text x="4" y="' + (padT + 10) + '" font-size="13" fill="var(--muted)">' + yTopLabel + '</text>' +
@@ -2730,6 +2753,7 @@ function elevChartSvg(points, opts) {
       '<text x="' + padL + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + minX.toFixed(1) + ' km</text>' +
       '<text x="' + (w - padR - 50) + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + maxX.toFixed(1) + ' km</text>' +
       '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' +
+      peakSvg +
       '<line class="sync-cursor" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (h - padB) + '" stroke="var(--text)" stroke-dasharray="3,3" opacity="0"/>' +
       '<circle class="sync-dot" r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>' +
     '</svg>' +
@@ -2897,23 +2921,33 @@ function groupedBarChartSvg(title, weeks, series, opts) {
 }
 
 function radarChartSvg(axes, scores) {
+  const id = 'radar' + (_elevChartId++);
   const w = 340, h = 340, cx = w/2, cy = h/2, r = 120;
   const n = axes.length;
   const angle = i => -Math.PI/2 + i * (2*Math.PI/n);
   const pt = (i, frac) => [cx + Math.cos(angle(i)) * r * frac, cy + Math.sin(angle(i)) * r * frac];
-  // Anneaux de repère à 25/50/75/100%.
+  // Anneaux de repère à 25/50/75/100% — bandes alternées très discrètes entre chaque niveau pour
+  // donner de la profondeur (comme des courbes de niveau), plutôt que de simples traits plats.
+  // L'anneau extérieur (100%) est le seul à ressortir davantage : c'est la limite du repère.
   let rings = '';
-  [0.25, 0.5, 0.75, 1].forEach(frac => {
+  const levels = [0.25, 0.5, 0.75, 1];
+  levels.forEach((frac, li) => {
     const poly = axes.map((_, i) => pt(i, frac).join(',')).join(' ');
-    rings += '<polygon points="'+poly+'" fill="none" stroke="var(--border)" stroke-width="1"/>';
+    if (li % 2 === 1) rings += '<polygon points="'+poly+'" fill="rgba(244,247,245,.015)" stroke="none"/>';
+    rings += '<polygon points="'+poly+'" fill="none" stroke="var(--border)" stroke-width="'+(frac===1?1.4:1)+'" opacity="'+(frac===1?0.9:0.55)+'"/>';
   });
+  // Point le plus faible mis en évidence (même logique que "point faible" ailleurs sur le site) —
+  // jamais alarmant (accent-light, pas rouge), juste un repère visuel là où progresser en priorité.
+  let weakKey = null, weakVal = Infinity;
+  axes.forEach(ax => { const v = scores[ax.key]; if (v != null && v < weakVal) { weakVal = v; weakKey = ax.key; } });
   let spokes = '', labels = '';
   axes.forEach((ax, i) => {
     const [x, y] = pt(i, 1);
+    const isWeak = ax.key === weakKey;
     spokes += '<line x1="'+cx+'" y1="'+cy+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--border)" stroke-width="1"/>';
     const [lx, ly] = pt(i, 1.16);
     const score = scores[ax.key];
-    labels += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" font-size="12" fill="var(--text)" text-anchor="middle" dominant-baseline="middle">'+ax.label+(score!=null?' ('+score+')':' (n/d)')+'</text>';
+    labels += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" font-size="12" fill="'+(isWeak?'var(--warn)':'var(--text)')+'" font-weight="'+(isWeak?'700':'400')+'" text-anchor="middle" dominant-baseline="middle">'+ax.label+(score!=null?' ('+score+')':' (n/d)')+'</text>';
   });
   const dataPts = axes.map((ax, i) => pt(i, (scores[ax.key] ?? 0) / 100));
   const dataPoly = dataPts.map(p => p.join(',')).join(' ');
@@ -2922,11 +2956,13 @@ function radarChartSvg(axes, scores) {
     const score = scores[ax.key];
     const tip = escapeHtml(ax.label + ' : ' + (score!=null ? score+'/100' : 'donnée insuffisante'));
     return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="10" fill="transparent" data-tooltip="'+tip+'"/>' +
-      '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="4" fill="var(--accent)" style="pointer-events:none;"/>';
+      '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="4" fill="var(--accent-light)" stroke="var(--panel)" stroke-width="1.5" style="pointer-events:none;"/>';
   }).join('');
   return '<div class="chart-box radar-box"><h3>Profil de performance <small style="font-weight:400;">(estimé sur les '+RADAR_WEEKS+' dernières semaines)</small></h3>' +
-    '<svg viewBox="0 0 '+w+' '+h+'">' + rings + spokes +
-    '<polygon points="'+dataPoly+'" fill="var(--chart-fill-top)" stroke="var(--accent)" stroke-width="2.5"/>' +
+    '<svg viewBox="0 0 '+w+' '+h+'">' +
+    '<defs><radialGradient id="'+id+'Fill" cx="50%" cy="50%" r="65%"><stop offset="0%" stop-color="var(--accent-light)" stop-opacity="0.38"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0.08"/></radialGradient></defs>' +
+    rings + spokes +
+    '<polygon points="'+dataPoly+'" fill="url(#'+id+'Fill)" stroke="var(--accent)" stroke-width="2.5"/>' +
     dots + labels +
     '</svg></div>';
 }

@@ -157,7 +157,7 @@ function initActivityPage(s) {
      ['Alt max', altMinMax.max != null ? Math.round(altMinMax.max) + ' m' : 'Non disponible']]
       .map(([l,v]) => '<span><strong>' + v + '</strong> ' + l + '</span>').join('') : '';
   const chartPoints = withDist.map(p => Object.assign({ x: p.distKm }, p));
-  const altHtml = elevChartSvg(chartPoints, { key: 'alt', yFormat: v => Math.round(v) + ' m' });
+  const altHtml = elevChartSvg(chartPoints, { key: 'alt', yFormat: v => Math.round(v) + ' m', terrain: true });
   const altHost = document.getElementById('altitudeProfileHost');
   altHost.innerHTML = altHtml || '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
   if (altHtml) initElevChart(altHost.firstElementChild, chartPoints, p => moveMapCursor(p.lat, p.lon));
