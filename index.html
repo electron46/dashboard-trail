@@ -65,10 +65,7 @@
            très discrète (voir elevMountainBackdropSvg, contourOnly). La vraie Terrain Line
            (donnée réelle) vit dans .pulse-scene, au-dessus de tout ceci. -->
       <div class="terrain-backdrop" id="terrainBackdrop" aria-hidden="true">
-        <img class="tb-photo" alt=""
-          src="assets/images/home-mountain-1200.webp"
-          srcset="assets/images/home-mountain-640.webp 640w, assets/images/home-mountain-1200.webp 1200w, assets/images/home-mountain-1717.webp 1717w"
-          sizes="100vw" fetchpriority="high" decoding="async">
+        <img class="tb-photo" alt="" src="assets/images/elev-hero-mountain.webp" fetchpriority="high" decoding="async">
         <div class="tb-photo-mask"></div>
         <div id="terrainBackdropSvgLayer"></div>
       </div>
@@ -187,17 +184,26 @@ function renderPulse() {
   };
   const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: 'ok', falling: null };
 
-  // Terrain Line : altitude réelle de la dernière sortie, échantillonnée pour rester légère.
-  // Vide (donc aucun fond) si la séance n'a pas de trace d'altitude — jamais de relief fabriqué.
-  // Pas de contour ici (opts.contour) : le Terrain Backdrop derrière porte déjà sa propre couche
-  // topographique décorative — superposer les deux créerait un doublon visuel inutile.
-  let terrainSvg = '';
+  // ELEV Terrain Profile : altitude réelle de la dernière sortie, échantillonnée pour rester
+  // légère. Vide (donc aucun profil) si la séance n'a pas de trace d'altitude — jamais de relief
+  // fabriqué. Repères Départ/Point culminant/Arrivée = points réels de la série (premier/max/
+  // dernier), jamais des checkpoints inventés (aucune donnée de ravitaillement n'existe côté
+  // activité importée). Pas de contour ici : le Terrain Backdrop derrière porte déjà sa propre
+  // couche topographique décorative — superposer les deux créerait un doublon visuel.
+  let terrainSvg = '', terrainDesc = '';
   const altSeries = lastSession && Array.isArray(lastSession.series) ? lastSession.series.filter(p => p.alt != null) : [];
   if (altSeries.length >= 2) {
     const alts = altSeries.map(p => p.alt);
     const step = Math.max(1, Math.floor(alts.length / 160));
     const sampled = alts.filter((_, i) => i % step === 0);
-    terrainSvg = elevTerrainLineSvg(sampled, { height: 220 });
+    const minAlt = Math.min(...sampled), maxAlt = Math.max(...sampled);
+    const labels = [
+      { at: 'start', kind: 'depart', title: 'DÉPART', sub: Math.round(sampled[0]) + ' m' },
+      { at: 'peak', kind: 'culminant', title: 'POINT CULMINANT', sub: Math.round(maxAlt) + ' m' },
+      { at: 'end', kind: 'arrivee', title: 'ARRIVÉE', sub: fmtNum(lastSession.distanceKm, ' km', 1) },
+    ];
+    terrainSvg = elevTerrainLineSvg(sampled, { height: 220, variant: 'hero', labels: minAlt !== maxAlt ? labels : labels.slice(0,1).concat(labels.slice(2)) });
+    terrainDesc = elevTerrainDescription(sampled, lastSession.distanceKm);
   }
 
   const arrow = pct => pct == null ? '' : '<span class="arrow">' + (pct >= 0 ? '▲' : '▼') + '</span>';
@@ -233,6 +239,7 @@ function renderPulse() {
     terrainSvg +
     '<div class="pulse-content">' +
       '<h2 class="visually-hidden">État actuel</h2>' +
+      (terrainDesc ? '<p class="visually-hidden">' + escapeHtml(terrainDesc) + '</p>' : '') +
       '<div class="pulse-eyebrow">' +
         '<span class="elev-signal"><img src="' + ICON('activity') + '" alt="">État actuel</span>' +
       '</div>' +
@@ -304,6 +311,9 @@ function renderLandscape() {
   }
 
   box.innerHTML =
+    '<img class="landscape-bg" src="assets/images/elev-secondary-dark.webp" alt="" loading="lazy" decoding="async">' +
+    '<div class="landscape-bg-mask"></div>' +
+    '<div class="landscape-content">' +
     '<h2>Paysage d\'entraînement</h2>' +
     '<div class="week-stats-inline">' + weekGrid + '</div>' +
     '<div class="trend-subhead">' +
@@ -315,7 +325,8 @@ function renderLandscape() {
     '</div>' +
     '<div id="trendChartBox" style="margin-top:8px;">' + chartHtml + '</div>' +
     insightHtml +
-    '<a class="link-arrow trend-link" href="historique.html">Voir toute l\'analyse de tendance →</a>';
+    '<a class="link-arrow trend-link" href="historique.html">Voir toute l\'analyse de tendance →</a>' +
+    '</div>';
 
   initChartTooltips(document.getElementById('trendChartBox'));
   box.querySelectorAll('#trendMetricSelect button').forEach(btn => btn.addEventListener('click', () => {
@@ -422,11 +433,21 @@ function renderSummit() {
     progressHtml = '<p class="hint" style="margin:0;">Pas encore assez de données pour calculer l\'indice de préparation.</p>';
   }
 
-  box.innerHTML = '<div class="objective-card">' +
+  // Pas de profil altimétrique réel pour l'objectif à ce jour (les courses sont saisies
+  // manuellement, sans import GPX) — état honnête plutôt qu'un relief inventé qui laisserait
+  // croire à un vrai parcours (voir rapport de session : import GPX = fonctionnalité à part
+  // entière, non construite dans cette passe visuelle).
+  const noProfileHtml = '<p class="summit-no-profile">Aucun profil altimétrique disponible pour cet objectif. L\'import GPX n\'est pas encore proposé — la fiche course reste saisie manuellement.</p>';
+
+  box.innerHTML =
+    '<img class="summit-bg" src="assets/images/elev-target-summit.webp" alt="" loading="lazy" decoding="async">' +
+    '<div class="summit-bg-mask"></div>' +
+    '<div class="objective-card">' +
     '<p class="obj-eyebrow"><img src="' + ICON('target') + '" alt="">' + statutLabel(r.statut) + '</p>' +
     '<h3>' + escapeHtml(r.name) + '</h3>' +
     '<div class="obj-pills">' + pills + '</div>' +
     progressHtml +
+    noProfileHtml +
     '<div class="row" style="margin-top:14px;"><a class="btn small" href="objectifs.html">Voir mon objectif →</a></div>' +
   '</div>';
 }
