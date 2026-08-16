@@ -57,13 +57,15 @@
        réel de la dernière sortie en fond), plutôt que dans des cards KPI empilées. -->
   <section class="pulse-scene" aria-label="État actuel" id="pulseScene"></section>
 
+  <div class="scene-connector reveal-on-scroll" aria-hidden="true"></div>
+
   <div class="landscape-row">
 
     <!-- TRAINING LANDSCAPE + ELEV INSIGHT : la tendance et l'observation qui en découle
          partagent la même scène — l'insight s'accroche visuellement au graphique. -->
-    <section class="landscape-scene" aria-label="Paysage d'entraînement" id="landscapeScene"></section>
+    <section class="landscape-scene reveal-on-scroll" aria-label="Paysage d'entraînement" id="landscapeScene"></section>
 
-    <div class="landscape-side">
+    <div class="landscape-side reveal-on-scroll">
       <!-- NEXT CHECKPOINT : bande fine, pas une card de plus. -->
       <div class="checkpoint-strip" id="checkpointStrip"></div>
       <section class="card">
@@ -74,10 +76,12 @@
 
   </div>
 
-  <!-- TARGET SUMMIT : l'objectif principal, point final de la narration de l'accueil. -->
-  <section class="summit-scene" aria-label="Objectif principal" id="summitScene"></section>
+  <div class="scene-connector reveal-on-scroll" aria-hidden="true"></div>
 
-  <div class="dash-secondary-grid dash-full">
+  <!-- TARGET SUMMIT : l'objectif principal, point final de la narration de l'accueil. -->
+  <section class="summit-scene reveal-on-scroll" aria-label="Objectif principal" id="summitScene"></section>
+
+  <div class="dash-secondary-grid dash-full reveal-on-scroll">
     <section class="card card-compact">
       <h2>Charge d'entraînement <small>(12 sem.)</small></h2>
       <div id="loadChartBox"></div>
@@ -173,7 +177,7 @@ function renderPulse() {
     const alts = altSeries.map(p => p.alt);
     const step = Math.max(1, Math.floor(alts.length / 160));
     const sampled = alts.filter((_, i) => i % step === 0);
-    terrainSvg = elevTerrainLineSvg(sampled, { height: 220 });
+    terrainSvg = elevTerrainLineSvg(sampled, { height: 220, contour: true });
   }
 
   const arrow = pct => pct == null ? '' : '<span class="arrow">' + (pct >= 0 ? '▲' : '▼') + '</span>';
@@ -191,6 +195,7 @@ function renderPulse() {
   box.innerHTML =
     terrainSvg +
     '<div class="pulse-content">' +
+      '<h2 class="visually-hidden">État actuel</h2>' +
       '<div class="pulse-eyebrow">' +
         '<span class="elev-signal"><img src="' + ICON('activity') + '" alt="">État actuel</span>' +
         readyBadge +
@@ -466,6 +471,7 @@ function renderAll() {
 }
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderAll(); // premier rendu depuis le cache local, avant même la vérification de connexion
+initScrollReveal(); // révélation progressive des scènes sous le pli (IntersectionObserver, non bloquant)
 // Rappelé par assets/authgate.js une fois la session confirmée, après avoir resynchronisé les
 // séances depuis Supabase (source de vérité) — voir syncActivitiesWithSupabase() dans app.js.
 async function onAuthReady() { await syncActivitiesWithSupabase(); renderAll(); }

@@ -2655,7 +2655,11 @@ function sessionPreviewSvg(session, opts) {
    l'Accueil). Toujours construite à partir d'une vraie série de valeurs (jamais un relief inventé) :
    si moins de 2 valeurs sont fournies, retourne une chaîne vide et l'appelant retombe simplement sans
    fond de terrain. Décorative (aria-hidden) — l'information reste disponible ailleurs en texte normal.
-   `opts.markPeak` (optionnel) place un repère sur le point le plus haut de la série. */
+   `opts.markPeak` (optionnel) place un repère sur le point le plus haut de la série. `opts.contour`
+   (optionnel) ajoute les mêmes lignes de niveau discrètes que le profil altimétrique de la page
+   Activité (`elevChartSvg` opts.terrain) — même langage visuel "carte topographique" réutilisé ici
+   plutôt qu'un nouveau motif de fond générique (voir recherche 21st.dev "Background Paths",
+   réinterprétée comme relief réel plutôt que courbes décoratives). */
 function elevTerrainLineSvg(altValues, opts) {
   opts = opts || {};
   if (!altValues || altValues.length < 2) return '';
@@ -2673,11 +2677,43 @@ function elevTerrainLineSvg(altValues, opts) {
     const p = pts[peakIdx];
     peakMarker = '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="4" fill="var(--accent-light)"/>';
   }
+  let contourSvg = '';
+  if (opts.contour) {
+    contourSvg = [0.3, 0.55, 0.8].map(f => {
+      const cy = (h * f).toFixed(1);
+      return '<line x1="0" y1="' + cy + '" x2="' + w + '" y2="' + cy + '" stroke="var(--border)" stroke-dasharray="2,4" opacity="0.5"/>';
+    }).join('');
+  }
   return '<svg class="terrain-line-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+    contourSvg +
     '<path class="terrain-fill" d="' + area + '"/>' +
     '<path class="terrain-stroke" d="' + path + '"/>' +
     peakMarker +
   '</svg>';
+}
+
+/* --------------------------- RÉVÉLATION AU SCROLL (Phase 2, contrôlée) ---------------------------
+   Adapte le principe "scroll reveal" identifié via ui-ux-pro-max (domaine gsap : fade + léger
+   déplacement vertical au passage dans le viewport) sans dépendance externe (pas de GSAP/Framer) —
+   IntersectionObserver natif, un seul déclenchement par élément, jamais de scroll détourné ni de
+   pinning. Sous prefers-reduced-motion, tout est affiché immédiatement (voir CSS `.reveal-on-scroll`).
+   Appelée une fois par page depuis le script de chaque page concernée. */
+function initScrollReveal(selector) {
+  const els = document.querySelectorAll(selector || '.reveal-on-scroll');
+  if (!els.length) return;
+  if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    els.forEach(el => el.classList.add('is-visible'));
+    return;
+  }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+  els.forEach(el => io.observe(el));
 }
 
 /* --------------------------- GRAPHIQUE SIGNATURE ELEV (Altitude / Allure / FC) ---------------------------

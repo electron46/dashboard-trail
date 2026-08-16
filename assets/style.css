@@ -727,6 +727,32 @@ html[data-theme="light"] .terrain-line-svg{animation-name:elev-terrain-in-light;
 @media (min-width:768px){ .summit-scene{padding:32px 34px 28px;} }
 .summit-scene .objective-card h3{font-size:1.5rem;}
 
+/* Utilitaire standard : visible par les lecteurs d'écran, retiré du rendu visuel. Ajouté suite à
+   la recherche ui-ux-pro-max (domaine ux, "Heading Hierarchy") : Performance Pulse n'avait aucun
+   titre réel (seulement un badge visuel "État actuel"), ce qui casse la navigation par titres. */
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+/* Révélation au scroll (contrôlée, jamais de scroll détourné) — voir initScrollReveal, assets/app.js.
+   État final immédiat sous reduced-motion : l'information ne dépend jamais de l'animation. */
+.reveal-on-scroll{opacity:0;transform:translateY(14px);transition:opacity 500ms var(--ease-standard),transform 500ms var(--ease-standard);}
+.reveal-on-scroll.is-visible{opacity:1;transform:translateY(0);}
+@media (prefers-reduced-motion:reduce){ .reveal-on-scroll{opacity:1;transform:none;transition:none;} }
+
+/* Connecteur entre scènes : trajectoire fine qui relie Performance Pulse → Training Landscape →
+   Target Summit, avec un repère qui "s'allume" quand la scène suivante entre dans le viewport —
+   matérialise la continuité de la narration sans dupliquer un profil de terrain sur chaque scène
+   (voir recherche 21st.dev "SVG follow scroll" / "relie les sections, porte des checkpoints").
+   Purement décoratif, masqué sous 768px pour ne pas ajouter de bruit vertical sur mobile. */
+.scene-connector{display:none;}
+@media (min-width:768px){
+  .scene-connector{display:flex;justify-content:center;height:26px;position:relative;}
+  .scene-connector::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--border);transition:background var(--dur-page) var(--ease-standard);}
+  .scene-connector::after{content:'';position:absolute;top:50%;left:50%;width:7px;height:7px;border-radius:50%;background:var(--muted-2);transform:translate(-50%,-50%);transition:background var(--dur-page) var(--ease-standard),box-shadow var(--dur-page) var(--ease-standard);}
+  .scene-connector.is-visible::before{background:var(--accent-light);}
+  .scene-connector.is-visible::after{background:var(--accent-light);box-shadow:0 0 0 4px var(--accent-soft);}
+  @media (prefers-reduced-motion:reduce){ .scene-connector::before,.scene-connector.is-visible::before,.scene-connector::after,.scene-connector.is-visible::after{transition:none;} }
+}
+
 /* Insight ELEV — surface teintée vert très légère (pas une bordure de couleur) pour que ce
    soit reconnaissable comme une fonctionnalité de marque, sans ressembler à une alerte
    système. Jamais présenté comme une prédiction ou un diagnostic. */
