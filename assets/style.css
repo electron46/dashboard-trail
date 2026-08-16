@@ -238,10 +238,10 @@ section.card.card-compact h2::before{display:none;}
 .plan-phase-step:first-child::before{left:50%;}
 .plan-phase-step:last-child::before{right:50%;}
 .plan-phase-step .lbl{font-size:.78rem;font-weight:700;color:var(--muted);}
-.plan-phase-step .sub{display:block;font-size:.68rem;color:var(--muted-2);margin-top:2px;}
+.plan-phase-step .sub{display:block;font-size:.68rem;color:var(--muted);margin-top:2px;}
 .plan-phase-step.current .lbl{color:var(--accent-light);font-weight:800;}
 .plan-phase-step.current::after{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 5px var(--accent-soft);}
-.plan-phase-step.done .lbl{color:var(--muted-2);opacity:.75;}
+.plan-phase-step.done .lbl{color:var(--muted);opacity:.85;}
 .plan-phase-step.done::after{background:var(--accent);border-color:var(--accent);}
 /* Segment "fait" en vert plein (la portion du parcours deja parcourue), segment restant a la
    couleur neutre par defaut deja definie ci-dessus — chaque etape peint le trait a SA gauche. */
@@ -271,7 +271,7 @@ section.card.card-compact h2::before{display:none;}
 .badge.status-missed{background:var(--danger-soft);color:var(--danger);border:1px solid transparent;}
 .badge.status-done{background:var(--success-soft);color:var(--success);border:1px solid transparent;}
 .badge.status-todo{background:var(--panel);color:var(--muted);border:1px solid var(--border);}
-.badge.status-rest{background:var(--panel);color:var(--muted-2);border:1px dashed var(--border);}
+.badge.status-rest{background:var(--panel);color:var(--muted);border:1px dashed var(--border);}
 
 .plan-weeks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
 .plan-week-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;background:var(--panel-raised,var(--panel));}
@@ -293,7 +293,7 @@ section.card.card-compact h2::before{display:none;}
 .profile-identity .avatar{width:64px;height:64px;font-size:1.4rem;flex-shrink:0;border-radius:50%;background:var(--accent-soft);color:var(--accent-light);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;box-shadow:0 0 0 3px var(--surface-2),0 0 0 4px var(--border);}
 .profile-identity h2{margin:0 0 2px;font-family:var(--font-display);font-size:1.4rem;font-weight:800;letter-spacing:-.01em;}
 .profile-identity .tagline{color:var(--muted);font-size:.86rem;margin:0 0 8px;}
-.profile-identity .meta-row{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted-2);}
+.profile-identity .meta-row{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted);}
 .profile-identity .meta-row span{display:flex;align-items:center;gap:6px;}
 
 /* Page Équipements (refonte) */
@@ -311,7 +311,7 @@ section.card.card-compact h2::before{display:none;}
 .equip-row .equip-km-pct{font-size:.7rem;color:var(--muted);margin-left:4px;}
 .equip-row .equip-chevron{color:var(--muted-2);text-align:right;}
 @media (min-width:900px){
-  .equip-table-head{display:grid;grid-template-columns:44px 1.6fr .9fr 1.3fr 1fr .9fr 20px;gap:14px;padding:0 14px 8px;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2);}
+  .equip-table-head{display:grid;grid-template-columns:44px 1.6fr .9fr 1.3fr 1fr .9fr 20px;gap:14px;padding:0 14px 8px;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
 }
 @media (max-width:899px){
   .equip-row{grid-template-columns:44px 1fr auto;grid-template-areas:"icon name state" "icon km km" "icon date date";row-gap:4px;}
@@ -363,7 +363,7 @@ button.settings-row{cursor:pointer;}
 .profile-field-row:last-child{border-bottom:none;}
 .profile-field-row .k{color:var(--muted);}
 .profile-field-row .v{color:var(--text);font-weight:600;text-align:right;}
-.profile-source-tag{font-size:.66rem;color:var(--muted-2);font-weight:400;margin-left:6px;}
+.profile-source-tag{font-size:.66rem;color:var(--muted);font-weight:400;margin-left:6px;}
 
 .profile-accordion{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);margin-bottom:12px;overflow:hidden;transition:border-color var(--dur-fast) var(--ease-standard);}
 .profile-accordion:hover{border-color:var(--border-strong);}
@@ -761,10 +761,10 @@ main.activities-main{max-width:1600px;}
 .activity-row .cell-visual svg{width:100%;height:100%;display:block;}
 .activity-row .cell-arrow{justify-self:end;white-space:nowrap;transition:color 150ms,transform 150ms;}
 .activity-row:hover .cell-arrow{transform:translateX(2px);}
-.activities-list-end{text-align:center;padding:14px 0 2px;color:var(--muted-2);font-size:.78rem;}
+.activities-list-end{text-align:center;padding:14px 0 2px;color:var(--muted);font-size:.78rem;}
 
 @media (min-width:641px){
-  .activities-table-head{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 160px 130px;gap:16px;padding:0 16px 10px;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2);}
+  .activities-table-head{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 160px 130px;gap:16px;padding:0 16px 10px;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
 }
 @media (max-width:640px){
   .activity-row{position:relative;grid-template-columns:1fr 1fr;grid-template-areas:"date activity" "d1 d2" "d3 d4" "d5 d5";row-gap:8px;padding-right:26px;}
@@ -819,13 +819,13 @@ main.activities-main{max-width:1600px;}
 .mini-card h2{margin-bottom:10px;}
 .mini-list-group{margin-bottom:14px;}
 .mini-list-group:last-child{margin-bottom:0;}
-.mini-list-title{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-2);font-weight:700;margin-bottom:6px;}
+.mini-list-title{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .mini-list{display:flex;flex-direction:column;gap:7px;}
 .mini-list-row{display:flex;justify-content:space-between;gap:10px;font-size:.82rem;padding-bottom:7px;border-bottom:1px solid var(--border);}
 .mini-list-row:last-child{border-bottom:none;padding-bottom:0;}
 .mini-list-lbl{color:var(--muted);}
 .mini-list-val{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;text-align:right;}
-.mini-list-val.na{color:var(--muted-2);font-weight:400;}
+.mini-list-val.na{color:var(--muted);font-weight:400;}
 
 /* Donut de répartition des zones FC (version compacte, colonne d'analyse) */
 .zone-donut-row{display:flex;align-items:center;gap:16px;}
@@ -941,7 +941,7 @@ main.analysis-main{max-width:1440px;}
   .analysis-secondary-row{grid-template-columns:repeat(4,1fr);}
 }
 .analysis-donut-row{display:flex;align-items:center;gap:16px;}
-.provenance-tag{font-size:.68rem;color:var(--muted-2);margin-top:10px;font-style:italic;}
+.provenance-tag{font-size:.68rem;color:var(--muted);margin-top:10px;font-style:italic;}
 /* Un peu plus d'air que le .zone-row par défaut (partagé avec le détail de séance, non modifié
    là-bas) : scoping local pour ne pas répercuter ce changement ailleurs. */
 .analysis-secondary-row .zone-row{grid-template-columns:minmax(0,130px) 1fr 42px 60px;gap:12px;}
@@ -1005,7 +1005,7 @@ main.analysis-main{max-width:1440px;}
 .goal-subscore-track{height:5px;border-radius:var(--radius-pill);background:rgba(244,247,245,.08);overflow:hidden;}
 .goal-subscore-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-light));border-radius:var(--radius-pill);transition:width var(--dur-page) var(--ease-emphasized);}
 .goal-subscore-val{text-align:right;color:var(--text);font-variant-numeric:tabular-nums;font-size:.78rem;}
-.goal-subscore-val.na{color:var(--muted-2);}
+.goal-subscore-val.na{color:var(--muted);}
 
 .goal-secondary-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 10px;font-weight:700;}
 
