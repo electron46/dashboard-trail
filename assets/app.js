@@ -2650,6 +2650,36 @@ function sessionPreviewSvg(session, opts) {
   return '';
 }
 
+/* --------------------------- ELEV TERRAIN LINE (Phase 2, primitive partagée) ---------------------------
+   Silhouette d'altitude en pleine largeur, pensée pour vivre en fond de scène (Performance Pulse de
+   l'Accueil). Toujours construite à partir d'une vraie série de valeurs (jamais un relief inventé) :
+   si moins de 2 valeurs sont fournies, retourne une chaîne vide et l'appelant retombe simplement sans
+   fond de terrain. Décorative (aria-hidden) — l'information reste disponible ailleurs en texte normal.
+   `opts.markPeak` (optionnel) place un repère sur le point le plus haut de la série. */
+function elevTerrainLineSvg(altValues, opts) {
+  opts = opts || {};
+  if (!altValues || altValues.length < 2) return '';
+  const w = opts.width || 1000, h = opts.height || 220;
+  const minA = Math.min(...altValues), maxA = Math.max(...altValues);
+  const span = (maxA - minA) || 1;
+  const stepX = w / (altValues.length - 1);
+  const pts = altValues.map((a, i) => [i * stepX, h - 4 - ((a - minA) / span) * (h - 16)]);
+  const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  const area = path + ' L' + w + ',' + h + ' L0,' + h + ' Z';
+  let peakMarker = '';
+  if (opts.markPeak) {
+    let peakIdx = 0;
+    altValues.forEach((a, i) => { if (a > altValues[peakIdx]) peakIdx = i; });
+    const p = pts[peakIdx];
+    peakMarker = '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="4" fill="var(--accent-light)"/>';
+  }
+  return '<svg class="terrain-line-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+    '<path class="terrain-fill" d="' + area + '"/>' +
+    '<path class="terrain-stroke" d="' + path + '"/>' +
+    peakMarker +
+  '</svg>';
+}
+
 /* --------------------------- GRAPHIQUE SIGNATURE ELEV (Altitude / Allure / FC) ---------------------------
    Un seul rendu partagé par les 3 courbes de séance, pour qu'elles appartiennent visuellement à la
    même famille : ligne continue, remplissage léger en dégradé, axes discrets, un seul curseur au

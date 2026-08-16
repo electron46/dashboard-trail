@@ -633,6 +633,94 @@ html[data-theme="light"] .kpi-card::after{display:none;}
 .kpi-card .kpi-sub.status-warn{color:var(--warn);}
 .kpi-card .kpi-sub.status-danger{color:var(--danger);}
 
+/* --------------------------------------------------------------------------------------------
+   PHASE 2 — "THE TERRAIN IS THE INTERFACE" : primitives de scène (Accueil uniquement pour
+   l'instant). Les données vivent dans l'espace plutôt que dans des cards empilées. Les scènes
+   partagent le même traitement de fond que .insight-card (surface-3 + filet de bord dégradé),
+   restent lisibles à plat sans animation, et le texte garde l'ordre naturel du DOM — l'accent
+   visuel (fond de terrain) est purement décoratif (aria-hidden), jamais porteur d'information.
+   Voir CLAUDE.md, section 14, refonte "Signature & WOW Pass". */
+.scene{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--surface-3);box-sizing:border-box;animation:elev-rise var(--dur-page) var(--ease-emphasized) both;}
+.scene::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent-light),var(--accent),transparent);opacity:.7;}
+@media (prefers-reduced-motion:reduce){ .scene{animation:none;} }
+
+/* Terrain Line : silhouette basée sur une vraie série d'altitude (elevTerrainLineSvg, assets/app.js).
+   Renvoie une chaîne vide si aucune donnée n'est disponible — jamais de relief inventé pour
+   remplir un espace. Couche absolue très discrète, sous le contenu qui reste dans le flux normal. */
+.terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none;}
+.terrain-line-svg .terrain-fill{fill:var(--chart-fill-top);}
+.terrain-line-svg .terrain-stroke{fill:none;stroke:var(--accent-light);stroke-width:2;stroke-linejoin:round;}
+html[data-theme="light"] .terrain-line-svg{opacity:.3;}
+
+/* ELEV Signal : réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
+   actuel, détection) — jamais un simple titre de section. Base commune à l'eyebrow existant
+   d'.insight-card, réutilisée par les nouvelles scènes pour rester cohérente visuellement. */
+.elev-signal{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-light);}
+.elev-signal img{width:13px;height:13px;filter:invert(78%) sepia(20%) saturate(500%) hue-rotate(50deg);}
+
+/* Performance Pulse (CURRENT STATE) */
+.pulse-scene{padding:24px 22px 22px;}
+.pulse-content{position:relative;}
+.pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px;}
+.pulse-ready-badge{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;border-radius:var(--radius-lg);padding:4px 6px 4px 4px;margin:-4px -6px -4px -4px;transition:background var(--dur-fast) var(--ease-standard);}
+.pulse-ready-badge:hover{background:rgba(107,142,78,.1);}
+.pulse-ready-badge .kpi-ring{width:38px;height:38px;flex-shrink:0;}
+.pulse-ready-badge strong{display:block;font-family:var(--font-display);font-size:.92rem;}
+.pulse-ready-badge span span{display:block;font-size:.7rem;color:var(--muted);}
+.pulse-main{display:flex;flex-wrap:wrap;align-items:flex-end;gap:26px 44px;}
+.pulse-hero-metric{display:flex;flex-direction:column;gap:4px;}
+.pulse-hero-metric .v{font-family:var(--font-display);font-size:2.6rem;font-weight:800;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums;}
+.pulse-hero-metric .l{display:flex;align-items:center;gap:5px;font-size:.8rem;color:var(--muted);}
+.pulse-hero-metric .l .arrow{font-size:.7rem;}
+.pulse-hero-metric .l.status-ok{color:var(--success);}
+.pulse-floating-metrics{display:flex;flex-wrap:wrap;gap:22px 34px;padding-bottom:2px;}
+.floating-metric{display:flex;flex-direction:column;gap:3px;}
+.floating-metric .v{font-family:var(--font-display);font-size:1.35rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.floating-metric .l{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.pulse-trend-line{display:inline-flex;align-items:center;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:.84rem;color:var(--muted);}
+.pulse-trend-line .kpi-status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted-2);flex-shrink:0;}
+.pulse-trend-line .kpi-status-dot.status-ok{background:var(--success);box-shadow:0 0 6px 1px var(--success-soft);}
+.pulse-trend-line .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
+@media (min-width:768px){ .pulse-scene{padding:32px 32px 26px;} .pulse-hero-metric .v{font-size:3.1rem;} }
+
+/* Training Landscape + ELEV Insight (TRAINING LANDSCAPE) */
+.landscape-row{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
+@media (min-width:1024px){ .landscape-row{grid-template-columns:2fr 1fr;} }
+.landscape-side{display:flex;flex-direction:column;gap:16px;}
+.landscape-scene{padding:22px 24px;}
+.landscape-scene h2{position:relative;margin:0 0 4px;padding-left:11px;font-family:var(--font-display);font-size:1.05rem;font-weight:700;letter-spacing:-.005em;}
+.landscape-scene h2::before{content:'';position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:2px;background:linear-gradient(180deg,var(--accent-light),var(--accent));}
+@media (min-width:768px){ .landscape-scene{padding:26px 30px;} }
+/* L'insight s'accroche visuellement au graphique juste au-dessus (connecteur = pastille alignée
+   au bord gauche) plutôt que de vivre dans une card séparée ailleurs sur la page. */
+.landscape-callout{position:relative;display:flex;gap:11px;align-items:flex-start;margin-top:16px;padding:14px 16px;border-radius:var(--radius-md);background:var(--accent-soft);}
+.landscape-callout.status-rising_fast{background:rgba(217,184,91,.12);}
+.landscape-callout.status-falling{background:var(--panel-raised);}
+.landscape-callout .dot{width:8px;height:8px;border-radius:50%;background:var(--accent-light);margin-top:6px;flex-shrink:0;box-shadow:0 0 0 4px var(--accent-soft);}
+.landscape-callout.status-rising_fast .dot{background:var(--warn);box-shadow:0 0 0 4px rgba(217,184,91,.18);}
+.landscape-callout.status-falling .dot{background:var(--muted-2);box-shadow:none;}
+.landscape-callout .body{min-width:0;}
+.landscape-callout .body .elev-signal{margin-bottom:5px;}
+.landscape-callout .body strong{display:block;font-family:var(--font-display);font-size:.94rem;color:var(--text);}
+.landscape-callout .body p{margin:3px 0 0;font-size:.86rem;color:var(--muted);line-height:1.55;}
+.landscape-callout .body p .delta{color:var(--text);}
+
+/* Next Checkpoint : bande fine plutôt qu'une card encadrée classique de plus. */
+.checkpoint-strip{position:relative;padding:16px 18px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);animation:elev-rise var(--dur-page) var(--ease-emphasized) both;}
+@media (prefers-reduced-motion:reduce){ .checkpoint-strip{animation:none;} }
+.checkpoint-strip .eyebrow{margin:0 0 14px;font-family:var(--font-sans);font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+.checkpoint-track{position:relative;height:2px;background:var(--border);border-radius:2px;margin:0 4px 16px;}
+.checkpoint-track .dot{position:absolute;top:50%;left:8%;width:10px;height:10px;border-radius:50%;background:var(--accent-light);box-shadow:0 0 0 4px var(--accent-soft);transform:translate(-50%,-50%);}
+.checkpoint-body strong{display:block;font-family:var(--font-display);font-size:1rem;font-weight:700;}
+.checkpoint-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
+
+/* Target Summit (objectif principal) : scène pleine largeur plutôt qu'une card de plus dans une
+   grille — c'est le point final de la narration de l'accueil. Réutilise .objective-card tel quel
+   pour le contenu (aucun changement de logique), seule l'enveloppe change. */
+.summit-scene{padding:26px 26px 24px;}
+@media (min-width:768px){ .summit-scene{padding:32px 34px 28px;} }
+.summit-scene .objective-card h3{font-size:1.5rem;}
+
 /* Insight ELEV — surface teintée vert très légère (pas une bordure de couleur) pour que ce
    soit reconnaissable comme une fonctionnalité de marque, sans ressembler à une alerte
    système. Jamais présenté comme une prédiction ou un diagnostic. */
