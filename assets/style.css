@@ -661,19 +661,16 @@ html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-ter
   .terrain-line-svg .terrain-fill{animation:none;opacity:1;}
 }
 
-/* Home Rail : fil vertical unique qui traverse les 3 grands moments de l'Accueil (remplace les
-   connecteurs isolés de V1 entre des boîtes séparées) — chaque arrêt s'allume au scroll plutôt
-   que la scène entière apparaissant/disparaissant en bloc. Sur mobile, le rail reste (motif de
-   navigation vertical déjà familier), seule sa marge se resserre. */
-.home-rail{position:relative;padding-left:22px;}
-.home-rail::before{content:'';position:absolute;top:6px;bottom:6px;left:5px;width:2px;background:linear-gradient(180deg,var(--accent-light),var(--border) 40%,var(--border) 60%,var(--accent-light));opacity:.35;}
+/* Home Rail (Final WOW Pass) : le fil vertical rectiligne + pastilles de la V2 ressemblait trop à
+   une timeline SaaS générique (retour explicite) — retiré. La continuité entre les 3 grands
+   moments de l'Accueil vient maintenant du terrain (photo + Terrain Line) et des transitions de
+   fond, pas d'une ligne de navigation superposée. .home-rail/.rail-stop restent comme wrappers
+   structurels (espacement, ancrage du backdrop, cible de la révélation au scroll) mais ne portent
+   plus aucun décor visuel propre. */
+.home-rail{position:relative;}
 .rail-stop{position:relative;padding:26px 0;}
 .rail-stop:first-child{padding-top:4px;}
 .rail-stop:last-child{padding-bottom:4px;}
-.rail-stop::before{content:'';position:absolute;top:30px;left:-22px;width:9px;height:9px;border-radius:50%;background:var(--muted-2);box-shadow:0 0 0 4px var(--bg);transition:background var(--dur-page) var(--ease-standard),box-shadow var(--dur-page) var(--ease-standard);}
-.rail-stop:first-child::before,.rail-stop.is-visible::before{background:var(--accent-light);box-shadow:0 0 0 4px var(--bg),0 0 10px 1px rgba(168,196,127,.5);}
-@media (min-width:640px){ .home-rail{padding-left:32px;} .rail-stop::before{left:-32px;width:11px;height:11px;} }
-@media (prefers-reduced-motion:reduce){ .rail-stop::before{transition:none;} }
 
 /* ELEV Signal : réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
    actuel, détection) — jamais un simple titre de section. Base commune à l'eyebrow existant
@@ -681,16 +678,28 @@ html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-ter
 .elev-signal{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-light);}
 .elev-signal img{width:13px;height:13px;filter:invert(78%) sepia(20%) saturate(500%) hue-rotate(50deg);}
 
-/* ELEV Terrain Backdrop (Home WOW Pass) : environnement du premier viewport — silhouettes de
-   montagnes + ciel + topographie, purement décoratif (voir elevMountainBackdropSvg, assets/app.js).
-   Déborde volontairement du padding de <main> ("débordement contrôlé", jamais le texte) pour
-   occuper tout le canvas visible entre la sidebar et le bord droit. Opacité/position pilotées en
-   JS au scroll par initHeroTerrainTransition (rAF, jamais de scroll détourné) ; reste statique et
-   pleinement visible sous prefers-reduced-motion. */
+/* ELEV Terrain Backdrop (Home Final WOW Pass) : environnement du premier viewport.
+   Layer A = vraie photo (.tb-photo, object-fit:cover, décorative — alt="", l'information reste
+   uniquement dans le texte/SVG de données à côté). Layer B = .tb-photo-mask, dégradés de fusion
+   (vignette latérale + fondu total vers var(--bg) en bas — jamais de ligne nette). Layer C =
+   topographie très subtile par-dessus (elevMountainBackdropSvg, contourOnly). Déborde
+   volontairement du padding de <main> ("débordement contrôlé", jamais le texte) pour occuper tout
+   le canvas visible entre la sidebar et le bord droit. Opacité/position pilotées en JS au scroll
+   par initHeroTerrainTransition (rAF, jamais de scroll détourné) ; reste statique et pleinement
+   visible sous prefers-reduced-motion. */
 .rail-stop--hero{overflow:visible;}
-.terrain-backdrop{position:absolute;top:-20px;left:-28px;right:-28px;height:clamp(300px,42vw,520px);pointer-events:none;overflow:hidden;z-index:0;}
-.terrain-backdrop-svg{width:100%;height:100%;display:block;}
-@media (max-width:767px){ .terrain-backdrop{left:-16px;right:-16px;top:-16px;} }
+.terrain-backdrop{position:absolute;top:-20px;left:-28px;right:-28px;height:clamp(340px,48vw,560px);pointer-events:none;overflow:hidden;z-index:0;}
+.tb-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 42%;filter:saturate(.82) brightness(.8) contrast(1.06);}
+.tb-photo-mask{position:absolute;inset:0;background:
+    linear-gradient(180deg,rgba(11,15,14,.1) 0%,rgba(11,15,14,.32) 55%,var(--bg) 100%),
+    linear-gradient(90deg,rgba(11,15,14,.6) 0%,rgba(11,15,14,0) 20%,rgba(11,15,14,0) 80%,rgba(11,15,14,.6) 100%),
+    linear-gradient(180deg,rgba(107,142,78,.14) 0%,rgba(107,142,78,0) 42%);}
+.terrain-backdrop-svg{position:absolute;inset:0;width:100%;height:100%;display:block;}
+@media (max-width:767px){ .terrain-backdrop{left:-16px;right:-16px;top:-16px;} .tb-photo{object-position:70% 38%;} }
+html[data-theme="light"] .tb-photo{filter:saturate(.7) brightness(.72) contrast(1.05);}
+html[data-theme="light"] .tb-photo-mask{background:
+    linear-gradient(180deg,rgba(229,231,235,.05) 0%,rgba(229,231,235,.35) 55%,var(--bg) 100%),
+    linear-gradient(90deg,rgba(11,15,14,.35) 0%,rgba(11,15,14,0) 20%,rgba(11,15,14,0) 80%,rgba(11,15,14,.35) 100%);}
 
 /* Performance Pulse (CURRENT STATE) — pas de cadre : la scène vit à même le fond de page (le
    canvas), au-dessus du Terrain Backdrop (ordre naturel du DOM : le backdrop est émis avant la
@@ -719,7 +728,7 @@ html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-ter
 .pulse-trend-line .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
 @media (min-width:640px){ .pulse-main{flex-direction:row;align-items:flex-end;gap:26px 48px;} }
 @media (min-width:768px){ .pulse-scene{min-height:440px;} .pulse-content{min-height:420px;} .pulse-hero-metric--dominant .v{font-size:5.6rem;} }
-@media (min-width:1024px){ .pulse-scene{min-height:500px;} .pulse-content{min-height:480px;padding:30px 12px 4px;} .pulse-hero-metric--dominant .v{font-size:6.4rem;} .terrain-backdrop{height:clamp(420px,38vw,560px);} }
+@media (min-width:1024px){ .pulse-scene{min-height:560px;} .pulse-content{min-height:540px;padding:34px 12px 4px;} .pulse-hero-metric--dominant .v{font-size:6.4rem;} .terrain-backdrop{height:clamp(500px,46vw,680px);} }
 
 /* Training Landscape + ELEV Insight — plus de card autour : le graphique EST la scène, pas un
    élément posé dans une boîte. Sur ce même arrêt du rail, "Dernière activité" + "Prochaine séance"
