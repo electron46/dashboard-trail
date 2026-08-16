@@ -681,32 +681,45 @@ html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-ter
 .elev-signal{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-light);}
 .elev-signal img{width:13px;height:13px;filter:invert(78%) sepia(20%) saturate(500%) hue-rotate(50deg);}
 
+/* ELEV Terrain Backdrop (Home WOW Pass) : environnement du premier viewport — silhouettes de
+   montagnes + ciel + topographie, purement décoratif (voir elevMountainBackdropSvg, assets/app.js).
+   Déborde volontairement du padding de <main> ("débordement contrôlé", jamais le texte) pour
+   occuper tout le canvas visible entre la sidebar et le bord droit. Opacité/position pilotées en
+   JS au scroll par initHeroTerrainTransition (rAF, jamais de scroll détourné) ; reste statique et
+   pleinement visible sous prefers-reduced-motion. */
+.rail-stop--hero{overflow:visible;}
+.terrain-backdrop{position:absolute;top:-20px;left:-28px;right:-28px;height:clamp(300px,42vw,520px);pointer-events:none;overflow:hidden;z-index:0;}
+.terrain-backdrop-svg{width:100%;height:100%;display:block;}
+@media (max-width:767px){ .terrain-backdrop{left:-16px;right:-16px;top:-16px;} }
+
 /* Performance Pulse (CURRENT STATE) — pas de cadre : la scène vit à même le fond de page (le
-   canvas), le terrain réel occupe tout l'espace disponible derrière les métriques. */
-.pulse-scene{min-height:240px;padding:6px 0 0;}
-.pulse-content{position:relative;min-height:220px;display:flex;flex-direction:column;justify-content:space-between;padding:18px 0 4px;}
-.pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px;}
-.pulse-ready-badge{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;border-radius:var(--radius-lg);padding:4px 6px 4px 4px;margin:-4px -6px -4px -4px;transition:background var(--dur-fast) var(--ease-standard);}
-.pulse-ready-badge:hover{background:rgba(107,142,78,.1);}
-.pulse-ready-badge .kpi-ring{width:38px;height:38px;flex-shrink:0;}
-.pulse-ready-badge strong{display:block;font-family:var(--font-display);font-size:.92rem;}
-.pulse-ready-badge span span{display:block;font-size:.7rem;color:var(--muted);}
-.pulse-main{display:flex;flex-wrap:wrap;align-items:flex-end;gap:26px 44px;}
-.pulse-hero-metric{display:flex;flex-direction:column;gap:4px;}
-.pulse-hero-metric .v{font-family:var(--font-display);font-size:2.6rem;font-weight:800;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums;}
-.pulse-hero-metric .l{display:flex;align-items:center;gap:5px;font-size:.8rem;color:var(--muted);}
-.pulse-hero-metric .l .arrow{font-size:.7rem;}
-.pulse-hero-metric .l.status-ok{color:var(--success);}
-.pulse-floating-metrics{display:flex;flex-wrap:wrap;gap:22px 34px;padding-bottom:2px;}
+   canvas), au-dessus du Terrain Backdrop (ordre naturel du DOM : le backdrop est émis avant la
+   scène, donc peint derrière — aucun z-index arbitraire nécessaire). Le terrain réel (Terrain
+   Line, altitude de la dernière sortie) occupe tout l'espace disponible derrière les métriques,
+   avec un léger halo qui le distingue clairement des reliefs décoratifs du backdrop. */
+.pulse-scene{position:relative;min-height:340px;padding:6px 0 0;}
+.pulse-scene > svg.terrain-line-svg .terrain-stroke{filter:drop-shadow(0 0 5px rgba(168,196,127,.5));}
+.pulse-content{position:relative;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;padding:18px 0 4px;}
+.pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+/* Hiérarchie extrême : UNE valeur domine (readiness si calculable, sinon volume), en très grande
+   typographie — les autres métriques restent des informations secondaires nettement plus petites. */
+.pulse-main{display:flex;flex-direction:column;gap:22px;}
+.pulse-hero-metric--dominant .v{font-family:var(--font-display);font-size:4.2rem;font-weight:800;letter-spacing:-.025em;line-height:.95;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.pulse-hero-metric--dominant .v small{font-size:.4em;font-weight:700;-webkit-text-fill-color:var(--accent-light);}
+.pulse-hero-metric--dominant .l{display:block;margin-top:6px;font-size:.92rem;color:var(--muted);}
+.pulse-hero-metric--dominant .l .arrow{font-size:.75rem;}
+.pulse-hero-metric--dominant .l.status-ok{color:var(--success);}
+.pulse-floating-metrics{display:flex;flex-wrap:wrap;gap:20px 32px;}
 .floating-metric{display:flex;flex-direction:column;gap:3px;}
-.floating-metric .v{font-family:var(--font-display);font-size:1.35rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
-.floating-metric .l{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
-.pulse-trend-line{display:inline-flex;align-items:center;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:.84rem;color:var(--muted);}
+.floating-metric .v{font-family:var(--font-display);font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.floating-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.pulse-trend-line{display:inline-flex;align-items:center;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--border);font-size:.84rem;color:var(--muted);}
 .pulse-trend-line .kpi-status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted-2);flex-shrink:0;}
 .pulse-trend-line .kpi-status-dot.status-ok{background:var(--success);box-shadow:0 0 6px 1px var(--success-soft);}
 .pulse-trend-line .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
-@media (min-width:768px){ .pulse-scene{min-height:300px;} .pulse-hero-metric .v{font-size:3.4rem;} }
-@media (min-width:1024px){ .pulse-content{padding:26px 12px 4px;} }
+@media (min-width:640px){ .pulse-main{flex-direction:row;align-items:flex-end;gap:26px 48px;} }
+@media (min-width:768px){ .pulse-scene{min-height:440px;} .pulse-content{min-height:420px;} .pulse-hero-metric--dominant .v{font-size:5.6rem;} }
+@media (min-width:1024px){ .pulse-scene{min-height:500px;} .pulse-content{min-height:480px;padding:30px 12px 4px;} .pulse-hero-metric--dominant .v{font-size:6.4rem;} .terrain-backdrop{height:clamp(420px,38vw,560px);} }
 
 /* Training Landscape + ELEV Insight — plus de card autour : le graphique EST la scène, pas un
    élément posé dans une boîte. Sur ce même arrêt du rail, "Dernière activité" + "Prochaine séance"
@@ -714,7 +727,7 @@ html[data-theme="light"] .terrain-line-svg .terrain-fill{animation-name:elev-ter
    cards restent pertinentes pour les données secondaires"), mais sans reprendre le même cadre
    surface/bordure que l'ancienne V1 — seule "Dernière activité" garde une vraie card (cf. plus bas). */
 .rail-stop--split{display:grid;grid-template-columns:1fr;gap:20px;align-items:start;}
-@media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.1fr 1fr;gap:28px;} }
+@media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.4fr 1fr;gap:32px;} }
 .landscape-side{display:flex;flex-direction:column;gap:16px;}
 .landscape-scene{padding:0;}
 .landscape-scene h2{position:relative;margin:0 0 4px;padding-left:11px;font-family:var(--font-display);font-size:1.05rem;font-weight:700;letter-spacing:-.005em;}
