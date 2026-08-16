@@ -2722,17 +2722,33 @@ function _elevRidgePath(seed, w, baseline, amp, segments) {
   return d;
 }
 let _terrainBackdropId = 0;
-function elevMountainBackdropSvg() {
+// `opts.contourOnly` (Home Final WOW Pass) : quand une vraie photo de montagne sert de fond
+// (voir index.html, .tb-photo), les silhouettes de montagnes SVG deviendraient un doublon visuel
+// avec le relief réel de la photo — seules la teinte de ciel et les 2 arcs topographiques
+// (cartographie, transition photo → terrain → donnée) restent. Sans photo (fallback), le rendu
+// complet avec les 3 chaînes de montagnes est conservé.
+function elevMountainBackdropSvg(opts) {
+  opts = opts || {};
   const id = 'tb' + (_terrainBackdropId++);
   const w = 1200, h = 480;
-  const back = _elevRidgePath(7, w, 200, 65, 7);
-  const mid = _elevRidgePath(23, w, 288, 105, 6);
-  const front = _elevRidgePath(41, w, 392, 132, 5);
+  const sky = '<rect x="0" y="0" width="' + w + '" height="' + (h * 0.65) + '" fill="url(#' + id + 'Sky)"/>' +
+    '<path class="tb-contour" d="M0,110 Q300,80 600,120 T' + w + ',100" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="2,7" opacity="0.1"/>' +
+    '<path class="tb-contour" d="M0,165 Q300,132 600,172 T' + w + ',150" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="2,7" opacity="0.1"/>';
+  let ridges = '';
+  if (!opts.contourOnly) {
+    const back = _elevRidgePath(7, w, 200, 65, 7);
+    const mid = _elevRidgePath(23, w, 288, 105, 6);
+    const front = _elevRidgePath(41, w, 392, 132, 5);
+    ridges =
+      '<path class="tb-ridge tb-ridge-back" d="' + back + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="var(--accent)" opacity="0.09"/>' +
+      '<path class="tb-ridge tb-ridge-mid" d="' + mid + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="var(--accent)" opacity="0.15"/>' +
+      '<path class="tb-ridge tb-ridge-front" d="' + front + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="url(#' + id + 'Front)"/>';
+  }
   return '<svg class="terrain-backdrop-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">' +
     '<defs>' +
       '<linearGradient id="' + id + 'Sky" x1="0" y1="0" x2="0" y2="1">' +
-        '<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.18"/>' +
-        '<stop offset="45%" stop-color="var(--accent)" stop-opacity="0.05"/>' +
+        '<stop offset="0%" stop-color="var(--accent)" stop-opacity="' + (opts.contourOnly ? '0.06' : '0.18') + '"/>' +
+        '<stop offset="45%" stop-color="var(--accent)" stop-opacity="0.02"/>' +
         '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>' +
       '</linearGradient>' +
       '<linearGradient id="' + id + 'Front" x1="0" y1="0" x2="0" y2="1">' +
@@ -2740,12 +2756,7 @@ function elevMountainBackdropSvg() {
         '<stop offset="100%" stop-color="var(--bg)" stop-opacity="1"/>' +
       '</linearGradient>' +
     '</defs>' +
-    '<rect x="0" y="0" width="' + w + '" height="' + (h * 0.65) + '" fill="url(#' + id + 'Sky)"/>' +
-    '<path class="tb-contour" d="M0,110 Q300,80 600,120 T' + w + ',100" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="2,7" opacity="0.09"/>' +
-    '<path class="tb-contour" d="M0,165 Q300,132 600,172 T' + w + ',150" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="2,7" opacity="0.09"/>' +
-    '<path class="tb-ridge tb-ridge-back" d="' + back + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="var(--accent)" opacity="0.09"/>' +
-    '<path class="tb-ridge tb-ridge-mid" d="' + mid + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="var(--accent)" opacity="0.15"/>' +
-    '<path class="tb-ridge tb-ridge-front" d="' + front + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="url(#' + id + 'Front)"/>' +
+    sky + ridges +
   '</svg>';
 }
 

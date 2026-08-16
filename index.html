@@ -59,9 +59,19 @@
   <div class="home-rail">
 
     <div class="rail-stop rail-stop--hero">
-      <!-- ELEV Terrain Backdrop : environnement (silhouettes de montagnes + ciel + topographie,
-           décoratif, jamais une donnée) derrière le premier viewport. Voir elevMountainBackdropSvg. -->
-      <div class="terrain-backdrop" id="terrainBackdrop" aria-hidden="true"></div>
+      <!-- ELEV Terrain Backdrop : environnement du hero. Layer A = vraie photo de relief
+           (assets/images/home-mountain-*.webp, décorative, alt="") ; Layer B = dégradés de
+           fusion (vignette + fondu vers #0B0F0E, jamais de ligne nette) ; Layer C = topographie
+           très discrète (voir elevMountainBackdropSvg, contourOnly). La vraie Terrain Line
+           (donnée réelle) vit dans .pulse-scene, au-dessus de tout ceci. -->
+      <div class="terrain-backdrop" id="terrainBackdrop" aria-hidden="true">
+        <img class="tb-photo" alt=""
+          src="assets/images/home-mountain-1200.webp"
+          srcset="assets/images/home-mountain-640.webp 640w, assets/images/home-mountain-1200.webp 1200w, assets/images/home-mountain-1717.webp 1717w"
+          sizes="100vw" fetchpriority="high" decoding="async">
+        <div class="tb-photo-mask"></div>
+        <div id="terrainBackdropSvgLayer"></div>
+      </div>
       <!-- CURRENT STATE : Performance Pulse — aucun cadre : le fond de la page est le canvas,
            le terrain réel de la dernière sortie vit directement derrière les métriques. -->
       <section class="pulse-scene" aria-label="État actuel" id="pulseScene"></section>
@@ -482,7 +492,7 @@ function renderFcSummary() {
 function renderAll() {
   renderGreeting();
   renderGearAlert();
-  document.getElementById('terrainBackdrop').innerHTML = elevMountainBackdropSvg();
+  document.getElementById('terrainBackdropSvgLayer').innerHTML = elevMountainBackdropSvg({ contourOnly: true });
   renderPulse();
   renderLandscape();
   renderLastActivity();
