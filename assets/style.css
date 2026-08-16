@@ -126,20 +126,21 @@ header.app-topbar .app-topbar-actions{display:flex;align-items:center;gap:10px;f
 /* Panneau "Plus" (nav mobile à 5 destinations) : feuille glissée depuis le bas + fond assombri.
    Défini hors de la media query mobile pour rester masqué proprement (transform + display) même
    si la fenêtre est redimensionnée pendant qu'il est ouvert. */
-.nav-sheet-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:30;}
-.nav-sheet-backdrop.open{display:block;}
-.nav-sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--border);
-  border-radius:16px 16px 0 0;padding:10px 8px calc(10px + env(safe-area-inset-bottom));z-index:31;
-  transform:translateY(100%);transition:transform 180ms ease;box-shadow:0 -8px 24px rgba(0,0,0,.3);}
+.nav-sheet-backdrop{position:fixed;inset:0;background:rgba(6,9,8,.55);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);display:none;z-index:30;opacity:0;transition:opacity var(--dur-modal) var(--ease-standard);}
+.nav-sheet-backdrop.open{display:block;opacity:1;}
+.nav-sheet{position:fixed;left:0;right:0;bottom:0;background:var(--surface-4);border-top:1px solid var(--border-strong);
+  border-radius:var(--radius-xl) var(--radius-xl) 0 0;padding:10px 8px calc(10px + env(safe-area-inset-bottom));z-index:31;
+  transform:translateY(100%);transition:transform var(--dur-modal) var(--ease-emphasized);box-shadow:0 -12px 32px rgba(0,0,0,.4);}
 .nav-sheet.open{transform:translateY(0);}
-.nav-sheet-handle{width:36px;height:4px;border-radius:2px;background:var(--border);margin:2px auto 12px;}
-.nav-sheet a{display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:44px;box-sizing:border-box;
-  border-radius:var(--radius-md);text-decoration:none;color:var(--text);font-size:.92rem;font-weight:500;}
-.nav-sheet a img{width:18px;height:18px;filter:invert(55%);flex-shrink:0;}
-.nav-sheet a:hover{background:var(--bg);}
-.nav-sheet a.active{color:var(--accent-light);font-weight:700;}
+.nav-sheet-handle{width:36px;height:4px;border-radius:2px;background:var(--border-strong);margin:2px auto 12px;}
+.nav-sheet a{position:relative;display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:44px;box-sizing:border-box;
+  border-radius:var(--radius-md);text-decoration:none;color:var(--text);font-size:.92rem;font-weight:500;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);}
+.nav-sheet a img{width:18px;height:18px;filter:invert(55%);flex-shrink:0;transition:filter var(--dur-fast) var(--ease-standard);}
+.nav-sheet a:hover{background:rgba(244,247,245,.05);}
+.nav-sheet a.active{color:var(--accent-light);font-weight:700;background:rgba(107,142,78,.13);}
 .nav-sheet a.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
-@media (prefers-reduced-motion:reduce){ .nav-sheet{transition:none;} }
+.nav-sheet a.active::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent-light);box-shadow:0 0 8px 1px rgba(168,196,127,.4);}
+@media (prefers-reduced-motion:reduce){ .nav-sheet,.nav-sheet-backdrop{transition:none;} }
 
 main{max-width:1360px;margin:0 auto;padding:20px 28px 28px;display:flex;flex-direction:column;gap:16px;width:100%;box-sizing:border-box;}
 section.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 22px;box-shadow:none;}
@@ -987,7 +988,12 @@ main.analysis-main{max-width:1440px;}
 .goal-selector-item.active{color:var(--accent-light);font-weight:700;}
 .goal-selector-item .gsi-meta{display:block;font-size:.7rem;color:var(--muted);margin-top:1px;font-weight:400;}
 
-.goal-hero-top{display:flex;flex-wrap:wrap;gap:22px;justify-content:space-between;align-items:flex-start;}
+/* Hero de préparation (Objectifs/Plan) : carte signature au même titre que l'Insight ELEV — coins
+   plus généreux (radius-xl) et filet de bord en dégradé, pour que "où j'en suis par rapport à ma
+   course" saute aux yeux avant même de lire un chiffre. */
+#goalHeroCard,#planHeroCard{position:relative;overflow:hidden;border-radius:var(--radius-xl);}
+#goalHeroCard::before,#planHeroCard::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent-light),var(--accent),transparent);}
+.goal-hero-top{position:relative;display:flex;flex-wrap:wrap;gap:22px;justify-content:space-between;align-items:flex-start;}
 .goal-hero-identity{flex:1 1 260px;min-width:0;}
 .goal-hero-eyebrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
 /* Nom de la course : plus de présence typographique (priorité n°1 du hero, voir CLAUDE.md). */
@@ -1060,7 +1066,9 @@ main.analysis-main{max-width:1440px;}
   .mobile-nav button.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
   main{padding:16px 16px 78px;}
   footer.app{padding-bottom:78px;}
-  header.app-topbar{padding:14px 16px;}
+  /* Topbar sticky en haut d'écran : sur un téléphone à encoche, l'espace système (notch/île
+     dynamique) doit s'ajouter au padding plutôt que de passer dessous. */
+  header.app-topbar{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;}
   /* Cibles tactiles < 44px releve pendant l'audit accessibilite (voir CLAUDE.md) — corrige au
      seul endroit ou ca compte reellement (le tactile), la densite desktop reste inchangee. */
   #themeToggle{width:44px;height:44px;}

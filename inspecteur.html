@@ -5,16 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FIT Import Inspector — ELEV (développement)</title>
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#151E2B">
+<meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="assets/app.js"></script>
 <style>
   .app-main{margin:0 auto;max-width:1000px;}
-  .inspector-badge{display:inline-block;padding:3px 10px;border-radius:var(--radius-pill);background:var(--panel-raised);border:1px solid var(--border);font-size:.72rem;color:var(--muted);}
+  /* ELEV Diagnostics : identité un peu plus "engineering" que le reste du produit (badge en
+     petites majuscules mono, barre de couverture nette) tout en restant sur les tokens du
+     design system principal — pas de nouvelle couleur, pas de nouvelle police. */
+  .inspector-badge{display:inline-block;padding:3px 10px;border-radius:var(--radius-pill);background:var(--panel-raised);border:1px solid var(--border);font-size:.68rem;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
   .cov-bar{height:6px;border-radius:99px;background:var(--panel-raised);overflow:hidden;margin-top:4px;}
-  .cov-bar > span{display:block;height:100%;background:var(--accent);}
+  .cov-bar > span{display:block;height:100%;background:var(--accent);transition:width var(--dur-page) var(--ease-emphasized);}
   table.inspector{width:100%;border-collapse:collapse;}
   table.inspector th, table.inspector td{padding:6px 10px;border-bottom:1px solid var(--border);font-size:.85rem;text-align:left;}
+  table.inspector tr:hover{background:var(--panel-raised);}
   .unknown-tag{color:var(--muted);font-style:italic;}
 </style>
 </head>

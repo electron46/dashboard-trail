@@ -7,30 +7,37 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0B0F0E">
 <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 <style>
   body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
-  .onboard-card{width:100%;max-width:620px;}
+  /* Premier contact avec ELEV (voir connexion.html, meme traitement) : carte signature avec filet
+     de bord degrade + ombre profonde, sur le halo global deja applique au body. */
+  .onboard-card{position:relative;width:100%;max-width:620px;border-radius:var(--radius-xl);box-shadow:0 24px 60px rgba(0,0,0,.35);animation:elev-rise var(--dur-page) var(--ease-emphasized) both;}
+  .onboard-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:var(--radius-xl) var(--radius-xl) 0 0;background:linear-gradient(90deg,transparent,var(--accent-light),transparent);}
   .onboard-steps{display:flex;align-items:center;gap:8px;margin-bottom:18px;}
-  .onboard-steps .dot{width:8px;height:8px;border-radius:50%;background:var(--border);}
-  .onboard-steps .dot.done,.onboard-steps .dot.current{background:var(--accent);}
+  .onboard-steps .dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:background var(--dur-base) var(--ease-standard),box-shadow var(--dur-base) var(--ease-standard);}
+  .onboard-steps .dot.done{background:var(--accent);}
+  .onboard-steps .dot.current{background:var(--accent-light);box-shadow:0 0 0 3px var(--accent-soft);}
   .onboard-steps span{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-left:4px;}
   .onboard-eyebrow{font-size:.72rem;color:var(--accent-light);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:6px;}
-  .onboard-title{font-family:var(--font-display);font-size:1.5rem;font-weight:700;margin:0 0 6px;}
+  .onboard-title{font-family:var(--font-display);font-size:1.5rem;font-weight:700;margin:0 0 6px;letter-spacing:-.01em;}
   .onboard-sub{color:var(--muted);margin:0 0 20px;}
   .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   @media (max-width:560px){ .mode-grid{grid-template-columns:1fr;} }
-  .mode-card{background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;text-align:left;cursor:pointer;font:inherit;color:var(--text);width:100%;}
-  .mode-card:hover{border-color:var(--accent-light);}
+  .mode-card{background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;text-align:left;cursor:pointer;font:inherit;color:var(--text);width:100%;transition:border-color var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard);}
+  .mode-card:hover{border-color:var(--accent-light);transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.28);}
   .mode-card.recommended{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
   .mode-card h3{margin:2px 0 6px;font-size:1rem;}
   .mode-card p{margin:0 0 12px;color:var(--muted);font-size:.85rem;line-height:1.4;}
-  .onboard-footnote{color:var(--muted-2);font-size:.78rem;margin-top:16px;}
+  .onboard-footnote{color:var(--muted);font-size:.78rem;margin-top:16px;}
   .onboard-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;}
   .onboard-back{margin-top:14px;}
+  @media (prefers-reduced-motion:reduce){ .onboard-card{animation:none;} }
 </style>
 </head>
 <body>
