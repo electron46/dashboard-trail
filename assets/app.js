@@ -2651,25 +2651,25 @@ function sessionPreviewSvg(session, opts) {
 }
 
 /* --------------------------- ELEV TERRAIN PROFILE (composant partagé) ---------------------------
-   Silhouette d'altitude "brillante" en pleine largeur — UN SEUL composant réutilisé partout où un
-   profil d'altitude doit s'afficher (aujourd'hui : Performance Pulse de l'Accueil). Toujours
-   construite à partir d'une vraie série de valeurs (jamais un relief inventé) : si moins de 2
-   valeurs sont fournies, retourne une chaîne vide et l'appelant retombe simplement sans profil.
-   Décorative (aria-hidden) — l'information reste disponible ailleurs en texte normal (voir
-   `elevTerrainDescription` pour la description accessible).
+   Silhouette d'altitude "brillante" — UN SEUL composant réutilisé partout où un profil d'altitude
+   doit s'afficher (aujourd'hui : Performance Pulse et Target Summit de l'Accueil).
 
-   Construction en couches concentriques sur LE MÊME chemin géométrique (pas un tracé différent
-   par effet) : remplissage → halo extérieur → halo intérieur → ligne principale → cœur clair.
-   `opts.variant` règle l'intensité du halo :
-     - 'hero'    (défaut) : halo généreux, utilisé en grand fond de scène.
-     - 'compact' : ligne plus fine, halo réduit — listes/historique (pas encore branché nulle part
-       à ce jour, prévu pour une prochaine page).
-     - 'ghost'   : quasi invisible, pure matière visuelle.
-   `opts.markPeak` place un simple repère sur le point le plus haut (sans label).
-   `opts.labels` (optionnel) : tableau de repères réels `{ at:'start'|'end'|'peak', kind, title,
-   sub }` rendus via `elevTerrainLabel` — jamais un point inventé (voir index.html, renderPulse).
-   `opts.contour` ajoute les lignes de niveau discrètes déjà utilisées sur le profil d'Activité. */
-let _terrainProfileId = 0;
+   RÈGLE ABSOLUE : l'axe X est TOUJOURS la distance cumulée réelle et l'axe Y l'altitude réelle.
+   Jamais un index de point (une série FIT est échantillonnée dans le TEMPS : tracer par index
+   donne un profil temps/altitude, pas distance/altitude — bug réel corrigé lors de cette passe),
+   jamais une autre métrique (readiness, volume, charge, tendance hebdomadaire).
+
+   Aucun profil n'est dessiné sans série valide : `validateTerrainSeries()` est le seul point
+   d'entrée et retourne `null` dès qu'une condition minimale manque — l'appelant affiche alors un
+   état vide honnête plutôt qu'un relief fabriqué.
+
+   Les labels (Départ / Point culminant / Arrivée...) ne vivent PAS dans le SVG : le SVG est étiré
+   (`preserveAspectRatio="none"`, nécessaire pour occuper toute la largeur), ce qui déformerait
+   horizontalement leur texte. Ils sont rendus en HTML au-dessus du SVG et positionnés par
+   `initTerrainProfiles()` (mesure réelle + résolution de collisions), ce qui garde le texte dans
+   le DOM (accessible, traduisible) — les assets elev-label-*.svg fournis servent de référence
+   visuelle, leurs icônes sont reprises, jamais leur texte figé. */
+
 // Fenêtre de lissage (moyenne mobile) appliquée à l'altitude avant tracé — réduit le bruit GPS/
 // baro (quelques mètres d'écart point à point) sans changer le relief réel, même principe déjà
 // utilisé pour l'allure sur le détail de séance (voir CLAUDE.md). Purement un traitement de
@@ -2683,63 +2683,133 @@ function _smoothAltitudes(values, windowSize) {
     return slice.reduce((a, b) => a + b, 0) / slice.length;
   });
 }
-// Amplitude visuelle minimale (mètres) utilisée pour l'échelle du tracé — un profil presque plat
-// (quelques mètres de D+ réel) ne doit jamais être étiré pour remplir toute la hauteur disponible,
-// ce qui le ferait ressembler à un relief accidenté qu'il n'est pas (voir CLAUDE.md, "ne pas
-// exagérer artificiellement les profils presque plats"). Le relief réel reste lisible : un profil
-// vraiment montagneux (D+ > ce seuil) continue d'utiliser toute la hauteur normalement.
+
+/* Validation de la série d'altitude AVANT tout rendu (exigence explicite : « si cette série
+   n'existe pas, NE DESSINE AUCUN PROFIL »). Accepte des points `{distKm, alt}` (+ champs
+   optionnels hr/paceSecKm/cadenceSpm conservés pour le tooltip). Retourne `null` — jamais un
+   objet partiel — si l'une des conditions minimales n'est pas réunie :
+     - au moins 4 points exploitables (2 points ne décrivent pas un relief) ;
+     - distances numériques, positives et croissantes (un recul de distance = série corrompue) ;
+     - altitudes numériques et plausibles (-500 m à 9000 m) ;
+     - distance totale d'au moins 200 m ;
+     - amplitude d'altitude d'au moins 5 m (un tapis de course / une piste plate n'a pas de
+       profil à montrer — l'étirer donnerait un faux relief).
+   Les doublons de distance (points à l'arrêt) sont ignorés, pas rejetés. */
+const TERRAIN_MIN_POINTS = 4;
+const TERRAIN_MIN_TOTAL_KM = 0.2;
+const TERRAIN_MIN_ALT_RANGE_M = 5;
+function validateTerrainSeries(rawPoints) {
+  if (!Array.isArray(rawPoints) || rawPoints.length < TERRAIN_MIN_POINTS) return null;
+  const pts = [];
+  let lastD = -Infinity;
+  for (const p of rawPoints) {
+    if (!p) continue;
+    const d = Number(p.distKm), a = Number(p.alt);
+    if (!Number.isFinite(d) || !Number.isFinite(a)) continue;
+    if (d < 0 || a < -500 || a > 9000) return null;      // donnée aberrante : on ne devine pas
+    if (d < lastD) return null;                          // distance qui recule : série non fiable
+    if (d === lastD) continue;                           // point à l'arrêt : ignoré, pas rejeté
+    pts.push({ distKm: d, alt: a, hr: p.hr != null ? p.hr : null, paceSecKm: p.paceSecKm != null ? p.paceSecKm : null, cadenceSpm: p.cadenceSpm != null ? p.cadenceSpm : null });
+    lastD = d;
+  }
+  if (pts.length < TERRAIN_MIN_POINTS) return null;
+  const totalKm = pts[pts.length - 1].distKm;
+  if (!(totalKm >= TERRAIN_MIN_TOTAL_KM)) return null;
+  const alts = pts.map(p => p.alt);
+  const minAlt = Math.min.apply(null, alts), maxAlt = Math.max.apply(null, alts);
+  if (maxAlt - minAlt < TERRAIN_MIN_ALT_RANGE_M) return null;
+  let peakIdx = 0, gain = 0, loss = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (pts[i].alt > pts[peakIdx].alt) peakIdx = i;
+    if (i > 0) { const d = pts[i].alt - pts[i - 1].alt; if (d > 0) gain += d; else loss += -d; }
+  }
+  return { points: pts, totalKm: totalKm, minAlt: minAlt, maxAlt: maxAlt, peakIdx: peakIdx, gain: Math.round(gain), loss: Math.round(loss) };
+}
+
+// Amplitude visuelle minimale (mètres) utilisée pour l'échelle du tracé — un profil de faible
+// dénivelé ne doit jamais être étiré pour remplir toute la hauteur disponible, ce qui le ferait
+// ressembler à un relief accidenté qu'il n'est pas. Un profil vraiment montagneux (amplitude >
+// ce seuil) continue d'utiliser toute la hauteur normalement.
 const TERRAIN_MIN_VISUAL_SPAN_M = 80;
-function elevTerrainLineSvg(altValues, opts) {
-  opts = opts || {};
-  if (!altValues || altValues.length < 2) return '';
-  const id = 'tp' + (_terrainProfileId++);
-  const variant = opts.variant || 'hero';
-  const w = opts.width || 1000, h = opts.height || 220;
-  const smoothed = opts.smooth === false ? altValues : _smoothAltitudes(altValues, 5);
-  const minA = Math.min(...smoothed), maxA = Math.max(...smoothed);
+// Géométrie interne du viewBox (unités SVG) — largeur fixe, hauteur variable, le SVG est ensuite
+// étiré à la largeur réelle du conteneur (preserveAspectRatio="none").
+const TERRAIN_VB_W = 1000;
+
+/* Calcule la géométrie du tracé : points en unités viewBox ET en fractions (0-1), ces dernières
+   servant à positionner labels/curseur en HTML par-dessus le SVG étiré. */
+function _terrainGeometry(v, h) {
+  const smoothed = _smoothAltitudes(v.points.map(p => p.alt), 5);
+  const minA = Math.min.apply(null, smoothed), maxA = Math.max.apply(null, smoothed);
   const realSpan = maxA - minA;
-  // Marge interne verticale généreuse (viewBox) : le tracé occupe une bande maîtrisée, jamais
-  // bord à bord — évite qu'il ne "coupe" les labels ou touche les limites du composant.
-  const padTop = h * 0.32, padBottom = h * 0.1;
+  // Marge interne verticale généreuse : le tracé occupe une bande maîtrisée, jamais bord à bord.
+  const padTop = h * 0.30, padBottom = h * 0.10;
   const drawH = h - padTop - padBottom;
   const span = Math.max(realSpan, TERRAIN_MIN_VISUAL_SPAN_M);
-  // Centre la portion réellement occupée dans la bande de dessin quand le span visuel dépasse le
-  // span réel (profil plat) — sinon le relief se retrouverait plaqué en bas de la bande.
+  // Centre la portion réellement occupée quand le span visuel dépasse le span réel (profil peu
+  // accidenté) — sinon le relief se retrouverait plaqué en bas de la bande.
   const visualOffset = (span - realSpan) / 2;
-  const stepX = w / (smoothed.length - 1);
-  const pts = smoothed.map((a, i) => [i * stepX, h - padBottom - (((a - minA) + visualOffset) / span) * drawH]);
-  const path = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
-  const area = path + ' L' + w + ',' + h + ' L0,' + h + ' Z';
+  const total = v.totalKm || 1;
+  return v.points.map(function (p, i) {
+    // X = DISTANCE CUMULÉE réelle (jamais l'index du point).
+    const x = (p.distKm / total) * TERRAIN_VB_W;
+    const y = h - padBottom - (((smoothed[i] - minA) + visualOffset) / span) * drawH;
+    return { x: x, y: y, xf: x / TERRAIN_VB_W, yf: y / h };
+  });
+}
 
-  let peakIdx = 0;
-  altValues.forEach((a, i) => { if (a > altValues[peakIdx]) peakIdx = i; });
-  let peakMarker = '';
-  if (opts.markPeak) {
-    const p = pts[peakIdx];
-    peakMarker = '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="4" fill="var(--accent-light)"/>';
+/* Détection grossière des montées (hystérésis de 12 m, gain minimum 30 m) — sert UNIQUEMENT à
+   choisir le fond atmosphérique A/B, jamais à afficher une donnée. Volontairement plus simple
+   que `detectClimbs()` (analyse de séance), qui travaille sur distance + pente. */
+function _terrainClimbGains(alts) {
+  const sm = _smoothAltitudes(alts, 9);
+  const HYST = 12, MIN_GAIN = 30, climbs = [];
+  let base = sm[0], top = sm[0];
+  for (let i = 1; i < sm.length; i++) {
+    const a = sm[i];
+    if (a > top) { top = a; continue; }
+    if (top - a >= HYST) {
+      if (top - base >= MIN_GAIN) climbs.push(top - base);
+      base = a; top = a; continue;
+    }
+    if (a < base) base = a;
   }
+  if (top - base >= MIN_GAIN) climbs.push(top - base);
+  return climbs;
+}
+/* Choix du fond atmosphérique du profil parmi les 2 assets fournis. C'est un choix d'AMBIANCE :
+   ces images ne représentent jamais la donnée et ne sont jamais alignées sur la silhouette réelle
+   (voir consigne « fond terrain = atmosphère, profil SVG = information »).
+     - 'a' (elev-profile-terrain-a) : ultra-trail / panoramique, plusieurs sommets.
+     - 'b' (elev-profile-terrain-b) : ascension dominante, un sommet principal. */
+function pickTerrainBackdrop(v) {
+  if (!v) return 'a';
+  const climbs = _terrainClimbGains(v.points.map(p => p.alt));
+  if (v.totalKm >= 40) return 'a';                        // ultra : lecture panoramique
+  if (climbs.length <= 1) return 'b';
+  const sum = climbs.reduce(function (a, b) { return a + b; }, 0);
+  return (Math.max.apply(null, climbs) / sum) > 0.55 ? 'b' : 'a';  // une montée porte l'essentiel du D+
+}
+
+/* SVG du tracé seul (5 couches concentriques sur LE MÊME chemin géométrique : remplissage → halo
+   extérieur → halo intérieur → ligne principale → cœur clair). `variant` règle l'intensité :
+   'hero' (grande scène), 'compact' (liste), 'ghost' (pure matière). Décoratif : l'information est
+   portée par le texte des labels et par `elevTerrainDescription`. */
+let _terrainProfileId = 0;
+function elevTerrainLineSvg(v, opts) {
+  opts = opts || {};
+  if (!v || !v.points || v.points.length < 2) return '';
+  const id = 'tp' + (_terrainProfileId++);
+  const variant = opts.variant || 'hero';
+  const h = opts.height || 220;
+  const geom = opts.geom || _terrainGeometry(v, h);
+  const path = geom.map(function (p, i) { return (i === 0 ? 'M' : 'L') + p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
+  const area = path + ' L' + TERRAIN_VB_W + ',' + h + ' L0,' + h + ' Z';
 
   let contourSvg = '';
   if (opts.contour) {
-    // Couleur/opacité choisies pour rester visibles malgré la double atténuation (opacité du
-    // fond de terrain déjà à .55 en CSS, voir .terrain-line-svg) — un stroke "border" (7% de
-    // blanc) devenait invisible une fois combiné. var(--text) à faible opacité garde un vrai
-    // contraste de trait sans dominer visuellement le relief.
-    contourSvg = [0.3, 0.55, 0.8].map(f => {
+    contourSvg = [0.3, 0.55, 0.8].map(function (f) {
       const cy = (h * f).toFixed(1);
-      return '<line x1="0" y1="' + cy + '" x2="' + w + '" y2="' + cy + '" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="3,5" opacity="0.55"/>';
-    }).join('');
-  }
-
-  // Repères réels (départ / point culminant / arrivée...) — jamais inventés, positionnés à partir
-  // des points réels de la série fournie par l'appelant.
-  let labelsSvg = '';
-  if (opts.labels && opts.labels.length && variant !== 'compact' && variant !== 'ghost') {
-    labelsSvg = opts.labels.map(l => {
-      const idx = l.at === 'start' ? 0 : l.at === 'end' ? pts.length - 1 : l.at === 'peak' ? peakIdx : null;
-      if (idx == null) return '';
-      const p = pts[idx];
-      return elevTerrainLabel(l.kind, l.title, l.sub, p[0], p[1], w);
+      return '<line x1="0" y1="' + cy + '" x2="' + TERRAIN_VB_W + '" y2="' + cy + '" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="3,5" opacity="0.55"/>';
     }).join('');
   }
 
@@ -2749,7 +2819,7 @@ function elevTerrainLineSvg(altValues, opts) {
   const coreW = variant === 'ghost' ? 0 : variant === 'compact' ? 0.8 : 1.1;
   const areaOpacity = variant === 'ghost' ? 0.5 : 1;
 
-  return '<svg class="terrain-line-svg terrain-line-svg--' + variant + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+  return '<svg class="terrain-line-svg terrain-line-svg--' + variant + '" viewBox="0 0 ' + TERRAIN_VB_W + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
     '<defs>' +
       '<linearGradient id="' + id + 'Area" x1="0" y1="0" x2="0" y2="1">' +
         '<stop offset="0%" stop-color="#5BFF8D" stop-opacity="' + (0.18 * areaOpacity).toFixed(2) + '"/>' +
@@ -2765,67 +2835,310 @@ function elevTerrainLineSvg(altValues, opts) {
     (glowInnerW ? '<path fill="none" stroke="rgba(78,255,132,.35)" stroke-width="' + glowInnerW + '" stroke-linecap="round" stroke-linejoin="round" filter="url(#' + id + 'Inner)" d="' + path + '"/>' : '') +
     '<path class="terrain-stroke" fill="none" stroke="#4FE67B" stroke-width="' + lineW + '" stroke-linecap="round" stroke-linejoin="round" d="' + path + '"/>' +
     (coreW ? '<path fill="none" stroke="rgba(220,255,229,.88)" stroke-width="' + coreW + '" stroke-linecap="round" stroke-linejoin="round" d="' + path + '"/>' : '') +
-    peakMarker +
-    labelsSvg +
   '</svg>';
 }
 
-// Icônes réutilisées depuis les assets fournis (elev-label-*.svg) — mêmes tracés, recentrés sur
-// (0,0) pour être positionnés dynamiquement. Un seul point de vérité pour le style des labels.
+// Icônes reprises des assets fournis (elev-label-*.svg) — mêmes tracés, recentrés sur (0,0) dans
+// un petit viewBox pour être réutilisés en HTML. Un seul point de vérité pour le style des labels.
+// `prio` : 1 = label principal (jamais masqué), 2 = label secondaire (masqué si collision
+// irrésolvable, cas typique du point culminant sur petit écran).
 const TERRAIN_LABEL_KINDS = {
-  depart: { width: 168,
-    icon: '<circle r="5" fill="#0B0F0E" stroke="#BFFFD0" stroke-width="1.5"/><path d="M-2 3V-5l7 2.5-7 2.5" stroke="#BFFFD0" stroke-width="1.4" stroke-linejoin="round" fill="none"/>' },
-  arrivee: { width: 168,
+  depart: { prio: 1, align: 'start',
+    icon: '<circle cx="0" cy="0" r="5" fill="#0B0F0E" stroke="#BFFFD0" stroke-width="1.5"/><path d="M-2 3V-5l7 2.5-7 2.5" stroke="#BFFFD0" stroke-width="1.4" stroke-linejoin="round" fill="none"/>' },
+  arrivee: { prio: 1, align: 'end',
     icon: '<path d="M-5-5h10v10h-10z" stroke="#D6FFE0" stroke-width="1.2" fill="none"/><path d="M-5-5h5v5h-5m5 0h5v5h-5m0 0h-5v-5h5m0 0v-5h5" stroke="#D6FFE0" stroke-width="1.1" fill="none"/>' },
-  culminant: { width: 224,
+  culminant: { prio: 2, align: 'center',
     icon: '<path d="m-8 5 7.5-12 3.3 5.1 2.1-2.8 4.1 9.7h-17Z" fill="#5BFF8D" fill-opacity=".18" stroke="#D6FFE0" stroke-width="1.5" stroke-linejoin="round"/><circle cx="-.5" cy="-7" r="1.8" fill="#E7F8EC"/>' },
-  checkpoint: { width: 168,
-    icon: '<circle r="6" fill="none" stroke="#D6FFE0" stroke-width="1.4"/><circle r="2" fill="#D6FFE0"/>' },
-  objectif: { width: 168,
-    icon: '<circle r="7" fill="none" stroke="#D6FFE0" stroke-width="1.3"/><circle r="3.4" fill="none" stroke="#D6FFE0" stroke-width="1.1"/><circle r="1" fill="#E7F8EC"/>' },
+  sommet: { prio: 2, align: 'center',
+    icon: '<path d="m-8 5 7.5-12 3.3 5.1 2.1-2.8 4.1 9.7h-17Z" fill="#5BFF8D" fill-opacity=".18" stroke="#D6FFE0" stroke-width="1.5" stroke-linejoin="round"/>' },
+  checkpoint: { prio: 2, align: 'center',
+    icon: '<circle cx="0" cy="0" r="6" fill="none" stroke="#D6FFE0" stroke-width="1.4"/><circle cx="0" cy="0" r="2" fill="#D6FFE0"/>' },
+  ravitaillement: { prio: 2, align: 'center',
+    icon: '<circle cx="0" cy="0" r="6" fill="none" stroke="#D6FFE0" stroke-width="1.3"/><path d="M-2.5-2.5v5M0-3v6M2.5-2.5v5" stroke="#D6FFE0" stroke-width="1.2"/>' },
+  objectif: { prio: 1, align: 'center',
+    icon: '<circle cx="0" cy="0" r="7" fill="none" stroke="#D6FFE0" stroke-width="1.3"/><circle cx="0" cy="0" r="3.4" fill="none" stroke="#D6FFE0" stroke-width="1.1"/><circle cx="0" cy="0" r="1" fill="#E7F8EC"/>' },
 };
-/* Label dynamique attaché à un point réel du profil (départ/arrivée/point culminant/checkpoint/
-   objectif) — reprend le langage visuel des assets elev-label-*.svg fournis, mais avec du VRAI
-   texte dans le SVG (title + sub, ex. "1 380 M · KM 24,6") plutôt qu'une image figée, pour rester
-   accessible/traduisible/à jour. `title`/`sub` doivent toujours venir de données réellement
-   calculées — jamais un checkpoint ou une valeur inventée. Le label est recadré horizontalement
-   (clampé) pour ne jamais sortir du viewBox du profil. */
-function elevTerrainLabel(kind, title, sub, px, py, w) {
-  const def = TERRAIN_LABEL_KINDS[kind];
-  if (!def) return '';
-  const lw = def.width, lh = 34, half = lw / 2, gap = 16;
-  const cx = Math.max(half + 2, Math.min(w - half - 2, px));
-  const cardTop = py - gap - lh;
-  const text = sub ? (title + ' · ' + sub) : title;
-  return '<g class="terrain-label" aria-hidden="true">' +
-    '<line x1="' + px.toFixed(1) + '" y1="' + (py - 3).toFixed(1) + '" x2="' + cx.toFixed(1) + '" y2="' + (cardTop + lh).toFixed(1) + '" stroke="#5BFF8D" stroke-opacity=".55"/>' +
-    '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="2.6" fill="#D6FFE0"/>' +
-    '<g transform="translate(' + cx.toFixed(1) + ',' + cardTop.toFixed(1) + ')">' +
-      '<rect x="' + (-half).toFixed(1) + '" y="0" width="' + lw + '" height="' + lh + '" rx="10" fill="#0B0F0E" fill-opacity=".9" stroke="#5BFF8D" stroke-opacity=".32"/>' +
-      '<g transform="translate(' + (-half + 18) + ',' + (lh / 2) + ')">' + def.icon + '</g>' +
-      '<text x="' + (-half + 32) + '" y="' + (lh / 2 + 4) + '" fill="#E7F8EC" font-family="Inter,Arial,sans-serif" font-size="10.5" font-weight="700" letter-spacing="1.1">' + escapeHtml(text) + '</text>' +
-    '</g>' +
-  '</g>';
+
+/* Repères réels d'une série validée. Chaque label est ancré à un point RÉELLEMENT déterminé :
+   premier point (départ), altitude maximale (point culminant), dernier point (arrivée). Aucun
+   checkpoint/ravitaillement n'est inventé — ces types existent dans TERRAIN_LABEL_KINDS mais ne
+   sont affichés que si un appelant fournit de vrais points nommés (aucune donnée de ce type
+   aujourd'hui : les GPX testés ne contiennent pas de <wpt> exploitables). */
+function terrainDefaultLabels(v) {
+  const first = v.points[0], last = v.points[v.points.length - 1], peak = v.points[v.peakIdx];
+  const labels = [
+    { idx: 0, kind: 'depart', title: 'Départ', alt: first.alt, distKm: first.distKm },
+    { idx: v.points.length - 1, kind: 'arrivee', title: 'Arrivée', alt: last.alt, distKm: last.distKm },
+  ];
+  // Le point culminant n'est un repère distinct que s'il ne se confond pas avec le départ ou
+  // l'arrivée (sinon on afficherait deux fois la même information au même endroit).
+  const nearStart = v.peakIdx <= 1, nearEnd = v.peakIdx >= v.points.length - 2;
+  if (!nearStart && !nearEnd) {
+    labels.push({ idx: v.peakIdx, kind: 'culminant', title: 'Point culminant', alt: peak.alt, distKm: peak.distKm });
+  }
+  return labels;
 }
 
-/* Description accessible du profil (rule 33) : les repères visuels (halo, labels flottants) sont
-   décoratifs — cette phrase porte l'information réelle pour les lecteurs d'écran. Visuellement
-   masquée (voir .visually-hidden). */
-function elevTerrainDescription(altValues, distanceKm) {
-  if (!altValues || altValues.length < 2) return '';
-  const min = Math.round(Math.min(...altValues)), max = Math.round(Math.max(...altValues));
-  let gain = 0, loss = 0;
-  for (let i = 1; i < altValues.length; i++) {
-    const d = altValues[i] - altValues[i - 1];
-    if (d > 0) gain += d; else loss += -d;
+/* Bloc HTML complet du profil : fond atmosphérique (optionnel) + SVG du tracé + labels HTML +
+   curseur/tooltip d'interaction. La géométrie est mémorisée dans `_terrainRegistry` et exploitée
+   par `initTerrainProfiles()` — à appeler après insertion dans le DOM. */
+const _terrainRegistry = new Map();
+let _terrainInstanceId = 0;
+function elevTerrainProfile(v, opts) {
+  opts = opts || {};
+  if (!v) return '';
+  const h = opts.height || 220;
+  const id = 'terrain' + (_terrainInstanceId++);
+  const geom = _terrainGeometry(v, h);
+  const labels = opts.labels || terrainDefaultLabels(v);
+  _terrainRegistry.set(id, { v: v, geom: geom, height: h });
+
+  // Fond atmosphérique : très sombre, purement décoratif, jamais aligné sur la silhouette réelle.
+  let bgHtml = '';
+  if (opts.backdrop !== false) {
+    const variant = opts.backdrop || pickTerrainBackdrop(v);
+    // `eagerBackdrop` pour un profil au-dessus de la ligne de flottaison (hero) : le fond ne doit
+    // pas apparaître après coup. Les profils plus bas dans la page restent en chargement paresseux.
+    const loading = opts.eagerBackdrop ? 'eager' : 'lazy';
+    bgHtml = '<div class="terrain-profile-bg" aria-hidden="true">' +
+      '<img src="assets/images/elev-profile-terrain-' + variant + '.webp" alt="" loading="' + loading + '" decoding="async">' +
+      '<span class="terrain-profile-bg-mask"></span>' +
+    '</div>';
   }
-  const parts = [
-    distanceKm != null ? fmtNum(distanceKm, ' km', 1) : null,
-    'D+ ' + Math.round(gain) + ' m',
-    'D- ' + Math.round(loss) + ' m',
-    'altitude ' + min + ' à ' + max + ' m',
-  ].filter(Boolean);
-  return 'Profil altimétrique réel : ' + parts.join(', ') + '.';
+
+  const labelsHtml = labels.map(function (l) {
+    const def = TERRAIN_LABEL_KINDS[l.kind];
+    if (!def || geom[l.idx] == null) return '';
+    const g = geom[l.idx];
+    // Décimale seulement quand elle apporte quelque chose : "km 0" et "km 23", pas "km 0.0".
+    const vals = [
+      l.alt != null ? Math.round(l.alt) + ' m' : null,
+      l.distKm != null ? 'km ' + fmtNum(l.distKm, '', (l.distKm === 0 || l.distKm >= 10) ? 0 : 1) : null,
+    ].filter(Boolean).join(' · ');
+    return '<div class="terrain-label terrain-label--' + l.kind + '" data-xf="' + g.xf.toFixed(5) + '" data-yf="' + g.yf.toFixed(5) + '"' +
+        ' data-prio="' + def.prio + '" data-align="' + def.align + '">' +
+      '<span class="tl-icon" aria-hidden="true"><svg viewBox="-10 -10 20 20">' + def.icon + '</svg></span>' +
+      '<span class="tl-body"><strong>' + escapeHtml(l.title) + '</strong>' +
+        (vals ? '<span class="tl-vals">' + escapeHtml(vals) + '</span>' : '') + '</span>' +
+    '</div>';
+  }).join('');
+
+  // tabindex/role : le profil est explorable au clavier (flèches) comme au pointeur/toucher.
+  return '<div class="terrain-profile' + (opts.className ? ' ' + opts.className : '') + '" data-terrain="' + id + '"' +
+      ' style="--tp-ratio:' + (h / TERRAIN_VB_W).toFixed(4) + '"' +
+      ' tabindex="0" role="img" aria-label="' + escapeHtml(elevTerrainDescription(v)) + '">' +
+    bgHtml +
+    elevTerrainLineSvg(v, { height: h, variant: opts.variant || 'hero', geom: geom, contour: opts.contour }) +
+    '<svg class="terrain-stems" aria-hidden="true" focusable="false"></svg>' +
+    '<div class="terrain-labels">' + labelsHtml + '</div>' +
+    '<div class="terrain-cursor" aria-hidden="true" hidden><span class="tc-line"></span><span class="tc-dot"></span></div>' +
+    '<div class="terrain-tip" aria-hidden="true" hidden></div>' +
+    '<p class="visually-hidden terrain-live" role="status" aria-live="polite"></p>' +
+  '</div>';
+}
+
+/* Description accessible du profil : les couches visuelles (halo, labels) sont décoratives, cette
+   phrase porte l'information réelle pour les lecteurs d'écran (et sert d'aria-label au conteneur). */
+function elevTerrainDescription(v) {
+  if (!v) return '';
+  return 'Profil altimétrique réel : ' + [
+    fmtNum(v.totalKm, ' km', 1),
+    'D+ ' + v.gain + ' m',
+    'D- ' + v.loss + ' m',
+    'altitude ' + Math.round(v.minAlt) + ' à ' + Math.round(v.maxAlt) + ' m',
+  ].join(', ') + '.';
+}
+
+/* --------------------------- PLACEMENT DES LABELS + INTERACTION ---------------------------
+   Placement anti-collision RÉEL : les labels sont mesurés dans le DOM (largeur/hauteur réelles,
+   qui dépendent du texte et de la taille d'écran), puis placés par priorité en essayant plusieurs
+   registres verticaux au-dessus du point, puis en dessous. Un label secondaire qui ne trouve
+   aucune place libre est masqué plutôt que superposé à un autre. Chaque label garde un connecteur
+   tracé jusqu'à son point réel, donc son ancrage reste lisible même déporté. */
+const TERRAIN_LABEL_GAP = 14;      // distance minimale label <-> point ancré
+const TERRAIN_LABEL_PAD = 8;       // marge de non-chevauchement entre deux labels
+function _terrainLayoutLabels(wrap) {
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  const stems = wrap.querySelector('.terrain-stems');
+  const labels = Array.prototype.slice.call(wrap.querySelectorAll('.terrain-label'));
+  if (!W || !H || !labels.length) return;
+
+  // Mesure : on rend mesurable sans afficher (visibility) pour obtenir des dimensions réelles.
+  labels.forEach(function (el) { el.style.visibility = 'hidden'; el.classList.remove('is-hidden'); });
+  const items = labels.map(function (el) {
+    return {
+      el: el,
+      ax: (+el.dataset.xf) * W,
+      ay: (+el.dataset.yf) * H,
+      w: el.offsetWidth, h: el.offsetHeight,
+      prio: +el.dataset.prio || 1,
+      align: el.dataset.align || 'center',
+    };
+    // Un label rendu inopérant par le CSS (display:none) mesure 0×0 : on l'écarte plutôt que de
+    // lui réserver une place fantôme et de lui tracer un connecteur sans label au bout.
+  }).filter(function (it) {
+    if (it.w > 0 && it.h > 0) return true;
+    it.el.style.visibility = '';
+    return false;
+  });
+  if (!items.length) { if (stems) stems.innerHTML = ''; return; }
+  // Les labels principaux (départ/arrivée) sont placés d'abord : ce sont eux qui gardent leur
+  // position naturelle, un label secondaire cède la place.
+  const order = items.slice().sort(function (a, b) { return a.prio - b.prio || a.ax - b.ax; });
+
+  const placed = [];
+  function hits(r) {
+    return placed.some(function (p) {
+      return !(r.x + r.w + TERRAIN_LABEL_PAD < p.x || p.x + p.w + TERRAIN_LABEL_PAD < r.x ||
+               r.y + r.h + TERRAIN_LABEL_PAD < p.y || p.y + p.h + TERRAIN_LABEL_PAD < r.y);
+    });
+  }
+  order.forEach(function (it) {
+    // X : le départ s'aligne à gauche de son point, l'arrivée à droite, le reste est centré —
+    // c'est ce qui pousse naturellement DÉPART vers le bord gauche et ARRIVÉE vers le bord droit.
+    let x = it.align === 'start' ? it.ax - 6 : it.align === 'end' ? it.ax - it.w + 6 : it.ax - it.w / 2;
+    x = Math.max(2, Math.min(W - it.w - 2, x));
+    // Registres candidats : au-dessus (de plus en plus haut), puis en dessous du point.
+    const candidates = [];
+    for (let tier = 0; tier < 3; tier++) candidates.push(it.ay - TERRAIN_LABEL_GAP - it.h - tier * (it.h + TERRAIN_LABEL_PAD));
+    candidates.push(it.ay + TERRAIN_LABEL_GAP);
+    candidates.push(it.ay + TERRAIN_LABEL_GAP + it.h + TERRAIN_LABEL_PAD);
+    let chosen = null;
+    for (let ci = 0; ci < candidates.length; ci++) {
+      const y = candidates[ci];
+      if (y < 2 || y + it.h > H - 2) continue;           // hors du cadre du profil
+      if (!hits({ x: x, y: y, w: it.w, h: it.h })) { chosen = y; break; }
+    }
+    if (chosen == null) {
+      // Aucun registre libre : un label secondaire disparaît (jamais deux labels fusionnés dans
+      // la même surface), un label principal est forcé au registre le plus haut tenable.
+      if (it.prio >= 2) { it.el.classList.add('is-hidden'); it.el.style.visibility = ''; it.hidden = true; return; }
+      chosen = Math.max(2, Math.min(H - it.h - 2, it.ay - TERRAIN_LABEL_GAP - it.h));
+    }
+    it.el.style.left = x.toFixed(1) + 'px';
+    it.el.style.top = chosen.toFixed(1) + 'px';
+    it.el.style.visibility = '';
+    it.x = x; it.y = chosen;
+    placed.push({ x: x, y: chosen, w: it.w, h: it.h });
+  });
+
+  // Connecteurs : du bord du label jusqu'au point réel sur la courbe (+ pastille sur le point).
+  if (stems) {
+    stems.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    stems.setAttribute('width', W); stems.setAttribute('height', H);
+    stems.innerHTML = items.filter(function (it) { return !it.hidden; }).map(function (it) {
+      const cx = Math.max(it.x + 10, Math.min(it.x + it.w - 10, it.ax));
+      const cy = it.y > it.ay ? it.y : it.y + it.h;      // bord du label le plus proche du point
+      return '<line x1="' + cx.toFixed(1) + '" y1="' + cy.toFixed(1) + '" x2="' + it.ax.toFixed(1) + '" y2="' + it.ay.toFixed(1) + '" stroke="#5BFF8D" stroke-opacity=".5" stroke-width="1"/>' +
+        '<circle cx="' + it.ax.toFixed(1) + '" cy="' + it.ay.toFixed(1) + '" r="2.8" fill="#D6FFE0"/>';
+    }).join('');
+  }
+}
+
+/* Interaction : survol / toucher / clavier lisent le point réel le plus proche sur la courbe et
+   affichent distance + altitude (+ allure/FC/cadence uniquement si ces champs existent vraiment
+   dans la série — un GPX d'objectif n'en a pas). Le tooltip est épinglé en bas du profil : il ne
+   peut donc jamais recouvrir les labels, qui vivent au-dessus de la courbe. */
+function _terrainNearestIndex(geom, xf) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < geom.length; i++) {
+    const d = Math.abs(geom[i].xf - xf);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+function _terrainInitInteraction(wrap) {
+  const reg = _terrainRegistry.get(wrap.dataset.terrain);
+  if (!reg) return;
+  const cursor = wrap.querySelector('.terrain-cursor');
+  const dot = wrap.querySelector('.tc-dot');
+  const tip = wrap.querySelector('.terrain-tip');
+  const live = wrap.querySelector('.terrain-live');
+  if (!cursor || !tip) return;
+  let idx = null;
+
+  function textFor(p) {
+    const parts = ['km ' + fmtNum(p.distKm, '', p.distKm >= 10 ? 1 : 2), Math.round(p.alt) + ' m'];
+    if (p.paceSecKm != null) parts.push(fmtPace(p.paceSecKm));
+    if (p.hr != null) parts.push(p.hr + ' bpm');
+    if (p.cadenceSpm != null) parts.push(p.cadenceSpm + ' ppm');
+    return parts;
+  }
+  function show(i) {
+    if (i == null || !reg.geom[i]) return;
+    idx = i;
+    const W = wrap.clientWidth, H = wrap.clientHeight;
+    const g = reg.geom[i], p = reg.v.points[i];
+    const x = g.xf * W, y = g.yf * H;
+    cursor.hidden = false;
+    cursor.style.left = x.toFixed(1) + 'px';
+    if (dot) dot.style.top = y.toFixed(1) + 'px';       // la pastille suit la VRAIE courbe
+    const parts = textFor(p);
+    tip.hidden = false;
+    tip.innerHTML = '<strong>' + escapeHtml(parts[0]) + '</strong>' +
+      parts.slice(1).map(function (s) { return '<span>' + escapeHtml(s) + '</span>'; }).join('');
+    // Maintenu dans les limites du profil (jamais un tooltip qui sort du viewport).
+    const tw = tip.offsetWidth;
+    tip.style.left = Math.max(4, Math.min(W - tw - 4, x - tw / 2)).toFixed(1) + 'px';
+    if (live) live.textContent = parts.join(', ');
+  }
+  function hide() {
+    idx = null; cursor.hidden = true; tip.hidden = true;
+    if (live) live.textContent = '';
+  }
+  function fromClientX(clientX) {
+    const r = wrap.getBoundingClientRect();
+    if (!r.width) return;
+    show(_terrainNearestIndex(reg.geom, (clientX - r.left) / r.width));
+  }
+  wrap.addEventListener('pointermove', function (e) { fromClientX(e.clientX); });
+  wrap.addEventListener('pointerdown', function (e) { fromClientX(e.clientX); });   // tap simple au toucher
+  wrap.addEventListener('pointerleave', hide);
+  wrap.addEventListener('blur', hide);
+  wrap.addEventListener('keydown', function (e) {
+    const n = reg.geom.length, step = Math.max(1, Math.round(n / 40));
+    let next = null;
+    if (e.key === 'ArrowRight') next = Math.min(n - 1, (idx == null ? -1 : idx) + step);
+    else if (e.key === 'ArrowLeft') next = Math.max(0, (idx == null ? n : idx) - step);
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = n - 1;
+    else if (e.key === 'Escape') { hide(); return; }
+    else return;
+    e.preventDefault();
+    show(next);
+  });
+}
+
+/* Initialise tous les profils présents dans le DOM (placement des labels + interaction) et
+   replace les labels au redimensionnement — leur taille dépend du texte ET de la largeur d'écran,
+   un placement calculé une seule fois se retrouverait faux après rotation/redimensionnement.
+   Idempotent : un profil déjà initialisé n'est pas re-câblé (utile quand une page re-rend une
+   partie de son contenu). */
+function initTerrainProfiles(root) {
+  const wraps = (root || document).querySelectorAll('.terrain-profile[data-terrain]');
+  wraps.forEach(function (wrap) {
+    if (!wrap.dataset.terrainReady) {
+      wrap.dataset.terrainReady = '1';
+      _terrainInitInteraction(wrap);
+    }
+    _terrainLayoutLabels(wrap);
+    // La largeur/hauteur peut encore bouger (chargement de la photo de fond, polices) : on
+    // repasse une fois la mise en page stabilisée, comme pour les fonds full-bleed.
+    requestAnimationFrame(function () { _terrainLayoutLabels(wrap); });
+    setTimeout(function () { _terrainLayoutLabels(wrap); }, 250);
+  });
+  if (!initTerrainProfiles._resizeBound) {
+    initTerrainProfiles._resizeBound = true;
+    let ticking = false;
+    window.addEventListener('resize', function () {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(function () {
+        document.querySelectorAll('.terrain-profile[data-terrain]').forEach(_terrainLayoutLabels);
+        ticking = false;
+      });
+    }, { passive: true });
+  }
 }
 
 /* --------------------------- ELEV TERRAIN BACKDROP (Home WOW Pass) ---------------------------
@@ -2974,6 +3287,10 @@ function parseGpxText(xmlText) {
     if (d > 0) gain += d; else loss += -d;
   }
   const alts = withDist.map(p => p.alt);
+  const lats = withDist.map(p => p.lat), lons = withDist.map(p => p.lon);
+  // `bounds` : emprise géographique du tracé (utile pour cadrer une carte plus tard). Conservée
+  // ici parce qu'elle se déduit du fichier sans calcul supplémentaire — elle n'est pas affichée
+  // aujourd'hui, aucune carte d'objectif n'existe encore.
   return {
     points: points.map(p => ({ distKm: +p.distKm.toFixed(3), alt: Math.round(p.alt), lat: p.lat, lon: p.lon })),
     distanceKm: +totalKm.toFixed(2),
@@ -2981,41 +3298,59 @@ function parseGpxText(xmlText) {
     deniveleNeg: Math.round(loss),
     altMin: Math.round(Math.min(...alts)),
     altMax: Math.round(Math.max(...alts)),
+    pointCount: points.length,
+    sourcePointCount: raw.length,
+    bounds: {
+      minLat: Math.min(...lats), maxLat: Math.max(...lats),
+      minLon: Math.min(...lons), maxLon: Math.max(...lons),
+    },
   };
 }
 
 /* --------------------------- FULL-BLEED (Home Terrain Experience) ---------------------------
    `<main>` reste centré avec une largeur max (`max-width:1360px;margin:0 auto`) sur toutes les
    pages — comportement volontairement inchangé partout ailleurs. Sur l'Accueil, les 3 grandes
-   scènes (Pulse/Landscape/Summit) doivent au contraire déborder jusqu'aux bords réels (sidebar à
-   gauche, bord du viewport à droite), quelle que soit la largeur d'écran — y compris sur un écran
-   très large où <main> se retrouve entouré de marges. Un calcul CSS pur (`calc(50vw - 50%)`) se
-   trompe ici car <main> n'est pas centré dans TOUT le viewport (la sidebar occupe déjà 220px à
-   gauche) : on mesure donc réellement `.app-main` (qui, lui, occupe exactement l'espace entre la
-   sidebar et le bord droit) et on positionne chaque fond en pixels. Recalculé au resize
-   (rAF-throttlé, pas de layout thrashing continu). */
-function initFullBleedBackdrops(selector) {
+   scènes signatures (Performance Pulse / Training Landscape / Target Summit) doivent au contraire
+   occuper TOUTE la zone disponible après la sidebar : non seulement leur photo de fond, mais aussi
+   leur composition interne (métriques, profil altimétrique, labels) — c'était le principal reproche
+   de la passe précédente, où seule l'image débordait et le contenu restait dans un container centré.
+
+   Un calcul CSS pur (`calc(50vw - 50%)`) se trompe ici car `<main>` n'est pas centré dans TOUT le
+   viewport (la sidebar occupe déjà 220px à gauche). On mesure donc réellement `.app-main` (qui
+   occupe exactement l'espace entre la sidebar et le bord droit du viewport) ainsi que la boîte de
+   contenu de `<main>`, et on expose l'écart sous forme de deux variables CSS posées sur `<main>` :
+     --bleed-l / --bleed-r
+   Le CSS s'en sert ensuite en marges négatives (voir `.rail-stop`, assets/style.css), ce qui rend
+   l'effet robuste au re-rendu : les variables vivent sur `<main>`, qui n'est jamais reconstruit,
+   au lieu d'être des styles inline posés sur des éléments régénérés à chaque `renderAll()`
+   (bug réel de la version précédente : le fond de Target Summit se retrouvait à width:0 après
+   re-rendu, parce que les styles inline calculés en JS avaient été effacés avec l'innerHTML).
+
+   Valeur de repli CSS = le padding horizontal de `<main>` : correcte tant que la largeur max de
+   `<main>` n'est pas atteinte (la grande majorité des écrans). Le JS ne fait que l'affiner au-delà. */
+function initHomeBleed() {
   const appMain = document.querySelector('.app-main');
-  if (!appMain) return;
+  const mainEl = document.querySelector('main');
+  if (!appMain || !mainEl) return;
   let ticking = false;
   function apply() {
-    const mainRect = appMain.getBoundingClientRect();
-    if (!mainRect.width) return; // mise en page pas encore stable — un des appels différés ci-dessous réessaiera
-    document.querySelectorAll(selector).forEach(bg => {
-      const scene = bg.parentElement; // scène position:relative la plus proche (conteneur direct du fond)
-      const sceneRect = scene.getBoundingClientRect();
-      bg.style.left = (mainRect.left - sceneRect.left) + 'px';
-      bg.style.width = mainRect.width + 'px';
-    });
+    const outer = appMain.getBoundingClientRect();
+    const inner = mainEl.getBoundingClientRect();
+    if (!outer.width || !inner.width) return; // mise en page pas encore stable, un rappel réessaiera
+    const cs = getComputedStyle(mainEl);
+    const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+    const contentL = inner.left + padL, contentR = inner.right - padR;
+    mainEl.style.setProperty('--bleed-l', Math.max(0, contentL - outer.left).toFixed(2) + 'px');
+    mainEl.style.setProperty('--bleed-r', Math.max(0, outer.right - contentR).toFixed(2) + 'px');
     ticking = false;
   }
-  // Premier calcul potentiellement trop tôt (avant le premier paint / chargement des images qui
-  // peuvent changer la hauteur des scènes) : on le répète volontairement via rAF + un court délai,
-  // en plus du calcul immédiat — coût négligeable (quelques lectures de layout), robustesse réelle.
+  // Premier calcul potentiellement trop tôt (avant le premier paint / chargement des images) : on
+  // le répète volontairement via rAF + un court délai, en plus du calcul immédiat — coût
+  // négligeable (quelques lectures de layout), robustesse réelle.
   apply();
   requestAnimationFrame(apply);
   setTimeout(apply, 200);
-  window.addEventListener('resize', () => {
+  window.addEventListener('resize', function () {
     if (!ticking) { requestAnimationFrame(apply); ticking = true; }
   }, { passive: true });
 }
