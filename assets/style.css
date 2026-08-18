@@ -115,6 +115,14 @@ header.app-topbar{position:sticky;top:0;z-index:15;padding:22px 28px;border-bott
 header.app-topbar.scrolled{padding-top:14px;padding-bottom:14px;border-bottom-color:var(--border);background:rgba(11,15,14,.72);backdrop-filter:blur(10px) saturate(140%);-webkit-backdrop-filter:blur(10px) saturate(140%);}
 html[data-theme="light"] header.app-topbar.scrolled{background:rgba(229,231,235,.78);}
 header.app-topbar h1{margin:0;font-family:var(--font-display);font-size:1.6rem;font-weight:700;color:var(--text);letter-spacing:-.01em;}
+/* Topbar allégée (Accueil) : la salutation ne doit pas être le premier message visuellement
+   dominant de la page ni créer une grande zone vide avant le paysage — c'est "73 % prêt pour
+   Mafate Trail Tour" qui doit dominer. Elle devient donc une simple ligne de contexte au-dessus
+   de la scène (~46px au lieu de ~99px mesurés), sans disparaître pour autant. Les autres pages
+   gardent la topbar normale. */
+header.app-topbar--slim{padding-top:12px;padding-bottom:10px;align-items:center;}
+header.app-topbar--slim h1{font-family:var(--font-sans);font-size:.92rem;font-weight:600;color:var(--muted);letter-spacing:0;}
+header.app-topbar--slim.scrolled{padding-top:10px;padding-bottom:8px;}
 header.app-topbar .app-topbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px;}
 #themeToggle{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:50%;font-size:.95rem;cursor:pointer;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),transform var(--dur-micro) var(--ease-standard);}
 #themeToggle:hover{background:var(--bg);color:var(--text);}
@@ -642,123 +650,187 @@ html[data-theme="light"] .kpi-card::after{display:none;}
    des boîtes. Voir CLAUDE.md, section 14, "Signature & WOW Pass V2". */
 .scene{position:relative;box-sizing:border-box;padding:0;}
 
-/* ELEV Terrain Profile : silhouette basée sur une vraie série distance/altitude (elevTerrainLineSvg,
-   assets/app.js). Renvoie une chaîne vide si aucune donnée n'est disponible — jamais de relief
-   inventé pour remplir un espace. Couche absolue confinée à une BANDE BASSE maîtrisée (pas toute
-   la hauteur du hero — le tracé ne doit jamais couper les métriques au-dessus) ; le composant gère
-   lui-même ses couleurs/dégradés par instance (attributs SVG), cette feuille ne fixe donc plus de
-   `fill`/`stroke` génériques ici (un ancien override cassait le dégradé propre au composant). */
-.terrain-line-svg{position:absolute;left:0;right:0;bottom:0;width:100%;height:200px;pointer-events:none;}
+/* --------------------------------------------------------------------------------------------
+   FULL CANVAS (correction finale de l'Accueil) — la composition, pas seulement l'image.
+   Reproche de la passe précédente : seule la photo de fond débordait, tout le contenu (métriques,
+   profil, labels) restait enfermé dans le container centré de `<main>` (max-width:1360px +
+   padding:28px), ce qui donnait « un dashboard centré posé sur une grande photographie ».
+
+   Correction : chaque arrêt du rail (donc chaque scène signature) annule le centrage de `<main>`
+   par des marges négatives calculées, puis se redonne SEULEMENT des marges intérieures de sécurité
+   (`--scene-pad`). Résultat : la composition entière occupe l'espace réel entre la sidebar et le
+   bord droit du viewport, tout en gardant du texte qui ne touche jamais les bords.
+   `--bleed-l`/`--bleed-r` sont affinées en JS par `initHomeBleed()` (app.js) ; les valeurs de repli
+   ci-dessous (= padding de `<main>`) sont déjà exactes tant que la largeur max n'est pas atteinte.
+   Les cartes secondaires (Charge, Intensité, Dernière activité) restent, elles, dans la grille
+   centrée de `<main>` — seules les 3 scènes signatures sont pleine largeur. */
+main{--bleed-l:28px;--bleed-r:28px;--scene-pad:clamp(32px,4vw,72px);}
+.home-rail{position:relative;}
+.rail-stop{position:relative;padding:26px var(--scene-pad);
+  margin-left:calc(-1 * var(--bleed-l));margin-right:calc(-1 * var(--bleed-r));}
+.rail-stop:first-child{padding-top:4px;}
+.rail-stop:last-child{padding-bottom:4px;}
+
+/* ELEV Terrain Profile — composant partagé (elevTerrainProfile, assets/app.js). Occupe TOUTE la
+   largeur utile de sa scène (donc ~90 % de la largeur totale du hero, le reste étant les marges de
+   sécurité) : jamais de max-width ni de largeur fixe calculée pour un écran donné. Le SVG est
+   étiré horizontalement (`preserveAspectRatio="none"`), c'est pourquoi les labels et le curseur
+   sont des éléments HTML positionnés par-dessus et non des éléments SVG (sinon leur texte serait
+   déformé de plusieurs pourcents). Élément du flux normal, dans le tiers bas de la scène : il ne
+   peut donc plus recouvrir les métriques placées au-dessus (bug réel de la version précédente,
+   où le tracé était `position:absolute` sur toute la hauteur du hero). */
+.terrain-profile{position:relative;width:100%;max-width:none;box-sizing:border-box;
+  touch-action:pan-y;  /* le geste vertical reste un scroll : seul le balayage horizontal lit le profil */
+  outline:none;}
+.terrain-profile:focus-visible{outline:2px solid var(--accent-light);outline-offset:4px;border-radius:var(--radius-md);}
+.terrain-profile--hero{height:clamp(190px,19vw,250px);}
+.terrain-profile--summit{height:clamp(170px,16vw,220px);}
+/* Fond atmosphérique du profil (elev-profile-terrain-a/b.webp) : choisi par `pickTerrainBackdrop()`
+   selon la FORME du relief réel (ultra/panoramique → A, ascension dominante → B). C'est de
+   l'ambiance, jamais de la donnée : l'image n'est ni alignée ni mise à l'échelle sur le tracé, et
+   reste très sombre pour que la seule chose lisible soit la ligne SVG. */
+.terrain-profile-bg{position:absolute;inset:0;overflow:hidden;pointer-events:none;}
+.terrain-profile-bg img{width:100%;height:100%;object-fit:cover;object-position:center 60%;opacity:.22;filter:saturate(.5) brightness(.45) contrast(1.05);}
+.terrain-profile-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,var(--bg) 0%,rgba(11,15,14,.4) 45%,rgba(11,15,14,.72) 100%);}
+.terrain-profile--summit .terrain-profile-bg img{opacity:.3;}
+html[data-theme="light"] .terrain-profile-bg img{opacity:.14;}
+html[data-theme="light"] .terrain-profile-bg-mask{background:linear-gradient(180deg,var(--bg) 0%,rgba(229,231,235,.5) 45%,rgba(229,231,235,.2) 100%);}
+
+/* Le tracé remplit son conteneur (override de l'ancien pinning bas-de-hero à hauteur fixe). */
+.terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
 .terrain-line-svg .terrain-fill{opacity:0;animation:elev-terrain-fill-in 700ms var(--ease-standard) 550ms both;}
 .terrain-line-svg .terrain-stroke{stroke-dasharray:2400;stroke-dashoffset:2400;animation:elev-terrain-draw 1200ms var(--ease-emphasized) both;}
 /* Le relief se DESSINE (tracé progressif du contour, comme un profil qu'on relève) plutôt que de
-   simplement s'estomper — la donnée s'organise sous les yeux, ce n'est pas un fade-in générique.
-   Jamais de mouvement sous prefers-reduced-motion : le tracé est immédiatement complet. */
+   simplement s'estomper. Jamais de mouvement sous prefers-reduced-motion. */
 @keyframes elev-terrain-draw{from{stroke-dashoffset:2400;}to{stroke-dashoffset:0;}}
 @keyframes elev-terrain-fill-in{from{opacity:0;}to{opacity:1;}}
 @media (prefers-reduced-motion:reduce){
   .terrain-line-svg .terrain-stroke{animation:none;stroke-dashoffset:0;}
   .terrain-line-svg .terrain-fill{animation:none;opacity:1;}
 }
-@media (min-width:768px){ .terrain-line-svg{height:230px;} }
-@media (min-width:1024px){ .terrain-line-svg{height:250px;} }
 
-/* Home Rail (Final WOW Pass) : le fil vertical rectiligne + pastilles de la V2 ressemblait trop à
-   une timeline SaaS générique (retour explicite) — retiré. La continuité entre les 3 grands
-   moments de l'Accueil vient maintenant du terrain (photo + Terrain Line) et des transitions de
-   fond, pas d'une ligne de navigation superposée. .home-rail/.rail-stop restent comme wrappers
-   structurels (espacement, ancrage du backdrop, cible de la révélation au scroll) mais ne portent
-   plus aucun décor visuel propre. */
-.home-rail{position:relative;}
-.rail-stop{position:relative;padding:26px 0;}
-.rail-stop:first-child{padding-top:4px;}
-.rail-stop:last-child{padding-bottom:4px;}
+/* Connecteurs label → point réel (tracés en pixels par _terrainLayoutLabels, app.js). */
+.terrain-stems{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
 
-/* ELEV Signal : réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
-   actuel, détection) — jamais un simple titre de section. Base commune à l'eyebrow existant
-   d'.insight-card, réutilisée par les nouvelles scènes pour rester cohérente visuellement. */
+/* Labels : du VRAI texte dans le DOM (accessible, traduisible, à jour), habillé comme les assets
+   elev-label-*.svg fournis dont les icônes sont reprises. Positionnés par mesure réelle +
+   résolution de collisions ; un label secondaire sans place libre est masqué (.is-hidden), jamais
+   fusionné avec un autre. */
+.terrain-labels{position:absolute;inset:0;pointer-events:none;}
+.terrain-label{position:absolute;top:0;left:0;display:inline-flex;align-items:center;gap:9px;
+  max-width:210px;padding:6px 12px 6px 10px;border-radius:var(--radius-pill);
+  background:rgba(11,15,14,.88);border:1px solid rgba(91,255,141,.3);
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+.terrain-label.is-hidden{display:none;}
+.terrain-label .tl-icon{flex:0 0 auto;display:block;}
+.terrain-label .tl-icon svg{width:15px;height:15px;display:block;}
+.terrain-label .tl-body{display:flex;flex-direction:column;gap:1px;min-width:0;line-height:1.15;}
+.terrain-label .tl-body strong{font-family:var(--font-sans);font-size:.6rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#E7F8EC;white-space:nowrap;}
+.terrain-label .tl-vals{font-size:.7rem;color:#B9E6C7;font-variant-numeric:tabular-nums;white-space:nowrap;}
+html[data-theme="light"] .terrain-label{background:rgba(11,15,14,.82);}
+
+/* Curseur d'exploration : la pastille suit la VRAIE courbe (y issu de la géométrie du tracé). */
+.terrain-cursor{position:absolute;top:0;bottom:0;left:0;width:0;pointer-events:none;}
+.terrain-cursor .tc-line{position:absolute;top:8%;bottom:0;left:0;width:1px;background:linear-gradient(180deg,rgba(91,255,141,0),rgba(91,255,141,.5));}
+.terrain-cursor .tc-dot{position:absolute;left:0;top:0;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;background:#DCFFE5;box-shadow:0 0 0 3px rgba(91,255,141,.28),0 0 12px 2px rgba(91,255,141,.45);}
+/* Tooltip épinglé EN BAS du profil : il ne peut donc jamais masquer les labels (qui vivent
+   au-dessus de la courbe), et reste toujours dans les limites du composant (clamp en JS). */
+.terrain-tip{position:absolute;bottom:6px;left:0;display:inline-flex;align-items:baseline;gap:10px;
+  padding:6px 13px;border-radius:var(--radius-pill);background:rgba(11,15,14,.94);
+  border:1px solid var(--border-strong);font-size:.72rem;color:var(--muted);
+  font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;}
+.terrain-tip strong{font-family:var(--font-display);font-size:.82rem;color:var(--text);}
+/* Aide d'exploration : discrète, masquée dès qu'on n'a pas de pointeur précis. */
+.terrain-hint{margin:6px 0 0;font-size:.68rem;color:var(--muted);}
+@media (hover:none){ .terrain-hint{display:none;} }
+
+/* État vide honnête : aucun profil n'est dessiné si la série d'altitude n'est pas exploitable
+   (voir validateTerrainSeries) — on le dit, on ne remplit pas l'espace avec un faux relief. */
+.terrain-empty{margin:8px 0 0;padding:14px 16px;border-radius:var(--radius-md);
+  background:rgba(11,15,14,.42);border:1px dashed var(--border);font-size:.82rem;color:var(--muted);max-width:520px;}
+html[data-theme="light"] .terrain-empty{background:rgba(255,255,255,.4);}
+
+/* ELEV Signal — réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
+   actuel, détection) — jamais un simple titre de section. */
 .elev-signal{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-light);}
 .elev-signal img{width:13px;height:13px;filter:invert(78%) sepia(20%) saturate(500%) hue-rotate(50deg);}
 
-/* ELEV Terrain Backdrop (Home Final WOW Pass) : environnement du premier viewport.
-   Layer A = vraie photo (.tb-photo, object-fit:cover, décorative — alt="", l'information reste
-   uniquement dans le texte/SVG de données à côté). Layer B = .tb-photo-mask, dégradés de fusion
-   (vignette latérale + fondu total vers var(--bg) en bas — jamais de ligne nette). Layer C =
-   topographie très subtile par-dessus (elevMountainBackdropSvg, contourOnly). Déborde
-   volontairement du padding de <main> ("débordement contrôlé", jamais le texte) pour occuper tout
-   le canvas visible entre la sidebar et le bord droit. Opacité/position pilotées en JS au scroll
-   par initHeroTerrainTransition (rAF, jamais de scroll détourné) ; reste statique et pleinement
-   visible sous prefers-reduced-motion. */
+/* ELEV Terrain Backdrop : environnement du premier viewport.
+   Layer A = vraie photo (.tb-photo, décorative — alt=""). Layer B = .tb-photo-mask, dégradés de
+   fusion vers var(--bg). Layer C = topographie très subtile (elevMountainBackdropSvg, contourOnly).
+   `left:0;right:0` suffit désormais : le bloc positionné parent (.rail-stop--hero) est lui-même
+   full-bleed, et une boîte absolue se cale sur la boîte de PADDING de son ancêtre — le fond couvre
+   donc exactement tout le canvas, marges de sécurité comprises, sans aucun calcul JS (la version
+   précédente posait des styles inline en pixels, effacés au moindre re-rendu). */
 .rail-stop--hero{overflow:visible;}
-/* left/width fixés en pixels par initFullBleedBackdrops (app.js) — le -28px ici n'est qu'un repli
-   avant l'exécution du script (évite un flash étroit le temps du premier calcul). */
-.terrain-backdrop{position:absolute;top:-20px;left:-28px;right:-28px;height:clamp(340px,48vw,560px);pointer-events:none;overflow:hidden;z-index:0;}
+.terrain-backdrop{position:absolute;top:-20px;left:0;right:0;height:clamp(340px,48vw,560px);pointer-events:none;overflow:hidden;z-index:0;}
 .tb-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 42%;filter:saturate(.82) brightness(.8) contrast(1.06);}
 .tb-photo-mask{position:absolute;inset:0;background:
     linear-gradient(180deg,rgba(11,15,14,.1) 0%,rgba(11,15,14,.32) 55%,var(--bg) 100%),
     linear-gradient(90deg,rgba(11,15,14,.6) 0%,rgba(11,15,14,0) 20%,rgba(11,15,14,0) 80%,rgba(11,15,14,.6) 100%),
     linear-gradient(180deg,rgba(107,142,78,.14) 0%,rgba(107,142,78,0) 42%);}
 .terrain-backdrop-svg{position:absolute;inset:0;width:100%;height:100%;display:block;}
-@media (max-width:767px){ .terrain-backdrop{left:-16px;right:-16px;top:-16px;} .tb-photo{object-position:70% 38%;} }
+@media (max-width:767px){ .terrain-backdrop{top:-16px;} .tb-photo{object-position:70% 38%;} }
 html[data-theme="light"] .tb-photo{filter:saturate(.7) brightness(.72) contrast(1.05);}
 html[data-theme="light"] .tb-photo-mask{background:
     linear-gradient(180deg,rgba(229,231,235,.05) 0%,rgba(229,231,235,.35) 55%,var(--bg) 100%),
     linear-gradient(90deg,rgba(11,15,14,.35) 0%,rgba(11,15,14,0) 20%,rgba(11,15,14,0) 80%,rgba(11,15,14,.35) 100%);}
 
-/* Performance Pulse (CURRENT STATE) — pas de cadre : la scène vit à même le fond de page (le
-   canvas), au-dessus du Terrain Backdrop (ordre naturel du DOM : le backdrop est émis avant la
-   scène, donc peint derrière — aucun z-index arbitraire nécessaire). Le terrain réel (Terrain
-   Line, altitude de la dernière sortie) occupe tout l'espace disponible derrière les métriques,
-   avec un léger halo qui le distingue clairement des reliefs décoratifs du backdrop. */
-.pulse-scene{position:relative;min-height:340px;padding:6px 0 0;}
-.pulse-content{position:relative;min-height:320px;display:flex;flex-direction:column;justify-content:space-between;padding:18px 0 4px;}
-.pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
-/* Hiérarchie extrême : UNE valeur domine (readiness si calculable, sinon volume), en très grande
-   typographie — les autres métriques restent des informations secondaires nettement plus petites. */
-.pulse-main{display:flex;flex-direction:column;gap:22px;}
-.pulse-hero-metric--dominant .v{font-family:var(--font-display);font-size:4.2rem;font-weight:800;letter-spacing:-.025em;line-height:.95;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+/* Performance Pulse (CURRENT STATE) — composition distribuée dans tout le canvas, plus une colonne
+   centrale : tiers gauche = readiness + objectif (la valeur dominante), centre/droite = métriques
+   secondaires réparties, tiers bas = profil altimétrique presque pleine largeur avec ses labels.
+   Aucune métrique n'est posée sur la ligne du profil. */
+.pulse-scene{position:relative;padding:6px 0 0;display:flex;flex-direction:column;gap:10px;}
+.pulse-content{position:relative;padding:14px 0 0;}
+.pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.pulse-greeting{font-size:.78rem;color:var(--muted);}
+/* Hiérarchie extrême : UNE valeur domine (readiness si calculable, sinon volume). */
+.pulse-main{display:flex;flex-direction:column;gap:24px;}
+.pulse-lead{min-width:0;}
+.pulse-hero-metric--dominant .v{display:block;font-family:var(--font-display);font-size:clamp(3.4rem,9vw,4.4rem);font-weight:800;letter-spacing:-.025em;line-height:.92;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
 .pulse-hero-metric--dominant .v small{font-size:.4em;font-weight:700;-webkit-text-fill-color:var(--accent-light);}
-.pulse-hero-metric--dominant .l{display:block;margin-top:6px;font-size:.92rem;color:var(--muted);}
+.pulse-hero-metric--dominant .l{display:block;margin-top:8px;font-size:.92rem;color:var(--muted);max-width:22ch;}
+.pulse-hero-metric--dominant .l strong{display:block;font-family:var(--font-display);font-size:1.16rem;font-weight:700;color:var(--text);letter-spacing:-.01em;}
 .pulse-hero-metric--dominant .l .arrow{font-size:.75rem;}
 .pulse-hero-metric--dominant .l.status-ok{color:var(--success);}
-.pulse-floating-metrics{display:flex;flex-wrap:wrap;gap:20px 32px;margin-bottom:12px;}
+/* Métriques secondaires réparties sur le centre et la droite du canvas (jamais empilées contre la
+   valeur dominante) — d'où le space-between plutôt qu'un simple gap. */
+.pulse-floating-metrics{display:flex;flex-wrap:wrap;align-items:flex-end;gap:22px 30px;}
 .floating-metric{display:flex;flex-direction:column;gap:3px;}
-.floating-metric .v{font-family:var(--font-display);font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.floating-metric .v{font-family:var(--font-display);font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
 .floating-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
-.pulse-trend-line{display:inline-flex;align-items:center;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--border);font-size:.84rem;color:var(--muted);}
-.pulse-trend-line .kpi-status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted-2);flex-shrink:0;}
-.pulse-trend-line .kpi-status-dot.status-ok{background:var(--success);box-shadow:0 0 6px 1px var(--success-soft);}
-.pulse-trend-line .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
-@media (min-width:640px){ .pulse-main{flex-direction:row;align-items:flex-end;gap:26px 48px;} }
-@media (min-width:768px){ .pulse-scene{min-height:440px;} .pulse-content{min-height:420px;} .pulse-hero-metric--dominant .v{font-size:5.6rem;} }
-@media (min-width:1024px){ .pulse-scene{min-height:480px;} .pulse-content{min-height:460px;padding:34px 12px 4px;} .pulse-hero-metric--dominant .v{font-size:6.4rem;} .terrain-backdrop{height:clamp(500px,44vw,620px);} }
+/* Bande basse : le profil vit dans le tiers inférieur, en élément du flux. */
+.pulse-terrain{position:relative;margin-top:4px;}
+@media (min-width:900px){
+  .pulse-main{display:grid;grid-template-columns:minmax(0,34%) minmax(0,1fr);align-items:flex-end;gap:32px 40px;}
+  .pulse-floating-metrics{justify-content:space-between;flex-wrap:nowrap;gap:24px;padding-bottom:6px;}
+  .floating-metric .v{font-size:1.5rem;}
+}
+@media (min-width:1024px){
+  .pulse-content{padding-top:22px;}
+  .pulse-hero-metric--dominant .v{font-size:clamp(4.6rem,6vw,6.4rem);}
+  .floating-metric .v{font-size:1.7rem;}
+  .terrain-backdrop{height:clamp(500px,44vw,620px);}
+}
 
-/* Training Landscape + ELEV Insight — plus de card autour : le graphique EST la scène, pas un
-   élément posé dans une boîte. Sur ce même arrêt du rail, "Dernière activité" + "Prochaine séance"
-   restent volontairement des éléments plus compacts à droite (contenu secondaire, cf. règle "les
-   cards restent pertinentes pour les données secondaires"), mais sans reprendre le même cadre
-   surface/bordure que l'ancienne V1 — seule "Dernière activité" garde une vraie card (cf. plus bas). */
+/* Training Landscape + ELEV Insight — le graphique EST la scène. Le fond atmosphérique est
+   désormais un élément statique de `.rail-stop--split` (et non plus un enfant régénéré de la
+   scène), donc il survit à chaque re-rendu et couvre bien toute la largeur du canvas.
+   Répartition desktop ~71 % graphique+insight / ~29 % prochaine séance + dernière activité. */
 .rail-stop--split{display:grid;grid-template-columns:1fr;gap:20px;align-items:start;}
-@media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.4fr 1fr;gap:32px;} }
-.landscape-side{display:flex;flex-direction:column;gap:16px;}
-/* Full-bleed réel (Home Terrain Experience) : plus de max-width/rayon/cadre — la scène s'étend
-   jusqu'aux bords véritables (sidebar ↔ bord du viewport), voir initFullBleedBackdrops (app.js).
-   `.landscape-bg-wrap` est positionné/dimensionné en pixels par JS ; le contenu texte reste dans
-   `.landscape-content`, à largeur de lecture normale. */
-.landscape-scene{position:relative;padding:0;}
-.landscape-bg-wrap{position:absolute;top:0;bottom:0;pointer-events:none;overflow:hidden;}
-/* Fond atmosphérique (elev-secondary-dark.webp) — utilisé une seule fois sur toute la page ici,
-   très assombri, jamais un doublon du terrain réel du hero (voir CLAUDE.md). */
+@media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.45fr 1fr;gap:36px;} }
+.landscape-side{display:flex;flex-direction:column;gap:16px;min-width:0;}
+.landscape-scene{position:relative;padding:0;min-width:0;}
+.landscape-bg-wrap{position:absolute;top:0;bottom:0;left:0;right:0;pointer-events:none;overflow:hidden;}
+/* Fond atmosphérique (elev-secondary-dark.webp) — très assombri, jamais un doublon du terrain réel. */
 .landscape-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 30%;opacity:.4;filter:saturate(.7) brightness(.55);}
 .landscape-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.55) 0%,var(--bg) 92%),linear-gradient(90deg,rgba(11,15,14,.5) 0%,rgba(11,15,14,0) 25%);}
-.landscape-content{position:relative;padding:22px 24px;}
-@media (min-width:768px){ .landscape-content{padding:26px 30px;} }
+.landscape-content{position:relative;padding:16px 0 4px;}
 .landscape-scene h2{position:relative;margin:0 0 4px;padding-left:11px;font-family:var(--font-display);font-size:1.05rem;font-weight:700;letter-spacing:-.005em;}
 .landscape-scene h2::before{content:'';position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:2px;background:linear-gradient(180deg,var(--accent-light),var(--accent));}
-/* L'insight n'est plus posé dans une pastille pleine largeur : un connecteur vertical descend du
-   bord du graphique (où vit la donnée la plus récente) vers le texte, comme une annotation plutôt
-   qu'une seconde card. */
-.landscape-callout{position:relative;margin-top:4px;padding-left:20px;max-width:520px;}
+/* L'insight naît du graphique (connecteur vertical) plutôt que de vivre dans une seconde card.
+   Largeur de lecture conservée volontairement : c'est du texte, pas une surface visuelle. */
+.landscape-callout{position:relative;margin-top:6px;padding-left:20px;max-width:640px;}
 .landscape-callout::before{content:'';position:absolute;top:-14px;left:0;width:2px;height:14px;background:var(--accent-light);}
 .landscape-callout::after{content:'';position:absolute;top:-15px;left:-3px;width:8px;height:8px;border-radius:50%;background:var(--accent-light);box-shadow:0 0 0 4px var(--accent-soft);}
 .landscape-callout.status-rising_fast::before{background:var(--warn);}
@@ -768,9 +840,21 @@ html[data-theme="light"] .tb-photo-mask{background:
 .landscape-callout .body strong{display:block;font-family:var(--font-display);font-size:.94rem;color:var(--text);}
 .landscape-callout .body p{margin:3px 0 0;font-size:.86rem;color:var(--muted);line-height:1.55;}
 .landscape-callout .body p .delta{color:var(--text);}
+/* Tendance de charge : elle décrit l'évolution dans le TEMPS, sa place est ici (à côté du
+   graphique de volume), jamais sur le profil altimétrique du hero. */
+.landscape-trend-tag{display:inline-flex;align-items:center;gap:7px;margin-top:2px;font-size:.78rem;color:var(--muted);}
+.landscape-trend-tag .kpi-status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted-2);flex-shrink:0;}
+.landscape-trend-tag .kpi-status-dot.status-ok{background:var(--success);box-shadow:0 0 6px 1px var(--success-soft);}
+.landscape-trend-tag .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
+/* Repli honnête quand l'historique ne porte que 2 semaines : on montre les 2 valeurs, leur écart
+   et la moyenne — jamais une "tendance" étirée sur une droite de 2 points. */
+.landscape-thin{display:flex;flex-wrap:wrap;gap:14px 28px;margin-top:12px;padding:14px 16px;border-radius:var(--radius-md);background:rgba(11,15,14,.4);border:1px dashed var(--border);}
+.landscape-thin .lt-item{display:flex;flex-direction:column;gap:2px;}
+.landscape-thin .lt-item .v{font-family:var(--font-display);font-size:1.2rem;font-weight:700;font-variant-numeric:tabular-nums;}
+.landscape-thin .lt-item .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 
-/* Next Checkpoint : plus de cadre — un point sur un segment de trajectoire, directement dans le
-   flux, pas une carte de plus au même niveau que "Dernière activité". */
+/* Next Checkpoint : un point sur un segment de trajectoire, directement dans le flux. */
 .checkpoint-strip{position:relative;padding:2px 0 6px;}
 .checkpoint-strip .eyebrow{margin:0 0 14px;font-family:var(--font-sans);font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
 .checkpoint-track{position:relative;height:2px;background:var(--border);border-radius:2px;margin:0 4px 16px;}
@@ -778,24 +862,77 @@ html[data-theme="light"] .tb-photo-mask{background:
 .checkpoint-body strong{display:block;font-family:var(--font-display);font-size:1rem;font-weight:700;}
 .checkpoint-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
 
-/* Target Summit (objectif principal) : aucun cadre — destination finale de la narration, la
-   course/le countdown/le readiness vivent directement dans l'espace ouvert du dernier arrêt du
-   rail. Réutilise .objective-card en mode "ouvert" (voir override ci-dessous) : même logique/
-   données, mais plus de rectangle qui l'enferme. */
-.summit-scene{position:relative;padding:26px 26px 24px;min-height:340px;display:flex;flex-direction:column;justify-content:flex-end;}
-.summit-bg-wrap{position:absolute;top:0;bottom:0;pointer-events:none;overflow:hidden;}
+/* Target Summit — deuxième grande scène pleine largeur, pensée comme une DESTINATION : le sommet
+   photographique, le nom de la course, le compte à rebours, la readiness et (si un GPX existe) le
+   vrai profil du parcours. Le fond est un élément statique du rail : il reste visible même sans
+   GPX — seul le PROFIL dépend des données, jamais l'environnement visuel.
+   Les 5 sous-scores de préparation ne dominent plus la scène : ils vivent dans un panneau
+   dépliable placé sous elle (voir .summit-subscores). */
+.rail-stop--summit{position:relative;}
+/* `max-height:100%` : sans GPX la scène est plus courte que la hauteur idéale du sommet — le fond
+   ne doit alors pas déborder sur les cartes secondaires en dessous (mesuré : 435px de fond pour
+   384px de scène avant ce garde-fou). */
+.summit-bg-wrap{position:absolute;top:0;left:0;right:0;height:clamp(330px,34vw,470px);max-height:100%;pointer-events:none;overflow:hidden;}
 .summit-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 40%;opacity:.6;filter:saturate(.85) brightness(.65);}
 .summit-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.15) 0%,rgba(11,15,14,.5) 65%,var(--bg) 100%),linear-gradient(90deg,rgba(11,15,14,.55) 0%,rgba(11,15,14,0) 30%);}
-.summit-scene .objective-card{position:relative;max-width:640px;}
-.summit-scene .objective-card h3{font-size:clamp(1.6rem,3vw,2.2rem);}
-.summit-scene .obj-percent{font-size:3.4rem;}
-.summit-no-profile{margin:14px 0 0;padding:10px 14px;border-radius:var(--radius-md);background:rgba(11,15,14,.5);border:1px dashed var(--border);font-size:.82rem;color:var(--muted);max-width:440px;}
-/* Profil GPX réel de l'objectif : conteneur propre (pas le pinning global bas-de-hero du Pulse,
-   pensé pour une scène bien plus haute) — le composant partagé reste le même, seule l'enveloppe
-   change de taille. */
-.summit-profile{position:relative;height:190px;margin-top:14px;max-width:560px;}
-.summit-profile .terrain-line-svg{position:absolute;inset:0;width:100%;height:100%;}
-@media (min-width:768px){ .summit-scene{padding:32px 34px 28px;} }
+.summit-scene{position:relative;padding:0;display:flex;flex-direction:column;gap:14px;}
+.summit-head{display:flex;flex-direction:column;gap:10px;padding-top:16px;}
+.summit-title h3{margin:0;font-family:var(--font-display);font-size:clamp(1.7rem,3.4vw,2.5rem);font-weight:800;letter-spacing:-.02em;}
+.summit-eyebrow{display:flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.summit-eyebrow img{width:13px;height:13px;filter:invert(60%);}
+/* Même logique de distribution que le hero : identité à gauche, chiffres au centre/à droite. */
+.summit-metrics{display:flex;flex-wrap:wrap;align-items:flex-end;gap:20px 30px;}
+.summit-metric{display:flex;flex-direction:column;gap:3px;}
+.summit-metric .v{font-family:var(--font-display);font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.summit-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.summit-metric--countdown .v{color:var(--accent-light);}
+.summit-metric--readiness .v{font-size:2.2rem;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.summit-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+@media (min-width:900px){
+  .summit-head{display:grid;grid-template-columns:minmax(0,34%) minmax(0,1fr);align-items:flex-end;gap:24px 40px;padding-top:26px;}
+  .summit-metrics{justify-content:space-between;flex-wrap:nowrap;}
+  .summit-metric .v{font-size:1.6rem;}
+  .summit-metric--readiness .v{font-size:2.6rem;}
+}
+/* État honnête sans GPX : le paysage reste là, seul le tracé manque — et on dit comment l'obtenir. */
+.summit-no-profile{margin:6px 0 0;padding:14px 16px;border-radius:var(--radius-md);background:rgba(11,15,14,.5);border:1px dashed var(--border);font-size:.84rem;color:var(--muted);max-width:560px;}
+.summit-no-profile strong{display:block;color:var(--text);font-family:var(--font-display);font-size:.94rem;margin-bottom:3px;}
+.summit-profile{position:relative;}
+/* Sous-scores : zone analytique secondaire sous la scène, repliée par défaut — ce n'est plus la
+   première chose qu'on voit de son objectif. */
+.summit-subscores{margin-top:6px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-1,var(--panel));overflow:hidden;}
+.summit-subscores > summary{cursor:pointer;list-style:none;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:var(--font-display);font-size:.9rem;font-weight:700;}
+.summit-subscores > summary::-webkit-details-marker{display:none;}
+.summit-subscores > summary::after{content:'▾';color:var(--muted-2);font-size:.8rem;transition:transform var(--dur-fast) var(--ease-standard);}
+.summit-subscores[open] > summary::after{transform:rotate(180deg);}
+.summit-subscores > summary .hint{font-family:var(--font-sans);font-weight:400;font-size:.74rem;color:var(--muted);}
+.summit-subscores-body{padding:2px 16px 16px;}
+@media (prefers-reduced-motion:reduce){ .summit-subscores > summary::after{transition:none;} }
+
+/* --------- Responsive : mobile pensé pour le tactile, pas une réduction du desktop ---------
+   Marges de sécurité réduites (le canvas est déjà étroit), métrique dominante prioritaire, profil
+   qui garde une hauteur réellement lisible, labels plus compacts (le placement anti-collision
+   masque de lui-même le point culminant s'il ne rentre pas). */
+@media (max-width:767px){
+  main{--scene-pad:clamp(16px,4vw,24px);}
+  .rail-stop{padding-top:20px;padding-bottom:20px;}
+  .terrain-profile--hero{height:clamp(165px,42vw,200px);}
+  .terrain-profile--summit{height:clamp(150px,38vw,185px);}
+  .terrain-label{max-width:150px;padding:5px 10px 5px 8px;gap:7px;}
+  .terrain-label .tl-body strong{font-size:.55rem;letter-spacing:.07em;}
+  .terrain-label .tl-vals{font-size:.64rem;}
+  .terrain-tip{font-size:.68rem;padding:6px 11px;gap:8px;}
+  .pulse-floating-metrics{gap:16px 22px;}
+  .floating-metric .v{font-size:1.15rem;}
+  .summit-bg-wrap{height:clamp(280px,66vw,380px);}
+  /* Recadrage volontaire des fonds sur mobile : on garde le relief, pas le panorama complet. */
+  .summit-bg{object-position:62% 42%;}
+  .landscape-bg{object-position:62% 30%;}
+}
+/* Pas de règle qui masque le point culminant en dur sous une largeur donnée : c'est le placement
+   anti-collision réel (_terrainLayoutLabels) qui décide, en fonction de la place effectivement
+   disponible. Départ et Arrivée sont prioritaires et ne sont jamais masqués ; le point culminant
+   est le seul label secondaire, il cède la place uniquement s'il ne trouve aucun registre libre. */
 
 /* Utilitaire standard : visible par les lecteurs d'écran, retiré du rendu visuel. Ajouté suite à
    la recherche ui-ux-pro-max (domaine ux, "Heading Hierarchy") : Performance Pulse n'avait aucun

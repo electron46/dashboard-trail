@@ -798,10 +798,16 @@ document.getElementById('saveRaceBtn').addEventListener('click', () => {
   // Le profil GPX n'est mis à jour QUE si un nouveau fichier vient d'être lu cette session de la
   // modale (pendingGpxData) — sinon on conserve celui déjà enregistré (existing.gpxProfile), pour
   // ne jamais l'effacer silencieusement lors d'une simple correction de date ou de notes.
+  // `gpxProfile` garde les points (distance cumulée + altitude + lat/lon) : le GPX reste de la
+  // DONNÉE, jamais une image — le Terrain Profile de l'Accueil est régénéré depuis ces points.
+  // `gpxSummary` garde les valeurs calculées telles quelles (distance/D+/D-/alt min-max/emprise),
+  // distinctes des champs distance/D+ de la course que l'utilisateur peut corriger à la main.
   const gpxPatch = pendingGpxData
     ? { gpxProfile: pendingGpxData.points, gpxSummary: {
         distanceKm: pendingGpxData.distanceKm, denivele: pendingGpxData.denivele,
-        deniveleNeg: pendingGpxData.deniveleNeg, altMin: pendingGpxData.altMin, altMax: pendingGpxData.altMax } }
+        deniveleNeg: pendingGpxData.deniveleNeg, altMin: pendingGpxData.altMin, altMax: pendingGpxData.altMax,
+        pointCount: pendingGpxData.pointCount, sourcePointCount: pendingGpxData.sourcePointCount,
+        bounds: pendingGpxData.bounds, importedAt: new Date().toISOString() } }
     : {};
   const race = upsertRace(Object.assign({}, existing, { id: editingRaceId, name, date, distanceKm, denivele, type, statut, tempsVise, technicite, chaleur, notes, createdAt }, gpxPatch));
   closeRaceModal();
