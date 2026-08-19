@@ -920,10 +920,22 @@ function parseDureeToMin(str) {
   if (m) return parseInt(m[1],10);
   return null;
 }
+/* Formateur de durée UNIQUE de l'application (36 appels sur 7 pages) — corrigé lors de la passe
+   "narration objectif" : l'ancienne version produisait "1h00" et "0min00", des formats collés que
+   la typographie du site rend difficiles à lire (le 0 se confond avec un o : "1hoo"). Format
+   retenu : "0 min", "15 min", "1 h 00", "1 h 42", "12 h 08". Les espaces sont insécables pour
+   qu'une valeur ne se coupe jamais en fin de ligne ("1 h" d'un côté, "42" de l'autre).
+   Les secondes ne sont plus affichées : aucune lecture du site ne se joue à la seconde près
+   (volumes hebdomadaires, durées de séance, durées planifiées). */
+const NBSP = ' ';
 function fmtDuration(s) {
-  if (s == null) return 'Non disponible';
-  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = Math.round(s%60);
-  return h > 0 ? (h+'h'+String(m).padStart(2,'0')) : (m+'min'+String(sec).padStart(2,'0'));
+  if (s == null || isNaN(s)) return 'Non disponible';
+  const total = Math.max(0, Math.round(s));
+  const h = Math.floor(total / 3600);
+  let m = Math.round((total % 3600) / 60);
+  // 59 min 40 s arrondit à 60 min : on reporte sur l'heure plutôt que d'afficher "0 h 60".
+  if (m === 60) return (h + 1) + NBSP + 'h' + NBSP + '00';
+  return h > 0 ? (h + NBSP + 'h' + NBSP + String(m).padStart(2, '0')) : (m + NBSP + 'min');
 }
 function fmtPace(secPerKm) {
   if (secPerKm == null) return 'Non disponible';
@@ -2263,18 +2275,38 @@ function getWeeklyStats() {
   const today = new Date().toISOString().slice(0,10);
   const weekStart = isoWeek(today);
   const prevWeekStart = new Date(new Date(weekStart).getTime() - 7*86400000).toISOString().slice(0,10);
+  // Jours réellement écoulés dans la semaine en cours (1 = on est lundi).
+  const daysElapsed = Math.round((new Date(today) - new Date(weekStart)) / 86400000) + 1;
+  const isPartialWeek = daysElapsed < 7;
+  // COMPARAISON À NOMBRE DE JOURS ÉGAL. L'ancienne version comparait la semaine en cours
+  // (partielle) à la semaine précédente ENTIÈRE : un mardi, le volume de 2 jours était comparé à
+  // celui de 7, ce qui affichait mécaniquement une chute de 70 à 100 % et faisait conclure "En
+  // baisse" alors que la semaine commençait à peine. On compare désormais les mêmes N premiers
+  // jours de la semaine précédente. Le total de la semaine précédente complète reste exposé
+  // séparément (`prevFull`) pour pouvoir l'afficher comme repère, sans servir de base au delta.
+  const prevSameSpanEnd = addDaysIso(prevWeekStart, daysElapsed - 1);
   const current = sessions.filter(s => s.date >= weekStart && s.date <= today);
-  const previous = sessions.filter(s => s.date >= prevWeekStart && s.date < weekStart);
+  const previousSameSpan = sessions.filter(s => s.date >= prevWeekStart && s.date <= prevSameSpanEnd);
+  const previousFull = sessions.filter(s => s.date >= prevWeekStart && s.date < weekStart);
   const sum = (arr, key) => arr.reduce((a,s) => a + (s[key] || 0), 0);
   const deltaPct = (cur, prev) => prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
-  const distanceKm = sum(current, 'distanceKm'), prevDistanceKm = sum(previous, 'distanceKm');
-  const ascent = sum(current, 'ascent'), prevAscent = sum(previous, 'ascent');
-  const durationS = sum(current, 'durationS'), prevDurationS = sum(previous, 'durationS');
+  const distanceKm = sum(current, 'distanceKm');
+  const ascent = sum(current, 'ascent');
+  const durationS = sum(current, 'durationS');
   return {
-    distanceKm: +distanceKm.toFixed(1), distanceDeltaPct: deltaPct(distanceKm, prevDistanceKm),
-    ascent: Math.round(ascent), ascentDeltaPct: deltaPct(ascent, prevAscent),
-    durationS, durationDeltaPct: deltaPct(durationS, prevDurationS),
-    sessionsCount: current.length, sessionsDeltaPct: deltaPct(current.length, previous.length),
+    distanceKm: +distanceKm.toFixed(1), distanceDeltaPct: deltaPct(distanceKm, sum(previousSameSpan, 'distanceKm')),
+    ascent: Math.round(ascent), ascentDeltaPct: deltaPct(ascent, sum(previousSameSpan, 'ascent')),
+    durationS, durationDeltaPct: deltaPct(durationS, sum(previousSameSpan, 'durationS')),
+    sessionsCount: current.length, sessionsDeltaPct: deltaPct(current.length, previousSameSpan.length),
+    // Contexte de lecture : indispensable pour ne jamais présenter une semaine à peine commencée
+    // comme un résultat définitif (voir renderTrajectory, index.html).
+    weekStartISO: weekStart, daysElapsed: daysElapsed, isPartialWeek: isPartialWeek,
+    prevFull: {
+      distanceKm: +sum(previousFull, 'distanceKm').toFixed(1),
+      ascent: Math.round(sum(previousFull, 'ascent')),
+      durationS: sum(previousFull, 'durationS'),
+      sessionsCount: previousFull.length,
+    },
   };
 }
 
@@ -3130,14 +3162,21 @@ function initTerrainProfiles(root) {
   if (!initTerrainProfiles._resizeBound) {
     initTerrainProfiles._resizeBound = true;
     let ticking = false;
+    const relayoutAll = function () {
+      document.querySelectorAll('.terrain-profile[data-terrain]').forEach(_terrainLayoutLabels);
+      ticking = false;
+    };
     window.addEventListener('resize', function () {
       if (ticking) return;
       ticking = true;
-      requestAnimationFrame(function () {
-        document.querySelectorAll('.terrain-profile[data-terrain]').forEach(_terrainLayoutLabels);
-        ticking = false;
-      });
+      requestAnimationFrame(relayoutAll);
     }, { passive: true });
+    // Filet de sécurité : `requestAnimationFrame` ne s'exécute PAS tant que la page est masquée
+    // (onglet en arrière-plan, fenêtre réduite). Un redimensionnement survenu pendant ce temps
+    // laisserait donc les labels à leur position d'avant. On les replace au retour de visibilité.
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) { ticking = false; relayoutAll(); }
+    });
   }
 }
 

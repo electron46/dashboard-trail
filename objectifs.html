@@ -963,6 +963,30 @@ document.getElementById('raceAiUseBtn').addEventListener('click', () => {
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderSidebarUser();
 renderGoalPage();
+
+/* Lien profond « Importer le GPX » venant de l'Accueil (hero Objectif sans parcours) :
+   `objectifs.html?import=gpx&race=<id>` ouvre directement la modale de la bonne course et met le
+   focus sur le champ de fichier — sans ce relais, le bouton se contentait d'ouvrir la page et
+   l'utilisateur devait retrouver lui-même le chemin de l'import. */
+(function openGpxImportFromDeepLink() {
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('import') !== 'gpx') return;
+    const raceId = params.get('race');
+    if (raceId && !getRaces().find(r => r.id === raceId)) return; // course supprimée entre-temps
+    if (raceId) { selectedRaceId = raceId; renderGoalPage(); }
+    openRaceModal(raceId || selectedRaceId);
+    // Le gestionnaire de focus partagé des modales (initModalFocusManagement, app.js) place le
+    // focus sur le premier champ via un MutationObserver, donc de façon asynchrone : on diffère
+    // le nôtre pour qu'il passe après, sans modifier ce comportement global.
+    setTimeout(function () {
+      const input = document.getElementById('raceGpxFile');
+      if (input) { input.focus(); input.scrollIntoView({ block: 'center' }); }
+    }, 60);
+    // L'URL est nettoyée pour qu'un rafraîchissement ne rouvre pas indéfiniment la modale.
+    history.replaceState(null, '', 'objectifs.html');
+  } catch (e) { console.error('Ouverture de l\'import GPX impossible :', e); }
+})();
 </script>
 </body>
 </html>

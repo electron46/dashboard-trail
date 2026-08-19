@@ -681,7 +681,16 @@ main{--bleed-l:28px;--bleed-r:28px;--scene-pad:clamp(32px,4vw,72px);}
    où le tracé était `position:absolute` sur toute la hauteur du hero). */
 .terrain-profile{position:relative;width:100%;max-width:none;box-sizing:border-box;
   touch-action:pan-y;  /* le geste vertical reste un scroll : seul le balayage horizontal lit le profil */
-  outline:none;}
+  outline:none;
+  /* Confinement STRUCTUREL des enfants positionnés en absolu (labels, connecteurs, curseur,
+     tooltip). Ce n'est pas un `overflow-x:hidden` posé sur la page pour masquer un bug de mise en
+     page : c'est la limite naturelle du composant qui les possède. Sans lui, un label conserve
+     brièvement sa position en pixels calculée pour l'ANCIENNE largeur pendant un
+     redimensionnement de fenêtre — mesuré : 272px de débordement horizontal de la page entière à
+     1280px après passage depuis 1920px, le temps que le replacement s'exécute. Le placement
+     anti-collision cale de toute façon chaque label à l'intérieur du cadre, donc rien n'est
+     rogné en régime établi. */
+  overflow:hidden;}
 .terrain-profile:focus-visible{outline:2px solid var(--accent-light);outline-offset:4px;border-radius:var(--radius-md);}
 .terrain-profile--hero{height:clamp(190px,19vw,250px);}
 .terrain-profile--summit{height:clamp(170px,16vw,220px);}
@@ -922,6 +931,140 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .summit-subscores > summary .hint{font-family:var(--font-sans);font-weight:400;font-size:.74rem;color:var(--muted);}
 .summit-subscores-body{padding:2px 16px 16px;}
 @media (prefers-reduced-motion:reduce){ .summit-subscores > summary::after{transition:none;} }
+
+/* ============================================================================================
+   NARRATION DE L'ACCUEIL — une scène = une source de données, jamais un mélange.
+   1. Objectif principal (.objective-scene)  : la course cible + son GPX
+   2. Trajectoire actuelle (.landscape-scene): agrégats hebdomadaires
+   3. Prochain checkpoint (.checkpoint-strip): le plan importé
+   4. Dernière sortie (.lastride-scene)      : la dernière activité
+   5. Charge et intensité                    : cards secondaires, dans la grille centrée
+   ============================================================================================ */
+
+/* --------- 1. OBJECTIF PRINCIPAL (hero) --------- */
+.objective-scene{position:relative;padding:6px 0 0;display:flex;flex-direction:column;gap:10px;}
+.objective-content{position:relative;padding:14px 0 0;}
+.objective-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.objective-main{display:flex;flex-direction:column;gap:24px;}
+.objective-lead{min-width:0;}
+.objective-name{margin:0;font-family:var(--font-display);font-size:clamp(1.9rem,4vw,3rem);font-weight:800;letter-spacing:-.02em;line-height:1.04;}
+/* La readiness est LA valeur dominante du hero — l'objectif se lit d'un coup d'œil. */
+.objective-readiness{margin-top:10px;}
+.objective-readiness .v{display:block;font-family:var(--font-display);font-size:clamp(3.2rem,8vw,4.4rem);font-weight:800;letter-spacing:-.025em;line-height:.92;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.objective-readiness .v small{font-size:.4em;font-weight:700;-webkit-text-fill-color:var(--accent-light);}
+.objective-readiness .l{display:block;margin-top:6px;font-size:.9rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+/* Métriques de la COURSE (J-XX, distance, D+) — jamais des agrégats d'entraînement. */
+.objective-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,auto));justify-content:start;align-items:flex-end;gap:20px 34px;}
+.objective-metric{display:flex;flex-direction:column;gap:3px;}
+.objective-metric .v{font-family:var(--font-display);font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap;}
+.objective-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.objective-metric:first-child .v{color:var(--accent-light);}
+.objective-terrain{position:relative;margin-top:4px;}
+/* État sans GPX : message honnête + CTA, aucun profil dessiné, le paysage reste visible. */
+.objective-terrain--empty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:6px 0 10px;}
+.objective-terrain--empty .terrain-empty{margin:0;max-width:620px;}
+.terrain-empty strong{display:block;color:var(--text);font-family:var(--font-display);font-size:.96rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
+.objective-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+/* Sous-scores : panneau dépliable DANS le hero — la grande scène qui les répétait plus bas a été
+   supprimée, l'objectif n'apparaît donc qu'une seule fois sur la page. */
+.objective-subscores{margin-top:6px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-1,var(--panel));overflow:hidden;}
+.objective-subscores > summary{cursor:pointer;list-style:none;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:var(--font-display);font-size:.9rem;font-weight:700;}
+.objective-subscores > summary::-webkit-details-marker{display:none;}
+.objective-subscores > summary::after{content:'▾';color:var(--muted);font-size:.8rem;transition:transform var(--dur-fast) var(--ease-standard);}
+.objective-subscores[open] > summary::after{transform:rotate(180deg);}
+.objective-subscores > summary .hint{font-family:var(--font-sans);font-weight:400;font-size:.74rem;color:var(--muted);}
+.objective-subscores-body{padding:2px 16px 16px;}
+@media (min-width:900px){
+  .objective-main{display:grid;grid-template-columns:minmax(0,42%) minmax(0,1fr);align-items:flex-end;gap:32px 40px;}
+  .objective-metrics{grid-template-columns:repeat(3,minmax(0,auto));justify-content:space-between;gap:24px;padding-bottom:6px;}
+  .objective-metric .v{font-size:1.6rem;}
+}
+@media (min-width:1024px){ .objective-content{padding-top:22px;} }
+@media (prefers-reduced-motion:reduce){ .objective-subscores > summary::after{transition:none;} }
+
+/* --------- 2. TRAJECTOIRE ACTUELLE --------- */
+.rail-stop--trajectory{position:relative;}
+.landscape-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:2px;}
+/* Distinction explicite semaine en cours / semaine terminée : une semaine à peine commencée ne
+   doit jamais se lire comme un résultat définitif. */
+.week-context{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.week-context.is-partial{color:var(--accent-light);}
+.week-stat-delta{font-size:.66rem;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums;}
+.week-stat-delta.is-up{color:var(--success);}
+/* Le graphique ne prend plus la moitié de l'écran : la place récupérée sert aux repères chiffrés
+   et à l'Insight, à droite sur desktop. */
+.landscape-grid{display:flex;flex-direction:column;gap:18px;margin-top:6px;}
+.landscape-chart-col{min-width:0;}
+.landscape-side-panel{display:flex;flex-direction:column;gap:14px;min-width:0;}
+.landscape-figures{margin:0;display:flex;flex-direction:column;gap:10px;}
+.landscape-figures > div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding-bottom:8px;}
+.landscape-figures dt{font-size:.74rem;color:var(--muted);}
+.landscape-figures dd{margin:0;font-family:var(--font-display);font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}
+@media (min-width:1024px){
+  .landscape-grid{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:32px;align-items:start;}
+}
+/* Le SVG du graphique a un ratio fixe (viewBox 620×280) : sa hauteur suit donc sa largeur. Sur un
+   très grand écran, la colonne 1.9fr le faisait monter à ~446px, où il se mettait à dominer la
+   scène pour 12 points de données. On resserre la colonne au-delà de 1600px : le graphique
+   retombe dans la fourchette visée (~260-360px) et la place va aux repères chiffrés et à
+   l'Insight, à droite. */
+@media (min-width:1600px){
+  .landscape-grid{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:40px;}
+}
+
+/* --------- 3. PROCHAIN CHECKPOINT --------- */
+.rail-stop--checkpoint{position:relative;}
+.checkpoint-strip{position:relative;padding:0;}
+.checkpoint-inner{display:flex;flex-direction:column;gap:12px;padding:16px 18px;border-radius:var(--radius-lg);
+  background:var(--surface-1,var(--panel));border:1px solid var(--border);border-left:3px solid var(--accent-light);}
+.checkpoint-strip .eyebrow{margin:0 0 6px;font-family:var(--font-sans);font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+.checkpoint-title{display:block;font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--text);}
+.checkpoint-goal{display:block;margin-top:4px;font-size:.84rem;color:var(--muted);}
+.checkpoint-facts{display:flex;flex-wrap:wrap;gap:6px;}
+@media (min-width:900px){
+  .checkpoint-inner{flex-direction:row;align-items:center;justify-content:space-between;gap:24px;padding:16px 22px;}
+  .checkpoint-lead{min-width:0;flex:1 1 auto;}
+  .checkpoint-facts{flex:0 0 auto;}
+}
+
+/* --------- 4. DERNIÈRE SORTIE — TERRAIN RÉCENT ---------
+   Scène horizontale compacte (jamais un second hero massif) : identité + KPI à gauche, profil
+   altimétrique réel au centre, trace GPS et accès à l'analyse à droite.
+   Contraste : titre et métriques en var(--text) plein, aucune opacité faible sur une information
+   fonctionnelle (le libellé reste var(--muted), conforme AA sur ces surfaces). */
+.rail-stop--lastride{position:relative;}
+.lastride-scene{position:relative;padding:0;}
+.lastride-inner{display:flex;flex-direction:column;gap:18px;padding:18px 18px 20px;border-radius:var(--radius-lg);
+  background:var(--surface-1,var(--panel));border:1px solid var(--border);}
+.lastride-scene .eyebrow{margin:0 0 6px;font-family:var(--font-sans);font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+.lastride-title{margin:0;font-family:var(--font-display);font-size:1.3rem;font-weight:700;color:var(--text);letter-spacing:-.01em;}
+.lastride-date{margin:2px 0 0;font-size:.82rem;color:var(--muted);}
+.lastride-kpis{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-top:14px;}
+.lastride-kpi{display:flex;align-items:center;gap:9px;min-width:0;}
+.lastride-kpi img{width:16px;height:16px;flex:0 0 auto;filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
+.lastride-kpi .v{display:block;font-family:var(--font-display);font-size:1.05rem;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.lastride-kpi .l{display:block;font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.lastride-profile{position:relative;min-width:0;}
+.lastride-aside{display:flex;flex-direction:column;gap:12px;min-width:0;}
+/* Trace GPS (longitude/latitude) — représentation distincte du profil altimétrique ci-contre. */
+.lastride-trace{display:block;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);background:rgba(11,15,14,.35);padding:6px;}
+.lastride-trace svg{display:block;width:100%;height:auto;}
+.lastride-trace:hover{border-color:var(--accent);}
+.terrain-profile--lastride{height:clamp(160px,17vw,200px);}
+@media (min-width:1024px){
+  .lastride-inner{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.6fr) minmax(0,0.7fr);align-items:start;gap:28px;padding:20px 24px 22px;}
+  .lastride-kpis{grid-template-columns:1fr 1fr;}
+}
+@media (max-width:767px){
+  /* Mobile : empilement titre/KPI → profil → mini-carte → bouton (jamais une réduction du desktop). */
+  .lastride-inner{padding:16px 14px 18px;gap:16px;}
+  .lastride-kpis{grid-template-columns:1fr 1fr;gap:10px 14px;}
+  .terrain-profile--lastride{height:clamp(150px,38vw,180px);}
+  .checkpoint-inner{padding:14px 14px;}
+  .objective-metrics{gap:16px 22px;}
+  .objective-metric .v{font-size:1.2rem;}
+  .landscape-figures dd{font-size:.92rem;}
+}
 
 /* --------- Responsive : mobile pensé pour le tactile, pas une réduction du desktop ---------
    Marges de sécurité réduites (le canvas est déjà étroit), métrique dominante prioritaire, profil

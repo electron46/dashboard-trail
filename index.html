@@ -65,55 +65,49 @@
        dépendant des données est reconstruit. -->
   <div class="home-rail">
 
+    <!-- 1. OBJECTIF PRINCIPAL — la destination. SOURCE UNIQUE : la course objectif + son fichier
+         GPX + les calculs de préparation. Ce hero ne consomme JAMAIS de données d'activité :
+         un profil d'activité (allure/FC/cadence réalisées) et un profil d'objectif (parcours à
+         venir) ne décrivent pas la même chose, les mélanger produisait un hero incohérent
+         (métriques hebdomadaires à zéro sous un tracé d'activité non nul). -->
     <div class="rail-stop rail-stop--hero">
-      <!-- ELEV Terrain Backdrop : environnement du hero. Layer A = vraie photo de relief
-           (décorative, alt="") ; Layer B = dégradés de fusion (vignette + fondu vers #0B0F0E,
-           jamais de ligne nette) ; Layer C = topographie très discrète (elevMountainBackdropSvg,
-           contourOnly). Le vrai ELEV Terrain Profile (donnée réelle) vit dans .pulse-terrain. -->
+      <!-- Environnement du hero : photo de relief décorative (alt="") + dégradés de fusion vers
+           #0B0F0E + topographie très discrète. Élément statique : il ne dépend d'aucune donnée,
+           donc le paysage reste visible même sans GPX importé. -->
       <div class="terrain-backdrop" id="terrainBackdrop" aria-hidden="true">
         <img class="tb-photo" alt="" src="assets/images/elev-hero-mountain.webp" fetchpriority="high" decoding="async">
         <div class="tb-photo-mask"></div>
         <div id="terrainBackdropSvgLayer"></div>
       </div>
-      <!-- CURRENT STATE : Performance Pulse — données distribuées dans tout le canvas (readiness
-           à gauche, métriques au centre/à droite, profil altimétrique dans le tiers bas). -->
-      <section class="pulse-scene" aria-label="État actuel" id="pulseScene"></section>
+      <section class="objective-scene" aria-label="Objectif principal" id="objectiveScene"></section>
     </div>
 
-    <div class="rail-stop rail-stop--split reveal-on-scroll">
-      <!-- Fond atmosphérique statique de la scène (couvre toute la largeur du rail, y compris la
-           colonne de droite) — voir .landscape-bg-wrap. -->
+    <!-- 2. TRAJECTOIRE ACTUELLE — « est-ce que ma préparation avance ? »
+         SOURCE UNIQUE : agrégats des semaines d'entraînement. -->
+    <div class="rail-stop rail-stop--trajectory reveal-on-scroll">
       <div class="landscape-bg-wrap" aria-hidden="true">
         <img class="landscape-bg" src="assets/images/elev-secondary-dark.webp" alt="" loading="lazy" decoding="async">
         <div class="landscape-bg-mask"></div>
       </div>
-      <!-- TRAINING LANDSCAPE + ELEV INSIGHT : la tendance occupe toute la place, l'insight naît
-           du graphique via un connecteur plutôt que de vivre dans une card à part. -->
-      <section class="landscape-scene" aria-label="Paysage d'entraînement" id="landscapeScene"></section>
-
-      <div class="landscape-side">
-        <!-- NEXT CHECKPOINT : un point sur une trajectoire, pas une card. -->
-        <div class="checkpoint-strip" id="checkpointStrip"></div>
-        <section class="card">
-          <h2>Dernière activité</h2>
-          <div id="lastActivityBox"></div>
-        </section>
-      </div>
+      <section class="landscape-scene" aria-label="Trajectoire actuelle" id="landscapeScene"></section>
     </div>
 
-    <div class="rail-stop rail-stop--summit reveal-on-scroll">
-      <!-- TARGET SUMMIT : destination de la narration. Le sommet photographique est un élément
-           statique : il reste visible même si aucun GPX n'a été importé (seul le profil réel du
-           parcours dépend de cette donnée). -->
-      <div class="summit-bg-wrap" aria-hidden="true">
-        <img class="summit-bg" src="assets/images/elev-target-summit.webp" alt="" loading="lazy" decoding="async">
-        <div class="summit-bg-mask"></div>
-      </div>
-      <section class="summit-scene" aria-label="Objectif principal" id="summitScene"></section>
+    <!-- 3. PROCHAIN CHECKPOINT — « que dois-je faire ensuite ? » SOURCE UNIQUE : le plan importé. -->
+    <div class="rail-stop rail-stop--checkpoint reveal-on-scroll">
+      <section class="checkpoint-strip" aria-label="Prochain checkpoint" id="checkpointStrip"></section>
+    </div>
+
+    <!-- 4. DERNIÈRE SORTIE — « qu'est-ce que je viens de réaliser ? »
+         SOURCE UNIQUE : la dernière activité valide. C'est ICI, et nulle part ailleurs, que vit
+         le profil altimétrique réel de l'activité (avec allure/FC/cadence au survol). -->
+    <div class="rail-stop rail-stop--lastride reveal-on-scroll">
+      <section class="lastride-scene" aria-label="Dernière sortie" id="lastRideScene"></section>
     </div>
 
   </div>
 
+  <!-- 5. CHARGE ET INTENSITÉ — analyses secondaires. Restent des cards dans la grille centrée de
+       <main> : seules les scènes narratives ci-dessus sont pleine largeur. -->
   <div class="dash-secondary-grid dash-full reveal-on-scroll">
     <section class="card card-compact">
       <h2>Charge d'entraînement <small>(12 sem.)</small></h2>
@@ -173,340 +167,69 @@ function mainObjectiveRace() {
 }
 const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
 
-/* --------------------------- CURRENT STATE : PERFORMANCE PULSE ---------------------------
-   Remplace l'ancienne grille de cards KPI par une scène continue : le terrain réel de la
-   dernière sortie (profil d'altitude, jamais un relief inventé) sert de fond très discret aux
-   indicateurs, qui restent du texte normal dans le flux du DOM (lisible sans animation, sans
-   dépendre du SVG pour l'information — voir CLAUDE.md, Phase 2 "Performance Pulse"). */
-function renderPulse() {
-  const box = document.getElementById('pulseScene');
+/* --------------------------- 1. OBJECTIF PRINCIPAL (hero) ---------------------------
+   SOURCE DE DONNÉES UNIQUE : la course objectif (getRaces/mainObjectiveRace), son fichier GPX
+   (race.gpxProfile) et les calculs de préparation (computeRaceReadiness). Cette scène ne lit
+   AUCUNE donnée d'activité ni d'agrégat hebdomadaire.
+
+   Deux états explicites, jamais un mélange :
+     - AVEC GPX  : ELEV Terrain Profile du parcours (X = distance cumulée, Y = altitude), avec au
+                   minimum Départ / Point culminant / Arrivée, tous issus de points réels.
+     - SANS GPX  : aucun profil dessiné, message honnête + CTA d'import. Le paysage
+                   photographique reste affiché (il ne dépend pas des données).
+   Le profil de la dernière activité n'apparaît jamais ici : il vit dans la scène "Dernière
+   sortie" (voir renderLastRide). */
+function renderObjective() {
+  const box = document.getElementById('objectiveScene');
   box.classList.add('scene');
-  if (!loadAllSessions().length) {
-    box.innerHTML = '<div class="empty-state"><div class="empty-title">Commence ton suivi</div>' +
-      '<p>Importe ta première activité pour voir apparaître tes indicateurs (volume, tendance de charge, préparation à ton objectif).</p>' +
-      '<a class="btn small accent" href="historique.html">Importer ma première activité</a></div>';
-    return;
-  }
-  const stats = getWeeklyStats();
-  const sessions = loadAllSessions();
-  const lastSession = sessions[sessions.length - 1];
-  const race = mainObjectiveRace();
-  const readiness = race ? computeRaceReadiness(race) : null;
-
-  // ELEV Terrain Profile de la dernière sortie. La série est passée au VALIDATEUR partagé
-  // (validateTerrainSeries) avec ses vrais couples distance/altitude : X = distance cumulée,
-  // jamais l'index du point (une série FIT est échantillonnée dans le temps — tracer par index
-  // donnait un profil temps/altitude, bug corrigé lors de cette passe). Si la série n'est pas
-  // exploitable (pas d'altitude, distances incohérentes, relief plat), AUCUN profil n'est dessiné :
-  // on affiche un état vide honnête plutôt qu'un faux relief. Les repères Départ/Point culminant/
-  // Arrivée sont les points réels de la série (premier / altitude max / dernier) — aucun
-  // checkpoint inventé, aucune donnée de ravitaillement n'existant côté activité importée.
-  let terrainHtml = '';
-  const rawSeries = lastSession && Array.isArray(lastSession.series)
-    ? lastSession.series.filter(p => p.alt != null && p.distKm != null) : [];
-  const terrain = validateTerrainSeries(rawSeries);
-  if (terrain) {
-    terrainHtml =
-      '<div class="pulse-terrain">' +
-        elevTerrainProfile(terrain, { height: 230, variant: 'hero', className: 'terrain-profile--hero', eagerBackdrop: true }) +
-        '<p class="terrain-hint">Survole le profil (ou explore-le au clavier avec ←/→) pour lire la distance et l\'altitude.</p>' +
-      '</div>';
-  } else if (lastSession) {
-    terrainHtml =
-      '<div class="pulse-terrain"><p class="terrain-empty">Pas de profil altimétrique pour ta dernière sortie ' +
-      '(' + escapeHtml(fmtDayMonth(lastSession.date)) + ') : le fichier ne contient pas de série altitude/distance exploitable.</p></div>';
-  }
-
-  const arrow = pct => pct == null ? '' : '<span class="arrow">' + (pct >= 0 ? '▲' : '▼') + '</span>';
-  const heroSub = stats.distanceDeltaPct != null
-    ? arrow(stats.distanceDeltaPct) + (stats.distanceDeltaPct >= 0 ? '+' : '') + stats.distanceDeltaPct + '% vs sem. précédente'
-    : 'Cette semaine';
-
-  // Hiérarchie extrême : UNE seule information domine le hero, dans le tiers gauche. La
-  // préparation à l'objectif (readiness) prend le pas sur le volume quand elle est calculable —
-  // c'est la donnée la plus synthétique. Sinon, repli honnête sur le volume hebdomadaire : jamais
-  // de readiness affiché sans être réellement calculé.
-  const hasReadiness = race && readiness && readiness.overall != null;
-  const dominantHtml = hasReadiness
-    ? '<div class="pulse-hero-metric pulse-hero-metric--dominant">' +
-        '<span class="v">' + readiness.overall + '<small>%</small></span>' +
-        '<span class="l">prêt pour <strong>' + escapeHtml(race.name) + '</strong></span>' +
-      '</div>'
-    : '<div class="pulse-hero-metric pulse-hero-metric--dominant">' +
-        '<span class="v">' + fmtNum(stats.distanceKm, ' km', 1) + '</span>' +
-        '<span class="l' + (stats.distanceDeltaPct != null && stats.distanceDeltaPct >= 0 ? ' status-ok' : '') + '">' + heroSub + '</span>' +
-      '</div>';
-
-  // Si la readiness domine le hero, le volume redescend au rang de métrique secondaire (avec les
-  // autres) plutôt que d'être répété deux fois — jamais deux informations dominantes à la fois.
-  // Ces métriques sont réparties sur le centre et la droite du canvas, jamais posées sur la ligne
-  // du profil (voir .pulse-main / .pulse-floating-metrics).
-  const secondaryMetrics = [
-    hasReadiness ? { v: fmtNum(stats.distanceKm, ' km', 1), l: 'Volume · ' + heroSub.replace(/<[^>]+>/g, '') } : null,
-    { v: fmtNum(stats.ascent, ' m', 0), l: 'D+ cette semaine' },
-    { v: fmtDuration(stats.durationS), l: 'Temps d\'effort' },
-    { v: String(stats.sessionsCount), l: 'Sorties' },
-  ].filter(Boolean);
-
-  // NOTE : la tendance de charge hebdomadaire ("Stable — sur tes 4 dernières semaines") a été
-  // retirée d'ici. Elle ne décrit pas le parcours altimétrique affiché juste en dessous : sa place
-  // est à côté du graphique d'évolution du volume (voir renderLandscape / .landscape-trend-tag).
-  box.innerHTML =
-    '<div class="pulse-content">' +
-      '<h2 class="visually-hidden">État actuel</h2>' +
-      '<div class="pulse-eyebrow">' +
-        '<span class="elev-signal"><img src="' + ICON('activity') + '" alt="">État actuel</span>' +
-      '</div>' +
-      '<div class="pulse-main">' +
-        '<div class="pulse-lead">' + dominantHtml + '</div>' +
-        '<div class="pulse-floating-metrics">' +
-          secondaryMetrics.map(m => '<div class="floating-metric"><span class="v">' + m.v + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +
-        '</div>' +
-      '</div>' +
-    '</div>' +
-    terrainHtml;
-  initTerrainProfiles(box);
-}
-
-/* --------------------------- TRAINING LANDSCAPE + ELEV INSIGHT ---------------------------
-   Fusionne "Cette semaine", la tendance et l'Insight ELEV en une seule scène : l'insight
-   s'accroche visuellement au graphique (connecteur + delta chiffré) plutôt que de vivre dans
-   une card séparée ailleurs sur la page. Fenêtre limitée à l'historique réellement disponible
-   (getRecentWeeklyVolumes) : une semaine sans séance avant le début du suivi n'est jamais
-   affichée comme "0 km". */
-let trendMetric = 'km';
-function renderLandscape() {
-  const box = document.getElementById('landscapeScene');
-  box.classList.add('scene');
-  const stats = getWeeklyStats();
-  if (!stats) {
-    box.innerHTML = '<h2>Paysage d\'entraînement</h2><div class="empty">Importe des séances (page Activités) pour voir ce résumé.</div>';
-    return;
-  }
-  const items = [
-    ['route', 'Distance', fmtNum(stats.distanceKm, ' km', 1)],
-    ['mountain-snow', 'D+', fmtNum(stats.ascent, ' m', 0)],
-    ['clock', 'Durée', fmtDuration(stats.durationS)],
-    ['flag', 'Sorties', String(stats.sessionsCount)],
-  ];
-  const weekGrid = items.map(([icon,lbl,val]) =>
-    '<div class="week-stat"><img src="' + ICON(icon) + '" alt=""><div><div class="l">'+lbl+'</div><div class="v">'+val+'</div></div></div>'
-  ).join('');
-
-  const weeks = getRecentWeeklyVolumes(12);
-  let chartHtml, insightHtml;
-  if (weeks.length < 2) {
-    chartHtml = svgEmpty('Évolution du volume');
-    insightHtml = '';
-  } else if (weeks.length === 2) {
-    // Deux semaines ne font pas une tendance : on ne surdimensionne pas une droite de 2 points.
-    // On montre honnêtement les deux valeurs, leur écart et la moyenne (même règle d'honnêteté
-    // que l'état de repli des graphiques de la page Analyse).
-    const isKm = trendMetric === 'km';
-    const val = w => isKm ? w.km : w.dplus;
-    const unit = isKm ? ' km' : ' m';
-    const dec = isKm ? 1 : 0;
-    const a = val(weeks[0]), b = val(weeks[1]);
-    const delta = b - a;
-    const avg = (a + b) / 2;
-    chartHtml = '<div class="landscape-thin">' +
-      '<div class="lt-item"><span class="v">' + fmtNum(a, unit, dec) + '</span><span class="l">Sem. du ' + escapeHtml(fmtDate(weeks[0].startISO)) + '</span></div>' +
-      '<div class="lt-item"><span class="v">' + fmtNum(b, unit, dec) + '</span><span class="l">Sem. du ' + escapeHtml(fmtDate(weeks[1].startISO)) + '</span></div>' +
-      '<div class="lt-item"><span class="v">' + (delta >= 0 ? '+' : '') + fmtNum(delta, unit, dec) + '</span><span class="l">Écart</span></div>' +
-      '<div class="lt-item"><span class="v">' + fmtNum(avg, unit, dec) + '</span><span class="l">Moyenne des 2 sem.</span></div>' +
-      '</div>' +
-      '<p class="hint" style="margin:8px 0 0;">Deux semaines renseignées seulement : pas encore assez pour tracer une tendance fiable.</p>';
-    const insight = generateElevInsight();
-    insightHtml = insight
-      ? '<div class="landscape-callout status-' + insight.level + '"><span class="dot" aria-hidden="true"></span>' +
-        '<div class="body"><span class="elev-signal"><img src="' + ICON('zap') + '" alt="">Insight ELEV</span>' +
-        '<strong>' + escapeHtml(insight.title) + '</strong><p>' + escapeHtml(insight.text) + '</p></div></div>'
-      : '';
-  } else {
-    const isKm = trendMetric === 'km';
-    const points = weeks.map((w,i) => ({
-      x: i, y: +(isKm ? w.km : w.dplus).toFixed(1), xLabel: w.shortLabel,
-      label: 'Semaine du ' + fmtDate(w.startISO) + ' : ' + (isKm ? w.km.toFixed(1) + ' km' : Math.round(w.dplus) + ' m D+'),
-    }));
-    chartHtml = lineChartSvg('', points, { decimals: isKm ? 1 : 0, height: 220, hideTitle: true });
-
-    const insight = generateElevInsight();
-    const trend = getTrainingTrend();
-    if (insight && trend) {
-      // Le delta annoté vient du même calcul que le texte (charge aiguë vs chronique) — jamais un
-      // second chiffre inventé pour illustrer.
-      const deltaPct = trend.chronic > 0 ? Math.round(((trend.acute - trend.chronic) / trend.chronic) * 100) : null;
-      insightHtml = '<div class="landscape-callout status-' + insight.level + '">' +
-        '<span class="dot" aria-hidden="true"></span>' +
-        '<div class="body">' +
-          '<span class="elev-signal"><img src="' + ICON('zap') + '" alt="">Insight ELEV</span>' +
-          '<strong>' + escapeHtml(insight.title) + '</strong>' +
-          '<p>' + escapeHtml(insight.text) + (deltaPct != null ? ' <strong class="delta">(' + (deltaPct >= 0 ? '+' : '') + deltaPct + '% vs moyenne 4 sem.)</strong>' : '') + '</p>' +
-        '</div>' +
-      '</div>';
-    } else {
-      insightHtml = '<div class="empty" style="margin-top:14px;">Importe au moins deux semaines de séances pour obtenir un insight.</div>';
-    }
-  }
-
-  // Tendance de charge : sa place est ICI (à côté de l'évolution du volume dans le temps), pas sur
-  // le profil altimétrique du hero — elle décrit les semaines écoulées, pas un parcours.
-  const trend = getTrainingTrend();
-  const trendSubs = {
-    rising: 'par rapport à ta moyenne récente',
-    rising_fast: 'à surveiller',
-    stable: 'sur tes 4 dernières semaines',
-    falling: 'par rapport à tes semaines précédentes',
-  };
-  const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: 'ok', falling: null };
-  const trendTag = trend
-    ? '<div class="landscape-trend-tag"><span class="kpi-status-dot' + (trendStatus[trend.level] ? ' status-' + trendStatus[trend.level] : '') + '"></span>' +
-      '<span><strong>' + escapeHtml(trend.label) + '</strong> — ' + escapeHtml(trendSubs[trend.level]) + '</span></div>'
-    : '';
-
-  // Le fond atmosphérique de la scène est statique dans index.html (il ne dépend d'aucune donnée) :
-  // il n'est plus reconstruit ici, donc il ne peut plus disparaître lors d'un re-rendu.
-  box.innerHTML =
-    '<div class="landscape-content">' +
-    '<h2>Paysage d\'entraînement</h2>' +
-    '<div class="week-stats-inline">' + weekGrid + '</div>' +
-    '<div class="trend-subhead">' +
-      // Libellé de fenêtre dynamique : on n'annonce jamais "12 dernières semaines" quand
-      // l'historique réellement disponible est plus court (même règle que les pages Analyse/Objectifs).
-      '<div><h3>Évolution du volume</h3><p class="hint">' +
-        (weeks.length >= 12 ? '12 dernières semaines'
-          : weeks.length > 1 ? escapeHtml(weeks.length + ' semaines renseignées')
-          : 'Historique trop court') + '</p>' + trendTag + '</div>' +
-      '<div class="period-select" id="trendMetricSelect">' +
-        '<button type="button" data-metric="km" class="' + (trendMetric === 'km' ? 'active' : '') + '">Volume</button>' +
-        '<button type="button" data-metric="dplus" class="' + (trendMetric === 'dplus' ? 'active' : '') + '">D+</button>' +
-      '</div>' +
-    '</div>' +
-    '<div id="trendChartBox" style="margin-top:8px;">' + chartHtml + '</div>' +
-    insightHtml +
-    '<a class="link-arrow trend-link" href="historique.html">Voir toute l\'analyse de tendance →</a>' +
-    '</div>';
-
-  initChartTooltips(document.getElementById('trendChartBox'));
-  box.querySelectorAll('#trendMetricSelect button').forEach(btn => btn.addEventListener('click', () => {
-    trendMetric = btn.dataset.metric;
-    renderLandscape();
-  }));
-}
-
-/* --------------------------- NEXT CHECKPOINT --------------------------- */
-// Bande fine plutôt qu'une card encadrée classique de plus : la prochaine séance apparaît sur
-// un segment de trajectoire.
-function renderCheckpoint() {
-  const box = document.getElementById('checkpointStrip');
-  const today = new Date().toISOString().slice(0,10);
-  const plan = getPlan();
-  const nextPlanned = plan ? plan.filter(p => p.date >= today).sort((a,b)=>a.date.localeCompare(b.date))[0] : null;
-  if (!nextPlanned) {
-    box.innerHTML = '<p class="eyebrow">Prochaine séance</p><div class="empty">Importe un plan (page Paramètres) pour voir ta prochaine séance.</div>';
-    return;
-  }
-  const bloc = getCurrentBloc();
-  const isToday = nextPlanned.date === today;
-  const pills = [
-    nextPlanned.distanceKm ? fmtNum(nextPlanned.distanceKm, ' km', 1) : null,
-    nextPlanned.deniveleM ? fmtNum(nextPlanned.deniveleM, ' m D+', 0) : null,
-    isToday ? 'Aujourd\'hui' : fmtDate(nextPlanned.date),
-  ].filter(Boolean).map(p => '<span class="next-session-pill">' + escapeHtml(p) + '</span>').join('');
-  box.innerHTML =
-    '<p class="eyebrow">Prochaine séance</p>' +
-    '<div class="checkpoint-track"><span class="dot"></span></div>' +
-    '<div class="checkpoint-body">' +
-      '<strong>' + escapeHtml(nextPlanned.type || 'Séance') + '</strong>' +
-      (bloc ? '<span class="next-session-bloc">' + escapeHtml(bloc) + '</span>' : '') +
-      '<div class="checkpoint-pills">' + pills + '</div>' +
-    '</div>' +
-    '<div style="margin-top:12px;"><a class="btn small" href="plan.html">Voir le plan →</a></div>';
-}
-
-/* --------------------------- DERNIÈRE ACTIVITÉ --------------------------- */
-function renderLastActivity() {
-  const box = document.getElementById('lastActivityBox');
-  const sessions = loadAllSessions();
-  if (!sessions.length) {
-    box.innerHTML = '<div class="empty-state"><div class="empty-title">Commence ton suivi</div>' +
-      '<p>Importe une première activité .fit pour découvrir tes statistiques et tendances.</p>' +
-      '<a class="btn small accent" href="historique.html">Importer une activité</a></div>';
-    return;
-  }
-  const s = sessions[sessions.length - 1];
-  // Libellé d'affichage déterministe (sport + date) — jamais le nom de fichier brut de la montre.
-  const label = (s.sport || 'Séance') + ' — ' + fmtDayMonth(s.date);
-  const stats = [
-    ['route', fmtNum(s.distanceKm, ' km', 1), 'Distance'],
-    ['mountain-snow', fmtNum(s.ascent, ' m D+', 0), 'Dénivelé'],
-    ['clock', fmtDuration(s.durationS), 'Durée'],
-    s.avgPaceSecPerKm != null ? ['gauge', fmtPace(s.avgPaceSecPerKm), 'Allure'] : null,
-    s.avgHr != null ? ['heart-pulse', s.avgHr + ' bpm', 'FC moy.'] : null,
-  ].filter(Boolean);
-  const visual = sessionPreviewSvg(s);
-  box.innerHTML = '<a class="activity-card-link" href="historique.html#s=' + encodeURIComponent(s.id) + '"><div class="activity-card">' +
-    (visual ? '<div class="activity-visual">' + visual + '</div>' : '') +
-    '<div class="activity-info">' +
-      '<div class="hint">' + fmtDate(s.date) + (s.dateApprox ? ' *' : '') + '</div>' +
-      '<h3>' + escapeHtml(label) + '</h3>' +
-      '<div class="activity-stats">' + stats.map(([icon,v,l]) => '<div class="activity-stat"><img src="' + ICON(icon) + '" alt=""><strong>' + v + '</strong><span>' + l + '</span></div>').join('') + '</div>' +
-      '<span class="link-arrow" style="margin-top:12px;">Voir l\'analyse →</span>' +
-    '</div>' +
-  '</div></a>';
-}
-
-/* --------------------------- TARGET SUMMIT (objectif principal) --------------------------- */
-function renderSummit() {
-  const box = document.getElementById('summitScene');
-  box.classList.add('scene');
-  const today = new Date().toISOString().slice(0,10);
   const r = mainObjectiveRace();
   if (!r) {
     box.innerHTML = '<div class="empty-state"><div class="empty-title">Aucun objectif défini</div>' +
-      '<p>Ajoute une course pour suivre ta préparation.</p>' +
+      '<p>Ajoute la course que tu prépares pour voir apparaître sa destination, son terrain et ton état de préparation.</p>' +
       '<a class="btn small accent" href="objectifs.html">Ajouter un objectif</a></div>';
     return;
   }
+  const today = new Date().toISOString().slice(0,10);
   const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
   const readiness = computeRaceReadiness(r);
+  const hasReadiness = readiness && readiness.overall != null;
 
-  // Scène principale = la DESTINATION : nom, compte à rebours, distance, D+, readiness. Les
-  // métriques sont distribuées au centre/à droite comme dans le hero, jamais empilées en barres.
+  // Métriques de l'OBJECTIF uniquement (jamais de volume hebdomadaire ici) : compte à rebours,
+  // distance et dénivelé de la course.
   const metrics = [
-    { v: 'J-' + days, l: fmtDate(r.date), cls: 'summit-metric--countdown' },
+    { v: days >= 0 ? 'J-' + days : 'Passée', l: fmtDate(r.date) },
     { v: fmtNum(r.distanceKm, ' km', 0), l: 'Distance' },
     { v: fmtNum(r.denivele, ' m', 0), l: 'Dénivelé positif' },
-    readiness.overall != null ? { v: readiness.overall + '%', l: 'de préparation', cls: 'summit-metric--readiness' } : null,
-  ].filter(Boolean);
-  const metricsHtml = metrics.map(m =>
-    '<div class="summit-metric' + (m.cls ? ' ' + m.cls : '') + '"><span class="v">' + escapeHtml(m.v) + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>'
-  ).join('');
+  ];
 
-  // Profil réel de l'objectif : uniquement si un GPX a été importé (page Objectifs → import GPX)
-  // ET si sa série passe la validation partagée. Jamais de relief inventé — mais le PAYSAGE
-  // (photo de sommet, élément statique du rail) reste visible dans tous les cas : seule la courbe
-  // dépend des données, jamais l'environnement visuel.
+  // Terrain du parcours : uniquement depuis le GPX de l'objectif, et seulement si la série passe
+  // la validation partagée. Aucun repli sur une autre source.
   const objectiveTerrain = validateTerrainSeries(Array.isArray(r.gpxProfile) ? r.gpxProfile : null);
-  let objectiveProfileHtml;
+  let terrainHtml;
   if (objectiveTerrain) {
-    objectiveProfileHtml = '<div class="summit-profile">' +
-      elevTerrainProfile(objectiveTerrain, { height: 210, variant: 'hero', className: 'terrain-profile--summit' }) +
-      '<p class="terrain-hint">Survole le profil de la course (ou explore-le au clavier avec ←/→).</p>' +
+    terrainHtml = '<div class="objective-terrain">' +
+      elevTerrainProfile(objectiveTerrain, { height: 230, variant: 'hero', className: 'terrain-profile--hero', eagerBackdrop: true }) +
+      '<p class="terrain-hint">Survole le profil de la course (ou explore-le au clavier avec ←/→) pour lire la distance et l\'altitude.</p>' +
     '</div>';
   } else {
-    objectiveProfileHtml = '<p class="summit-no-profile"><strong>Le terrain de cette course n\'est pas encore connu</strong>' +
-      'Importe la trace GPX de l\'épreuve depuis <a href="objectifs.html">la page Objectifs</a> pour afficher son vrai profil altimétrique ici.</p>';
+    terrainHtml = '<div class="objective-terrain objective-terrain--empty">' +
+      '<p class="terrain-empty">' +
+        '<strong>Le terrain de cet objectif n\'est pas encore disponible</strong>' +
+        'Importe le fichier GPX de ' + escapeHtml(r.name) + ' pour afficher son véritable profil, ses altitudes et ses points remarquables.' +
+      '</p>' +
+      '<a class="btn small accent" href="objectifs.html?import=gpx&race=' + encodeURIComponent(r.id) + '">Importer le GPX</a>' +
+    '</div>';
   }
 
-  // Sous-scores : zone analytique secondaire, repliée — ils ne dominent plus la scène.
+  // Sous-scores : panneau dépliable DANS le hero (la grande scène "Target Summit" qui les
+  // affichait une seconde fois plus bas a été supprimée — plus aucune duplication de l'objectif).
   let subsHtml = '';
-  if (readiness.overall != null) {
+  if (hasReadiness) {
     const weakest = readiness.subs.filter(s => s.score != null).sort((a, b) => a.score - b.score)[0];
-    subsHtml = '<details class="summit-subscores">' +
+    subsHtml = '<details class="objective-subscores">' +
       '<summary>Détail de ma préparation <span class="hint">' +
         (weakest ? 'point faible : ' + escapeHtml(weakest.label.toLowerCase()) : '5 sous-scores') + '</span></summary>' +
-      '<div class="summit-subscores-body"><div class="obj-subs">' + readiness.subs.map(sub => {
+      '<div class="objective-subscores-body"><div class="obj-subs">' + readiness.subs.map(sub => {
         const pct = sub.score != null ? sub.score : 0;
         return '<div class="obj-sub-row" title="' + escapeHtml(sub.detail) + '">' +
           '<span>' + escapeHtml(sub.label) + '</span>' +
@@ -515,21 +238,264 @@ function renderSummit() {
         '</div>';
       }).join('') + '</div></div>' +
     '</details>';
-  } else {
-    subsHtml = '<p class="hint" style="margin:4px 0 0;">Pas encore assez de données pour calculer l\'indice de préparation.</p>';
   }
 
   box.innerHTML =
-    '<div class="summit-head">' +
-      '<div class="summit-title">' +
-        '<p class="summit-eyebrow"><img src="' + ICON('target') + '" alt="">' + statutLabel(r.statut) + '</p>' +
-        '<h3>' + escapeHtml(r.name) + '</h3>' +
+    '<div class="objective-content">' +
+      '<h2 class="visually-hidden">Objectif principal</h2>' +
+      '<div class="objective-eyebrow">' +
+        '<span class="elev-signal"><img src="' + ICON('target') + '" alt="">' + escapeHtml(statutLabel(r.statut)) + '</span>' +
       '</div>' +
-      '<div class="summit-metrics">' + metricsHtml + '</div>' +
+      '<div class="objective-main">' +
+        '<div class="objective-lead">' +
+          '<h3 class="objective-name">' + escapeHtml(r.name) + '</h3>' +
+          (hasReadiness
+            ? '<div class="objective-readiness"><span class="v">' + readiness.overall + '<small>%</small></span>' +
+              '<span class="l">de préparation</span></div>'
+            : '<p class="hint" style="margin:10px 0 0;">Pas encore assez de séances pour calculer ton état de préparation.</p>') +
+        '</div>' +
+        '<div class="objective-metrics">' +
+          metrics.map(m => '<div class="objective-metric"><span class="v">' + escapeHtml(m.v) + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +
+        '</div>' +
+      '</div>' +
     '</div>' +
-    objectiveProfileHtml +
-    '<div class="summit-actions"><a class="btn small" href="objectifs.html">Voir mon objectif →</a></div>' +
+    terrainHtml +
+    '<div class="objective-actions"><a class="btn small" href="objectifs.html">Voir mon objectif →</a></div>' +
     subsHtml;
+  initTerrainProfiles(box);
+}
+
+/* --------------------------- 2. TRAJECTOIRE ACTUELLE ---------------------------
+   SOURCE DE DONNÉES UNIQUE : les agrégats des semaines d'entraînement (getWeeklyStats,
+   getRecentWeeklyVolumes, getTrainingTrend, generateElevInsight). Aucune donnée d'objectif ni de
+   parcours ici. Répond à « est-ce que ma préparation avance ? ».
+
+   Point de vigilance traité : la semaine EN COURS est partielle. On l'annonce explicitement
+   (« 3 jours écoulés sur 7 ») et la comparaison se fait à nombre de jours égal avec la semaine
+   précédente (voir getWeeklyStats) — jamais 2 jours comparés à 7, ce qui affichait une chute
+   spectaculaire dès le lundi. Le total de la semaine précédente complète reste montré comme
+   repère, clairement étiqueté. */
+let trendMetric = 'km';
+function renderTrajectory() {
+  const box = document.getElementById('landscapeScene');
+  box.classList.add('scene');
+  const stats = getWeeklyStats();
+  if (!stats) {
+    box.innerHTML = '<div class="landscape-content"><h2>Trajectoire actuelle</h2>' +
+      '<div class="empty">Importe des séances (page Activités) pour suivre l\'évolution de ta préparation.</div></div>';
+    return;
+  }
+
+  // Bandeau de contexte : ce qu'on regarde exactement, et depuis combien de jours.
+  const weekLabel = stats.isPartialWeek
+    ? 'Semaine en cours — ' + stats.daysElapsed + (stats.daysElapsed > 1 ? ' jours écoulés' : ' jour écoulé') + ' sur 7'
+    : 'Semaine terminée';
+  const items = [
+    ['route', 'Distance', fmtNum(stats.distanceKm, ' km', 1), stats.distanceDeltaPct],
+    ['mountain-snow', 'D+', fmtNum(stats.ascent, ' m', 0), stats.ascentDeltaPct],
+    ['clock', 'Durée', fmtDuration(stats.durationS), stats.durationDeltaPct],
+    ['flag', 'Sorties', String(stats.sessionsCount), stats.sessionsDeltaPct],
+  ];
+  const weekGrid = items.map(([icon, lbl, val, delta]) =>
+    '<div class="week-stat"><img src="' + ICON(icon) + '" alt="">' +
+      '<div><div class="l">' + lbl + '</div><div class="v">' + val + '</div>' +
+      (delta != null ? '<div class="week-stat-delta' + (delta >= 0 ? ' is-up' : '') + '">' +
+        (delta >= 0 ? '+' : '') + delta + '% ' + (stats.isPartialWeek ? 'à j. égal' : 'vs sem. préc.') + '</div>' : '') +
+    '</div></div>'
+  ).join('');
+
+  const weeks = getRecentWeeklyVolumes(12);
+  const isKm = trendMetric === 'km';
+  const unit = isKm ? ' km' : ' m';
+  const dec = isKm ? 1 : 0;
+  let chartHtml, insightHtml = '';
+
+  if (weeks.length < 2) {
+    chartHtml = svgEmpty('Évolution du volume');
+  } else if (weeks.length === 2) {
+    // Deux semaines ne font pas une tendance : valeurs, écart et moyenne, jamais une droite
+    // surdimensionnée présentée comme une tendance.
+    const val = w => isKm ? w.km : w.dplus;
+    const a = val(weeks[0]), b = val(weeks[1]);
+    chartHtml = '<div class="landscape-thin">' +
+      '<div class="lt-item"><span class="v">' + fmtNum(a, unit, dec) + '</span><span class="l">Sem. du ' + escapeHtml(fmtDate(weeks[0].startISO)) + '</span></div>' +
+      '<div class="lt-item"><span class="v">' + fmtNum(b, unit, dec) + '</span><span class="l">Sem. du ' + escapeHtml(fmtDate(weeks[1].startISO)) + '</span></div>' +
+      '<div class="lt-item"><span class="v">' + (b - a >= 0 ? '+' : '') + fmtNum(b - a, unit, dec) + '</span><span class="l">Écart</span></div>' +
+      '<div class="lt-item"><span class="v">' + fmtNum((a + b) / 2, unit, dec) + '</span><span class="l">Moyenne des 2 sem.</span></div>' +
+    '</div><p class="hint" style="margin:8px 0 0;">Deux semaines renseignées seulement : pas encore assez pour tracer une tendance fiable.</p>';
+  } else {
+    const points = weeks.map((w, i) => ({
+      x: i, y: +(isKm ? w.km : w.dplus).toFixed(1), xLabel: w.shortLabel,
+      label: 'Semaine du ' + fmtDate(w.startISO) + ' : ' + (isKm ? w.km.toFixed(1) + ' km' : Math.round(w.dplus) + ' m D+'),
+    }));
+    // Hauteur volontairement contenue : un graphique de 12 points n'a pas besoin d'occuper la
+    // moitié de l'écran. L'espace récupéré sert à l'Insight et aux repères chiffrés à droite.
+    chartHtml = lineChartSvg('', points, { decimals: dec, height: 280, hideTitle: true });
+  }
+
+  const insight = generateElevInsight();
+  const trend = getTrainingTrend();
+  if (insight) {
+    const deltaPct = trend && trend.chronic > 0 ? Math.round(((trend.acute - trend.chronic) / trend.chronic) * 100) : null;
+    insightHtml = '<div class="landscape-callout status-' + insight.level + '">' +
+      '<span class="dot" aria-hidden="true"></span>' +
+      '<div class="body">' +
+        '<span class="elev-signal"><img src="' + ICON('zap') + '" alt="">Insight ELEV</span>' +
+        '<strong>' + escapeHtml(insight.title) + '</strong>' +
+        '<p>' + escapeHtml(insight.text) + (deltaPct != null ? ' <strong class="delta">(' + (deltaPct >= 0 ? '+' : '') + deltaPct + '% vs moyenne 4 sem.)</strong>' : '') + '</p>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // Colonne de droite : repères chiffrés exacts qui occupent l'espace libéré par le graphique
+  // raccourci. La semaine précédente COMPLÈTE est un repère, jamais la base du delta ci-dessus.
+  const trendSubs = {
+    rising: 'par rapport à ta moyenne récente', rising_fast: 'à surveiller',
+    stable: 'sur tes 4 dernières semaines', falling: 'par rapport à tes semaines précédentes',
+  };
+  const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: 'ok', falling: null };
+  const avg = weeks.length ? weeks.reduce((a, w) => a + (isKm ? w.km : w.dplus), 0) / weeks.length : null;
+  const sideHtml =
+    '<div class="landscape-side-panel">' +
+      (trend ? '<div class="landscape-trend-tag"><span class="kpi-status-dot' + (trendStatus[trend.level] ? ' status-' + trendStatus[trend.level] : '') + '"></span>' +
+        '<span><strong>' + escapeHtml(trend.label) + '</strong> — ' + escapeHtml(trendSubs[trend.level]) + '</span></div>' : '') +
+      '<dl class="landscape-figures">' +
+        '<div><dt>Semaine précédente (complète)</dt><dd>' + fmtNum(isKm ? stats.prevFull.distanceKm : stats.prevFull.ascent, unit, dec) + '</dd></div>' +
+        (avg != null ? '<div><dt>Moyenne sur ' + weeks.length + ' sem.</dt><dd>' + fmtNum(avg, unit, dec) + '</dd></div>' : '') +
+        '<div><dt>Temps d\'effort cette semaine</dt><dd>' + fmtDuration(stats.durationS) + '</dd></div>' +
+      '</dl>' +
+      insightHtml +
+    '</div>';
+
+  box.innerHTML =
+    '<div class="landscape-content">' +
+      '<div class="landscape-head">' +
+        '<h2>Trajectoire actuelle</h2>' +
+        '<span class="week-context' + (stats.isPartialWeek ? ' is-partial' : '') + '">' + escapeHtml(weekLabel) + '</span>' +
+      '</div>' +
+      '<div class="week-stats-inline">' + weekGrid + '</div>' +
+      '<div class="landscape-grid">' +
+        '<div class="landscape-chart-col">' +
+          '<div class="trend-subhead">' +
+            '<div><h3>Évolution du volume</h3><p class="hint">' +
+              (weeks.length >= 12 ? '12 dernières semaines'
+                : weeks.length > 1 ? escapeHtml(weeks.length + ' semaines renseignées')
+                : 'Historique trop court') + '</p></div>' +
+            '<div class="period-select" id="trendMetricSelect">' +
+              '<button type="button" data-metric="km" class="' + (isKm ? 'active' : '') + '">Volume</button>' +
+              '<button type="button" data-metric="dplus" class="' + (!isKm ? 'active' : '') + '">D+</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="trendChartBox" style="margin-top:8px;">' + chartHtml + '</div>' +
+        '</div>' +
+        sideHtml +
+      '</div>' +
+      '<a class="link-arrow trend-link" href="analyse.html">Voir toute l\'analyse de tendance →</a>' +
+    '</div>';
+
+  initChartTooltips(document.getElementById('trendChartBox'));
+  box.querySelectorAll('#trendMetricSelect button').forEach(btn => btn.addEventListener('click', () => {
+    trendMetric = btn.dataset.metric;
+    renderTrajectory();
+  }));
+}
+
+/* --------------------------- 3. PROCHAIN CHECKPOINT ---------------------------
+   SOURCE DE DONNÉES UNIQUE : le plan d'entraînement importé (getPlan). Répond à « que dois-je
+   faire ensuite ? ». Bande compacte pleine largeur, vocabulaire direct. */
+function renderCheckpoint() {
+  const box = document.getElementById('checkpointStrip');
+  box.classList.add('scene');
+  const today = new Date().toISOString().slice(0,10);
+  const plan = getPlan();
+  const nextPlanned = plan ? plan.filter(p => p.date >= today).sort((a,b) => a.date.localeCompare(b.date))[0] : null;
+  if (!nextPlanned) {
+    box.innerHTML = '<p class="eyebrow">Prochain checkpoint</p>' +
+      '<div class="empty">Importe ton plan d\'entraînement (page Paramètres) pour voir ta prochaine séance ici.</div>';
+    return;
+  }
+  const bloc = getCurrentBloc();
+  const isToday = nextPlanned.date === today;
+  // La durée du plan vient d'un champ CSV libre ("1h15", "45min", "1:30") : on la fait passer par
+  // le parseur tolérant puis par le formateur centralisé, pour qu'elle s'affiche comme partout
+  // ailleurs sur le site. Si le format n'est pas reconnu, on montre la valeur brute plutôt que de
+  // la perdre ou d'en inventer une.
+  const dureeMin = parseDureeToMin(nextPlanned.duree);
+  const facts = [
+    isToday ? 'Aujourd\'hui' : fmtDate(nextPlanned.date),
+    nextPlanned.distanceKm ? fmtNum(nextPlanned.distanceKm, ' km', 1) : null,
+    nextPlanned.deniveleM ? fmtNum(nextPlanned.deniveleM, ' m D+', 0) : null,
+    dureeMin != null ? fmtDuration(dureeMin * 60) : (nextPlanned.duree || null),
+  ].filter(Boolean).map(p => '<span class="next-session-pill">' + escapeHtml(p) + '</span>').join('');
+  box.innerHTML =
+    '<div class="checkpoint-inner">' +
+      '<div class="checkpoint-lead">' +
+        '<p class="eyebrow">Prochain checkpoint</p>' +
+        '<strong class="checkpoint-title">' + escapeHtml(nextPlanned.type || 'Séance') + '</strong>' +
+        (nextPlanned.objectif ? '<span class="checkpoint-goal">' + escapeHtml(nextPlanned.objectif) + '</span>' : '') +
+        (bloc ? '<span class="next-session-bloc">' + escapeHtml(bloc) + '</span>' : '') +
+      '</div>' +
+      '<div class="checkpoint-facts">' + facts + '</div>' +
+      '<a class="btn small" href="plan.html">Voir le plan →</a>' +
+    '</div>';
+}
+
+/* --------------------------- 4. DERNIÈRE SORTIE — TERRAIN RÉCENT ---------------------------
+   SOURCE DE DONNÉES UNIQUE : la dernière activité valide (loadAllSessions). C'est la SEULE scène
+   qui affiche un profil altimétrique d'activité — avec allure/FC/cadence au survol, données qui
+   n'existent que pour une sortie réalisée et n'ont aucun sens sur un parcours d'objectif.
+   Composition horizontale compacte (pas un second hero) : à gauche l'identité et les KPI, au
+   centre le profil, à droite la trace GPS et l'accès à l'analyse complète. */
+function renderLastRide() {
+  const box = document.getElementById('lastRideScene');
+  box.classList.add('scene');
+  const sessions = loadAllSessions();
+  if (!sessions.length) {
+    box.innerHTML = '<p class="eyebrow">Dernière sortie</p>' +
+      '<div class="empty-state"><div class="empty-title">Aucune sortie enregistrée</div>' +
+      '<p>Importe une première activité .fit pour voir apparaître son terrain, ses métriques et son analyse.</p>' +
+      '<a class="btn small accent" href="historique.html">Importer une activité</a></div>';
+    return;
+  }
+  const s = sessions[sessions.length - 1];
+  const href = 'activite.html?id=' + encodeURIComponent(s.id);
+  const kpis = [
+    ['route', fmtNum(s.distanceKm, ' km', 1), 'Distance'],
+    ['mountain-snow', fmtNum(s.ascent, ' m', 0), 'D+'],
+    ['clock', fmtDuration(s.durationS), 'Durée'],
+    s.avgPaceSecPerKm != null ? ['gauge', fmtPace(s.avgPaceSecPerKm), 'Allure moy.'] : null,
+    s.avgHr != null ? ['heart-pulse', s.avgHr + ' bpm', 'FC moy.'] : null,
+  ].filter(Boolean);
+
+  // Profil altimétrique RÉEL de la sortie (X = distance cumulée, Y = altitude). Aucun profil si
+  // la série n'est pas exploitable — état honnête plutôt qu'un relief fabriqué.
+  const rawSeries = Array.isArray(s.series) ? s.series.filter(p => p.alt != null && p.distKm != null) : [];
+  const terrain = validateTerrainSeries(rawSeries);
+  const terrainHtml = terrain
+    ? elevTerrainProfile(terrain, { height: 200, variant: 'hero', className: 'terrain-profile--lastride' }) +
+      '<p class="terrain-hint">Survole le profil (ou explore-le au clavier avec ←/→) pour lire distance, altitude, allure et FC.</p>'
+    : '<p class="terrain-empty">Cette sortie ne contient pas de série altitude/distance exploitable : aucun profil ne peut être tracé.</p>';
+
+  // Trace GPS vue du dessus (longitude/latitude) — représentation DISTINCTE du profil
+  // altimétrique ci-dessus, jamais l'une convertie en l'autre.
+  const trace = sessionPreviewSvg(s);
+
+  box.innerHTML =
+    '<div class="lastride-inner">' +
+      '<div class="lastride-lead">' +
+        '<p class="eyebrow">Dernière sortie</p>' +
+        '<h2 class="lastride-title">' + escapeHtml(s.sport || 'Séance') + '</h2>' +
+        '<p class="lastride-date">' + escapeHtml(fmtDate(s.date)) + (s.dateApprox ? ' *' : '') + '</p>' +
+        '<div class="lastride-kpis">' + kpis.map(([icon, v, l]) =>
+          '<div class="lastride-kpi"><img src="' + ICON(icon) + '" alt=""><div><span class="v">' + v + '</span><span class="l">' + escapeHtml(l) + '</span></div></div>'
+        ).join('') + '</div>' +
+      '</div>' +
+      '<div class="lastride-profile">' + terrainHtml + '</div>' +
+      '<div class="lastride-aside">' +
+        (trace ? '<a class="lastride-trace" href="' + href + '" aria-label="Voir l\'analyse complète de la sortie">' + trace + '</a>' : '') +
+        '<a class="btn small accent" href="' + href + '">Voir l\'analyse complète →</a>' +
+      '</div>' +
+    '</div>';
   initTerrainProfiles(box);
 }
 
@@ -591,16 +557,17 @@ function renderFcSummary() {
   }).join('');
 }
 
+// Rendu dans l'ordre de la narration : où je veux aller → où j'en suis → quoi faire ensuite →
+// ce que je viens de faire → analyses secondaires.
 function renderAll() {
   renderGreeting();
   renderGearAlert();
   document.getElementById('terrainBackdropSvgLayer').innerHTML = elevMountainBackdropSvg({ contourOnly: true });
-  renderPulse();
-  renderLandscape();
-  renderLastActivity();
-  renderSummit();
-  renderLoadChart();
-  renderCheckpoint();
+  renderObjective();   // 1. Objectif principal (objectif + GPX de l'objectif)
+  renderTrajectory();  // 2. Trajectoire actuelle (agrégats hebdomadaires)
+  renderCheckpoint();  // 3. Prochain checkpoint (plan)
+  renderLastRide();    // 4. Dernière sortie (dernière activité)
+  renderLoadChart();   // 5. Charge et intensité
   renderFcSummary();
 }
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
