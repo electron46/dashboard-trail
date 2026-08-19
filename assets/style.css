@@ -749,6 +749,13 @@ html[data-theme="light"] .terrain-label{background:rgba(11,15,14,.82);}
 .terrain-empty{margin:8px 0 0;padding:14px 16px;border-radius:var(--radius-md);
   background:rgba(11,15,14,.42);border:1px dashed var(--border);font-size:.82rem;color:var(--muted);max-width:520px;}
 html[data-theme="light"] .terrain-empty{background:rgba(255,255,255,.4);}
+/* Liens en texte courant : le projet n'a aucune règle globale de couleur de lien (seul
+   `.alert-banner a` en avait une), donc un `<a>` inline retombait sur le bleu par défaut du
+   navigateur (#0000EE mesuré) — illisible sur fond quasi noir et hors charte. Corrigé ici pour
+   les états vides/aides que porte cette passe ; les liens-boutons (.btn) et la navigation gardent
+   leurs propres couleurs et ne sont pas touchés. */
+.terrain-empty a,.summit-no-profile a,.terrain-hint a,.empty a,p.hint a{color:var(--accent-light);text-decoration:underline;text-underline-offset:2px;}
+.terrain-empty a:hover,.summit-no-profile a:hover,.terrain-hint a:hover,.empty a:hover,p.hint a:hover{color:var(--text);}
 
 /* ELEV Signal — réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
    actuel, détection) — jamais un simple titre de section. */
@@ -795,7 +802,13 @@ html[data-theme="light"] .tb-photo-mask{background:
 .pulse-hero-metric--dominant .l.status-ok{color:var(--success);}
 /* Métriques secondaires réparties sur le centre et la droite du canvas (jamais empilées contre la
    valeur dominante) — d'où le space-between plutôt qu'un simple gap. */
-.pulse-floating-metrics{display:flex;flex-wrap:wrap;align-items:flex-end;gap:22px 30px;}
+/* En dessous du passage en grille (900px), 4 métriques ne tiennent pas sur une ligne et se
+   cassaient en 3 + 1, laissant "1 sortie" orpheline sur sa propre ligne (défaut vu à l'écran,
+   invisible sur des mesures). Grille 2×2 explicite : deux lignes équilibrées, jamais d'orphelin. */
+.pulse-floating-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,auto));justify-content:start;align-items:flex-end;gap:20px 34px;}
+@media (min-width:520px) and (max-width:899px){
+  .pulse-floating-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 30px;}
+}
 .floating-metric{display:flex;flex-direction:column;gap:3px;}
 .floating-metric .v{font-family:var(--font-display);font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
 .floating-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
@@ -803,7 +816,8 @@ html[data-theme="light"] .tb-photo-mask{background:
 .pulse-terrain{position:relative;margin-top:4px;}
 @media (min-width:900px){
   .pulse-main{display:grid;grid-template-columns:minmax(0,34%) minmax(0,1fr);align-items:flex-end;gap:32px 40px;}
-  .pulse-floating-metrics{justify-content:space-between;flex-wrap:nowrap;gap:24px;padding-bottom:6px;}
+  /* Desktop : une seule ligne, répartie sur le centre et la droite du canvas. */
+  .pulse-floating-metrics{grid-template-columns:repeat(4,minmax(0,auto));justify-content:space-between;gap:24px;padding-bottom:6px;}
   .floating-metric .v{font-size:1.5rem;}
 }
 @media (min-width:1024px){
@@ -924,6 +938,8 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
   .terrain-tip{font-size:.68rem;padding:6px 11px;gap:8px;}
   .pulse-floating-metrics{gap:16px 22px;}
   .floating-metric .v{font-size:1.15rem;}
+  /* Même correction d'orphelin pour les 4 repères de la semaine (Training Landscape). */
+  .week-stats-inline{display:grid;grid-template-columns:1fr 1fr;gap:16px 18px;}
   .summit-bg-wrap{height:clamp(280px,66vw,380px);}
   /* Recadrage volontaire des fonds sur mobile : on garde le relief, pas le panorama complet. */
   .summit-bg{object-position:62% 42%;}
