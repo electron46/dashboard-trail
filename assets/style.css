@@ -763,8 +763,8 @@ html[data-theme="light"] .terrain-empty{background:rgba(255,255,255,.4);}
    navigateur (#0000EE mesuré) — illisible sur fond quasi noir et hors charte. Corrigé ici pour
    les états vides/aides que porte cette passe ; les liens-boutons (.btn) et la navigation gardent
    leurs propres couleurs et ne sont pas touchés. */
-.terrain-empty a,.summit-no-profile a,.terrain-hint a,.empty a,p.hint a{color:var(--accent-light);text-decoration:underline;text-underline-offset:2px;}
-.terrain-empty a:hover,.summit-no-profile a:hover,.terrain-hint a:hover,.empty a:hover,p.hint a:hover{color:var(--text);}
+.terrain-empty a,.terrain-hint a,.empty a,p.hint a{color:var(--accent-light);text-decoration:underline;text-underline-offset:2px;}
+.terrain-empty a:hover,.terrain-hint a:hover,.empty a:hover,p.hint a:hover{color:var(--text);}
 
 /* ELEV Signal — réservé aux éléments réellement générés/interprétés par ELEV (Insight, état
    actuel, détection) — jamais un simple titre de section. */
@@ -792,57 +792,16 @@ html[data-theme="light"] .tb-photo-mask{background:
     linear-gradient(180deg,rgba(229,231,235,.05) 0%,rgba(229,231,235,.35) 55%,var(--bg) 100%),
     linear-gradient(90deg,rgba(11,15,14,.35) 0%,rgba(11,15,14,0) 20%,rgba(11,15,14,0) 80%,rgba(11,15,14,.35) 100%);}
 
-/* Performance Pulse (CURRENT STATE) — composition distribuée dans tout le canvas, plus une colonne
-   centrale : tiers gauche = readiness + objectif (la valeur dominante), centre/droite = métriques
-   secondaires réparties, tiers bas = profil altimétrique presque pleine largeur avec ses labels.
-   Aucune métrique n'est posée sur la ligne du profil. */
-.pulse-scene{position:relative;padding:6px 0 0;display:flex;flex-direction:column;gap:10px;}
-.pulse-content{position:relative;padding:14px 0 0;}
-.pulse-eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
-.pulse-greeting{font-size:.78rem;color:var(--muted);}
-/* Hiérarchie extrême : UNE valeur domine (readiness si calculable, sinon volume). */
-.pulse-main{display:flex;flex-direction:column;gap:24px;}
-.pulse-lead{min-width:0;}
-.pulse-hero-metric--dominant .v{display:block;font-family:var(--font-display);font-size:clamp(3.4rem,9vw,4.4rem);font-weight:800;letter-spacing:-.025em;line-height:.92;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
-.pulse-hero-metric--dominant .v small{font-size:.4em;font-weight:700;-webkit-text-fill-color:var(--accent-light);}
-.pulse-hero-metric--dominant .l{display:block;margin-top:8px;font-size:.92rem;color:var(--muted);max-width:22ch;}
-.pulse-hero-metric--dominant .l strong{display:block;font-family:var(--font-display);font-size:1.16rem;font-weight:700;color:var(--text);letter-spacing:-.01em;}
-.pulse-hero-metric--dominant .l .arrow{font-size:.75rem;}
-.pulse-hero-metric--dominant .l.status-ok{color:var(--success);}
-/* Métriques secondaires réparties sur le centre et la droite du canvas (jamais empilées contre la
-   valeur dominante) — d'où le space-between plutôt qu'un simple gap. */
-/* En dessous du passage en grille (900px), 4 métriques ne tiennent pas sur une ligne et se
-   cassaient en 3 + 1, laissant "1 sortie" orpheline sur sa propre ligne (défaut vu à l'écran,
-   invisible sur des mesures). Grille 2×2 explicite : deux lignes équilibrées, jamais d'orphelin. */
-.pulse-floating-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,auto));justify-content:start;align-items:flex-end;gap:20px 34px;}
-@media (min-width:520px) and (max-width:899px){
-  .pulse-floating-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 30px;}
-}
-.floating-metric{display:flex;flex-direction:column;gap:3px;}
-.floating-metric .v{font-family:var(--font-display);font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
-.floating-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
-/* Bande basse : le profil vit dans le tiers inférieur, en élément du flux. */
-.pulse-terrain{position:relative;margin-top:4px;}
-@media (min-width:900px){
-  .pulse-main{display:grid;grid-template-columns:minmax(0,34%) minmax(0,1fr);align-items:flex-end;gap:32px 40px;}
-  /* Desktop : une seule ligne, répartie sur le centre et la droite du canvas. */
-  .pulse-floating-metrics{grid-template-columns:repeat(4,minmax(0,auto));justify-content:space-between;gap:24px;padding-bottom:6px;}
-  .floating-metric .v{font-size:1.5rem;}
-}
+/* Le fond photographique du hero grandit avec la largeur d ecran. Seule regle conservee de
+   l ancien bloc Performance Pulse, dont la scene a ete remplacee par le hero Objectif. */
 @media (min-width:1024px){
-  .pulse-content{padding-top:22px;}
-  .pulse-hero-metric--dominant .v{font-size:clamp(4.6rem,6vw,6.4rem);}
-  .floating-metric .v{font-size:1.7rem;}
   .terrain-backdrop{height:clamp(500px,44vw,620px);}
 }
 
 /* Training Landscape + ELEV Insight — le graphique EST la scène. Le fond atmosphérique est
-   désormais un élément statique de `.rail-stop--split` (et non plus un enfant régénéré de la
+   désormais un élément statique de `.rail-stop--trajectory` (et non plus un enfant régénéré de la
    scène), donc il survit à chaque re-rendu et couvre bien toute la largeur du canvas.
-   Répartition desktop ~71 % graphique+insight / ~29 % prochaine séance + dernière activité. */
-.rail-stop--split{display:grid;grid-template-columns:1fr;gap:20px;align-items:start;}
-@media (min-width:1024px){ .rail-stop--split{grid-template-columns:2.45fr 1fr;gap:36px;} }
-.landscape-side{display:flex;flex-direction:column;gap:16px;min-width:0;}
+   Répartition desktop : graphique + Insight à gauche, repères chiffrés à droite. */
 .landscape-scene{position:relative;padding:0;min-width:0;}
 .landscape-bg-wrap{position:absolute;top:0;bottom:0;left:0;right:0;pointer-events:none;overflow:hidden;}
 /* Fond atmosphérique (elev-secondary-dark.webp) — très assombri, jamais un doublon du terrain réel. */
@@ -880,57 +839,7 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 /* Next Checkpoint : un point sur un segment de trajectoire, directement dans le flux. */
 .checkpoint-strip{position:relative;padding:2px 0 6px;}
 .checkpoint-strip .eyebrow{margin:0 0 14px;font-family:var(--font-sans);font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
-.checkpoint-track{position:relative;height:2px;background:var(--border);border-radius:2px;margin:0 4px 16px;}
-.checkpoint-track .dot{position:absolute;top:50%;left:8%;width:10px;height:10px;border-radius:50%;background:var(--accent-light);box-shadow:0 0 0 4px var(--accent-soft);transform:translate(-50%,-50%);}
-.checkpoint-body strong{display:block;font-family:var(--font-display);font-size:1rem;font-weight:700;}
-.checkpoint-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
 
-/* Target Summit — deuxième grande scène pleine largeur, pensée comme une DESTINATION : le sommet
-   photographique, le nom de la course, le compte à rebours, la readiness et (si un GPX existe) le
-   vrai profil du parcours. Le fond est un élément statique du rail : il reste visible même sans
-   GPX — seul le PROFIL dépend des données, jamais l'environnement visuel.
-   Les 5 sous-scores de préparation ne dominent plus la scène : ils vivent dans un panneau
-   dépliable placé sous elle (voir .summit-subscores). */
-.rail-stop--summit{position:relative;}
-/* `max-height:100%` : sans GPX la scène est plus courte que la hauteur idéale du sommet — le fond
-   ne doit alors pas déborder sur les cartes secondaires en dessous (mesuré : 435px de fond pour
-   384px de scène avant ce garde-fou). */
-.summit-bg-wrap{position:absolute;top:0;left:0;right:0;height:clamp(330px,34vw,470px);max-height:100%;pointer-events:none;overflow:hidden;}
-.summit-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 40%;opacity:.6;filter:saturate(.85) brightness(.65);}
-.summit-bg-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,15,14,.15) 0%,rgba(11,15,14,.5) 65%,var(--bg) 100%),linear-gradient(90deg,rgba(11,15,14,.55) 0%,rgba(11,15,14,0) 30%);}
-.summit-scene{position:relative;padding:0;display:flex;flex-direction:column;gap:14px;}
-.summit-head{display:flex;flex-direction:column;gap:10px;padding-top:16px;}
-.summit-title h3{margin:0;font-family:var(--font-display);font-size:clamp(1.7rem,3.4vw,2.5rem);font-weight:800;letter-spacing:-.02em;}
-.summit-eyebrow{display:flex;align-items:center;gap:6px;font-family:var(--font-sans);font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
-.summit-eyebrow img{width:13px;height:13px;filter:invert(60%);}
-/* Même logique de distribution que le hero : identité à gauche, chiffres au centre/à droite. */
-.summit-metrics{display:flex;flex-wrap:wrap;align-items:flex-end;gap:20px 30px;}
-.summit-metric{display:flex;flex-direction:column;gap:3px;}
-.summit-metric .v{font-family:var(--font-display);font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
-.summit-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
-.summit-metric--countdown .v{color:var(--accent-light);}
-.summit-metric--readiness .v{font-size:2.2rem;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
-.summit-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
-@media (min-width:900px){
-  .summit-head{display:grid;grid-template-columns:minmax(0,34%) minmax(0,1fr);align-items:flex-end;gap:24px 40px;padding-top:26px;}
-  .summit-metrics{justify-content:space-between;flex-wrap:nowrap;}
-  .summit-metric .v{font-size:1.6rem;}
-  .summit-metric--readiness .v{font-size:2.6rem;}
-}
-/* État honnête sans GPX : le paysage reste là, seul le tracé manque — et on dit comment l'obtenir. */
-.summit-no-profile{margin:6px 0 0;padding:14px 16px;border-radius:var(--radius-md);background:rgba(11,15,14,.5);border:1px dashed var(--border);font-size:.84rem;color:var(--muted);max-width:560px;}
-.summit-no-profile strong{display:block;color:var(--text);font-family:var(--font-display);font-size:.94rem;margin-bottom:3px;}
-.summit-profile{position:relative;}
-/* Sous-scores : zone analytique secondaire sous la scène, repliée par défaut — ce n'est plus la
-   première chose qu'on voit de son objectif. */
-.summit-subscores{margin-top:6px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-1,var(--panel));overflow:hidden;}
-.summit-subscores > summary{cursor:pointer;list-style:none;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:var(--font-display);font-size:.9rem;font-weight:700;}
-.summit-subscores > summary::-webkit-details-marker{display:none;}
-.summit-subscores > summary::after{content:'▾';color:var(--muted-2);font-size:.8rem;transition:transform var(--dur-fast) var(--ease-standard);}
-.summit-subscores[open] > summary::after{transform:rotate(180deg);}
-.summit-subscores > summary .hint{font-family:var(--font-sans);font-weight:400;font-size:.74rem;color:var(--muted);}
-.summit-subscores-body{padding:2px 16px 16px;}
-@media (prefers-reduced-motion:reduce){ .summit-subscores > summary::after{transition:none;} }
 
 /* ============================================================================================
    NARRATION DE L'ACCUEIL — une scène = une source de données, jamais un mélange.
@@ -1079,13 +988,9 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
   .terrain-label .tl-body strong{font-size:.55rem;letter-spacing:.07em;}
   .terrain-label .tl-vals{font-size:.64rem;}
   .terrain-tip{font-size:.68rem;padding:6px 11px;gap:8px;}
-  .pulse-floating-metrics{gap:16px 22px;}
-  .floating-metric .v{font-size:1.15rem;}
   /* Même correction d'orphelin pour les 4 repères de la semaine (Training Landscape). */
   .week-stats-inline{display:grid;grid-template-columns:1fr 1fr;gap:16px 18px;}
-  .summit-bg-wrap{height:clamp(280px,66vw,380px);}
   /* Recadrage volontaire des fonds sur mobile : on garde le relief, pas le panorama complet. */
-  .summit-bg{object-position:62% 42%;}
   .landscape-bg{object-position:62% 30%;}
 }
 /* Pas de règle qui masque le point culminant en dur sous une largeur donnée : c'est le placement
@@ -1133,31 +1038,14 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
    dans son ensemble, légère élévation au survol (sans dépendre de la seule couleur pour signaler
    l'interactivité, le CTA texte reste visible). Aperçu visuel basé sur les données (tracé GPS ou
    profil altimétrique) — jamais une photo générique. */
-.activity-card-link{display:block;text-decoration:none;color:inherit;border-radius:var(--radius-lg);transition:transform var(--dur-base) var(--ease-standard),box-shadow var(--dur-base) var(--ease-standard);}
-.activity-card-link:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(0,0,0,.32);}
-.activity-card-link:hover .link-arrow{color:var(--accent);}
-.activity-card-link:hover .activity-visual{filter:brightness(1.06);}
-.activity-card .activity-visual{transition:filter var(--dur-base) var(--ease-standard);}
 /* Le profil altimétrique/tracé est un bandeau horizontal pleine largeur au-dessus des stats
    (même principe qu'auparavant sur mobile) plutôt qu'un petit bloc carré à gauche : il reste
    ainsi lisible et "trail" à toutes les tailles, sans faire gonfler la hauteur de la carte. */
-.activity-card{display:flex;flex-direction:column;gap:16px;}
-.activity-card .activity-visual{width:100%;height:130px;border-radius:var(--radius-md);overflow:hidden;background:radial-gradient(120% 100% at 30% 20%,#1E2A22,#0C100E 75%);display:flex;align-items:center;justify-content:center;}
-.activity-card .activity-visual svg{width:100%;height:100%;display:block;}
 @media (min-width:768px){
-  .activity-card .activity-visual{height:150px;}
 }
 @media (min-width:1024px){
   /* Ratio horizontal ~4:1 à 5:1 visé sur desktop (largeur de carte ~600-750px dans la grille). */
-  .activity-card .activity-visual{height:145px;}
 }
-.activity-card .activity-info{flex:1 1 220px;min-width:0;}
-.activity-card h3{margin:2px 0 12px;font-family:var(--font-display);font-size:1.2rem;font-weight:700;}
-.activity-card .activity-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(76px,1fr));gap:14px 10px;}
-.activity-card .activity-stat{display:flex;flex-direction:column;gap:3px;}
-.activity-card .activity-stat img{width:14px;height:14px;filter:invert(55%);margin-bottom:1px;}
-.activity-card .activity-stat strong{color:var(--text);font-variant-numeric:tabular-nums;font-weight:700;font-size:1rem;font-family:var(--font-display);}
-.activity-card .activity-stat span{font-size:.7rem;color:var(--muted);}
 
 /* Carte "objectif principal" — pas de grand aplat vert : fond sombre standard, le vert ne sert
    qu'à la progression (barre + petites barres de sous-scores). Le nom et le % dominent. */
@@ -1213,7 +1101,6 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .empty-state p{margin:0 0 14px;font-size:.86rem;}
 
 @media (prefers-reduced-motion: reduce){
-  .activity-card-link{transition:none;}
 }
 
 /* Page Activités — tableau dense sur desktop, cartes compactes sur mobile (une seule structure
