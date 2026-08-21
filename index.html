@@ -402,6 +402,13 @@ function renderTrajectory() {
         '<span class="elev-signal"><img src="' + ICON('zap') + '" alt="">Insight ELEV</span>' +
         '<strong>' + escapeHtml(insight.title) + '</strong>' +
         '<p>' + escapeHtml(insight.text) + (deltaPct != null ? ' <strong class="delta">(' + (deltaPct >= 0 ? '+' : '') + deltaPct + '% sur 7 jours glissants, vs moyenne 4 sem.)</strong>' : factual) + '</p>' +
+        // Observations complémentaires (phase 12) : l'interprétation ne portait que sur le
+        // VOLUME. Le dénivelé — la mesure qui définit le trail — et la sortie longue n'étaient
+        // jamais commentés, alors que les deux se calculent depuis les mêmes semaines déjà
+        // agrégées pour le graphique. Chacune porte son constat ET sa référence.
+        generateElevSideInsights().map(o =>
+          '<p class="insight-extra"><strong>' + escapeHtml(o.title) + '</strong> ' + escapeHtml(o.text) + '</p>'
+        ).join('') +
       '</div>' +
     '</div>';
   }
