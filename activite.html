@@ -42,6 +42,10 @@
 
 <main id="pageMain">
 
+  <!-- Issue de la resynchronisation Supabase (voir renderSyncState). Present aussi dans la
+       branche « activite introuvable », qui remplace tout le contenu de <main>. -->
+  <div id="syncStateActivite"></div>
+
   <div class="kpi-strip" id="kpiRow"></div>
 
   <div class="activity-detail-grid">
@@ -876,6 +880,7 @@ try { renderAppNav('historique.html'); } catch (e) { console.error('Navigation p
 renderSidebarUser();
 if (!session) {
   document.getElementById('pageMain').innerHTML =
+    '<div id="syncStateActivite"></div>' +
     '<div class="empty-state"><div class="empty-title">Activité introuvable</div>' +
     '<p>Cette activité n\'existe pas ou a été supprimée.</p>' +
     '<a class="btn small accent" href="historique.html">Retour aux activités</a></div>';
@@ -888,8 +893,23 @@ if (!session) {
 // dans le cache local (nouvel appareil, lien ouvert directement), on resynchronise depuis Supabase
 // puis on recharge une fois la page pour tenter de la retrouver.
 async function onAuthReady() {
-  await syncActivitiesWithSupabase();
-  if (!session) location.reload();
+  const res = await syncActivitiesWithSupabase();
+  if (session) { renderSyncState('syncStateActivite', res, onAuthReady); return; }
+
+  // BOUCLE DE RECHARGEMENT INFINIE (corrigée) : `if (!session) location.reload()` rechargeait
+  // sans condition. Quand la séance restait introuvable — identifiant supprimé, lien périmé, ou
+  // simplement mode local sans Supabase configuré — le rechargement relançait onAuthReady, qui
+  // rechargeait à nouveau. Vérifié : navigation de type « reload » en continu et `document.body`
+  // constamment nul, l'état « Activité introuvable » n'était jamais lisible.
+  // On ne recharge donc qu'UNE seule fois, et seulement si la resynchronisation a réellement
+  // abouti : sans données nouvelles, un rechargement ne peut rien changer.
+  const guard = 'trail:activityRetry:' + sessionId;
+  if (res && res.ok && !sessionStorage.getItem(guard)) {
+    sessionStorage.setItem(guard, '1');
+    location.reload();
+    return;
+  }
+  renderSyncState('syncStateActivite', res, null);
 }
 </script>
 <script src="assets/authgate.js"></script>

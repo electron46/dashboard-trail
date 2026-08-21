@@ -45,6 +45,9 @@
 
   <div id="importMsg" class="storage-warning-target"></div>
 
+  <!-- Issue de la resynchronisation Supabase (voir renderSyncState). -->
+  <div id="syncState"></div>
+
   <section class="card activities-toolbar">
     <div class="chip-filters" id="periodFilterRow">
       <button type="button" class="chip-btn active" data-period="all">Toutes</button>
@@ -206,7 +209,11 @@ if (location.hash.startsWith('#s=')) location.replace('activite.html?id=' + enco
 
 // Rappelé par assets/authgate.js une fois la session confirmée, après resynchro des séances
 // depuis Supabase (source de vérité) — voir syncActivitiesWithSupabase() dans app.js.
-async function onAuthReady() { await syncActivitiesWithSupabase(); refreshAll(); }
+async function onAuthReady() {
+  const res = await syncActivitiesWithSupabase();
+  renderSyncState('syncState', res, onAuthReady);
+  refreshAll();
+}
 </script>
 <script src="assets/authgate.js"></script>
 </body>

@@ -64,6 +64,9 @@
 
   <div id="gearAlertBox"></div>
 
+  <!-- Issue de la resynchronisation Supabase (voir renderSyncState). -->
+  <div id="syncState"></div>
+
   <!-- Home Rail : les 3 grands moments de la narration (État actuel → Paysage d'entraînement →
        Objectif). Chaque `.rail-stop` est FULL-BLEED : il annule le centrage de <main> par des
        marges négatives (--bleed-l/--bleed-r, affinées par initHomeBleed) et se redonne seulement
@@ -641,7 +644,11 @@ initHeroTerrainTransition(); // transition "mountain → terrain → data" au sc
 initHomeBleed(); // Hero/Training Landscape/Target Summit : composition ET fonds pleine largeur réelle
 // Rappelé par assets/authgate.js une fois la session confirmée, après avoir resynchronisé les
 // séances depuis Supabase (source de vérité) — voir syncActivitiesWithSupabase() dans app.js.
-async function onAuthReady() { await syncActivitiesWithSupabase(); renderAll(); }
+async function onAuthReady() {
+  const res = await syncActivitiesWithSupabase();
+  renderSyncState('syncState', res, onAuthReady);
+  renderAll();
+}
 </script>
 <script src="assets/authgate.js"></script>
 </body>

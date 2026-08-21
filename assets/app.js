@@ -1864,6 +1864,28 @@ function renderSidebarUser() {
    Elles retournent du HTML (comme le reste du code de rendu de ce projet) ; renderErrorState()
    pose en plus le gestionnaire du bouton « Réessayer ». */
 
+/* Alternative tabulaire d'un graphique (phase 11 du plan d'action : « fournir une alternative
+   textuelle ou tabulaire pertinente »). Aucun de nos graphiques n'en proposait : les valeurs
+   n'existaient que sous forme de pixels et de bulles au survol, donc inaccessibles au clavier,
+   aux lecteurs d'écran, et impossibles à relever précisément à l'œil.
+   Repliée par défaut : elle ne concurrence pas la lecture visuelle, mais reste dans le DOM et
+   atteignable au clavier. `columns` = intitulés, `rows` = tableau de tableaux déjà formatés. */
+function chartTableHtml(caption, columns, rows) {
+  if (!rows || !rows.length) return '';
+  return '<details class="chart-table">' +
+    '<summary>Voir les données<span class="ct-count">' + rows.length + ' lignes</span></summary>' +
+    '<div class="ct-scroll"><table>' +
+      '<caption class="visually-hidden">' + escapeHtml(caption || 'Données du graphique') + '</caption>' +
+      '<thead><tr>' + columns.map(c => '<th scope="col">' + escapeHtml(c) + '</th>').join('') + '</tr></thead>' +
+      '<tbody>' + rows.map(r =>
+        '<tr>' + r.map((cell, i) =>
+          i === 0 ? '<th scope="row">' + escapeHtml(String(cell)) + '</th>'
+                  : '<td>' + escapeHtml(String(cell)) + '</td>').join('') + '</tr>').join('') +
+      '</tbody>' +
+    '</table></div>' +
+  '</details>';
+}
+
 // Squelette de chargement. `kind` reprend la géométrie du contenu attendu pour réserver la place
 // et éviter le saut de mise en page : 'chart', 'row', 'metric' ou 'text'.
 function skeletonHtml(kind, count) {
@@ -1911,6 +1933,25 @@ function renderErrorState(elId, title, message, detail, onRetry) {
 // défaut, qui masquerait le trou derrière un chiffre d'apparence normale.
 function partialNoteHtml(text) {
   return '<p class="partial-note">' + escapeHtml(text) + '</p>';
+}
+
+/* Résultat de la resynchronisation Supabase, affiché de la même façon sur les quatre pages qui la
+   déclenchent (Accueil, Activités, Analyse, Détail). Son issue était ignorée partout : un refus
+   (RLS, session expirée, réseau) laissait la page afficher son cache local sans rien signaler —
+   l'utilisateur croyait consulter des données à jour.
+   Silence volontaire quand il n'y a simplement rien à synchroniser (mode local, non connecté) :
+   ce n'est pas une erreur, et un bandeau permanent y serait du bruit.
+   `onRetry` doit relancer la synchro ; le squelette est posé pendant la nouvelle tentative pour
+   que l'action ait un retour visible immédiat. */
+function renderSyncState(elId, res, onRetry) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const silencieux = !res || res.ok || res.reason === 'not-configured' || res.reason === 'not-logged-in';
+  if (silencieux) { el.innerHTML = ''; return; }
+  renderErrorState(elId, 'Synchronisation impossible',
+    'Les données affichées proviennent de ce navigateur et peuvent ne pas être à jour.',
+    res.reason,
+    onRetry ? () => { el.innerHTML = skeletonHtml('text', 1); onRetry(); } : null);
 }
 
 /* Ligne d'activité — constructeur PARTAGÉ (Sprint 2). Les pages Activités et Analyse en avaient
@@ -2865,7 +2906,7 @@ function volumeChartSvg(weeks, opts) {
     const tip = escapeHtml('Semaine du ' + fmtDate(wk.startISO) + ' — ' + wk.km.toFixed(1) + ' km · ' + fmtDuration(wk.durationS) + ' · ' + wk.count + ' séance' + (wk.count > 1 ? 's' : ''));
     bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(bh, 1).toFixed(1) + '" rx="2" fill="var(--accent)" data-tooltip="' + tip + '"/>';
     if (weeks.length <= 9 || i % Math.ceil(weeks.length / 8) === 0) {
-      bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 10) + '" font-size="11" fill="var(--muted)" text-anchor="middle">' + wk.shortLabel + '</text>';
+      bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 10) + '" class="c-tick" text-anchor="middle">' + wk.shortLabel + '</text>';
     }
   });
   const linePts = weeks.map((wk, i) => [padL + i * groupW + groupW / 2, syDur(wk.durationS / 3600)]);
@@ -2873,7 +2914,7 @@ function volumeChartSvg(weeks, opts) {
   const legend = '<div class="chart-legend"><span><span class="dot" style="background:var(--accent)"></span>Distance (km)</span><span><span class="dot" style="background:var(--secondary)"></span>Durée</span></div>';
   return '<div class="chart-box">' + titleHtml + legend + '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
     '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
-    '<text x="2" y="' + (padT + 6) + '" font-size="12" fill="var(--muted)">' + maxKm.toFixed(0) + ' km</text>' +
+    '<text x="2" y="' + (padT + 6) + '" class="c-axis">' + maxKm.toFixed(0) + ' km</text>' +
     bars +
     '<path d="' + linePath + '" fill="none" stroke="var(--secondary)" stroke-width="2" stroke-linecap="round"/>' +
   '</svg></div>';
@@ -2910,7 +2951,7 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
       : ('Semaine du ' + fmtDate(wk.startISO) + ' — réalisé ' + fmt(val) + (plannedVal != null ? (' · cible ' + fmt(plannedVal)) : '')));
     bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(bh, 1).toFixed(1) + '" rx="2" fill="var(--accent)" data-tooltip="' + tip + '"/>';
     if (weeks.length <= 9 || i % Math.ceil(weeks.length / 8) === 0) {
-      bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 10) + '" font-size="11" fill="var(--muted)" text-anchor="middle">' + wk.shortLabel + '</text>';
+      bars += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 10) + '" class="c-tick" text-anchor="middle">' + wk.shortLabel + '</text>';
     }
   });
   let planLine = '', legend = '<div class="chart-legend"><span><span class="dot" style="background:var(--accent)"></span>Réalisé</span>';
@@ -2939,10 +2980,10 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
     [0.25, 0.5, 0.75].map(function (frac) {
       const gy = (h - padB) - frac * (h - padT - padB);
       return '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (w - padR) + '" y2="' + gy.toFixed(1) + '" stroke="var(--chart-grid)" stroke-width="1"/>' +
-        '<text x="2" y="' + (gy + 4).toFixed(1) + '" font-size="12" fill="var(--muted)">' + fmt(maxV * frac) + '</text>';
+        '<text x="2" y="' + (gy + 4).toFixed(1) + '" class="c-axis">' + fmt(maxV * frac) + '</text>';
     }).join('') +
-    '<text x="2" y="' + (padT + 6) + '" font-size="12" fill="var(--muted)">' + fmt(maxV) + '</text>' +
-    '<text x="2" y="' + (h - padB + 4) + '" font-size="12" fill="var(--muted)">0</text>' +
+    '<text x="2" y="' + (padT + 6) + '" class="c-axis">' + fmt(maxV) + '</text>' +
+    '<text x="2" y="' + (h - padB + 4) + '" class="c-axis">0</text>' +
     bars + planLine +
   '</svg></div>';
 }
@@ -3851,10 +3892,10 @@ function elevChartSvg(points, opts) {
       terrainBackSvg +
       '<path d="' + areaPath + '" fill="url(#' + id + 'Fill)" stroke="none"/>' +
       '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
-      '<text x="4" y="' + (padT + 10) + '" font-size="13" fill="var(--muted)">' + yTopLabel + '</text>' +
-      '<text x="4" y="' + (h - padB + 2) + '" font-size="13" fill="var(--muted)">' + yBottomLabel + '</text>' +
-      '<text x="' + padL + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + minX.toFixed(1) + ' km</text>' +
-      '<text x="' + (w - padR - 50) + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + maxX.toFixed(1) + ' km</text>' +
+      '<text x="4" y="' + (padT + 10) + '" class="c-axis">' + yTopLabel + '</text>' +
+      '<text x="4" y="' + (h - padB + 2) + '" class="c-axis">' + yBottomLabel + '</text>' +
+      '<text x="' + padL + '" y="' + (h - 8) + '" class="c-axis">' + minX.toFixed(1) + ' km</text>' +
+      '<text x="' + (w - padR - 50) + '" y="' + (h - 8) + '" class="c-axis">' + maxX.toFixed(1) + ' km</text>' +
       '<path d="' + path + '" fill="none" stroke="var(--chart-line)" stroke-width="2.5"/>' +
       peakSvg +
       '<line class="sync-cursor" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (h - padB) + '" stroke="var(--text)" stroke-dasharray="3,3" opacity="0"/>' +
@@ -3987,11 +4028,11 @@ function lineChartSvg(title, points, opts) {
     '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--chart-grid)" stroke-width="1"/>' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
-    '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+(opts.yMaxLabel ?? maxY.toFixed(opts.decimals??0))+'</text>' +
-    '<text x="4" y="'+(sy(midY)-5).toFixed(1)+'" font-size="12" fill="var(--muted)">'+midY.toFixed(opts.decimals??0)+'</text>' +
-    '<text x="4" y="'+(h-padB+2)+'" font-size="13" fill="var(--muted)">'+(opts.yMinLabel ?? minY.toFixed(opts.decimals??0))+'</text>' +
-    '<text x="'+padL+'" y="'+(h-8)+'" font-size="12" fill="var(--muted)">'+firstLabel+'</text>' +
-    '<text x="'+(w-padR-50)+'" y="'+(h-8)+'" font-size="12" fill="var(--muted)">'+lastLabel+'</text>' +
+    '<text x="4" y="'+(padT+6)+'" class="c-axis">'+(opts.yMaxLabel ?? maxY.toFixed(opts.decimals??0))+'</text>' +
+    '<text x="4" y="'+(sy(midY)-5).toFixed(1)+'" class="c-axis">'+midY.toFixed(opts.decimals??0)+'</text>' +
+    '<text x="4" y="'+(h-padB+2)+'" class="c-axis">'+(opts.yMinLabel ?? minY.toFixed(opts.decimals??0))+'</text>' +
+    '<text x="'+padL+'" y="'+(h-8)+'" class="c-axis">'+firstLabel+'</text>' +
+    '<text x="'+(w-padR-50)+'" y="'+(h-8)+'" class="c-axis">'+lastLabel+'</text>' +
     '<path d="'+path+'" fill="none" stroke="var(--chart-line)" stroke-width="2.5"/>' + dots +
   '</svg></div>';
 }
@@ -4014,7 +4055,7 @@ function groupedBarChartSvg(title, weeks, series, opts) {
       bars += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(barW*0.85).toFixed(1)+'" height="'+Math.max(bh,1).toFixed(1)+'" fill="'+s.color+'" data-tooltip="'+tip+'"/>';
     });
     if (i % Math.ceil(weeks.length/8||1) === 0) {
-      bars += '<text x="'+(groupX+groupW*0.35).toFixed(1)+'" y="'+(h-14)+'" font-size="11" fill="var(--muted)" text-anchor="middle">'+wk.shortLabel+'</text>';
+      bars += '<text x="'+(groupX+groupW*0.35).toFixed(1)+'" y="'+(h-14)+'" class="c-tick" text-anchor="middle">'+wk.shortLabel+'</text>';
     }
   });
   // Pas de legende pour une serie unique : le titre la nomme deja. Une legende a une entree est
@@ -4030,10 +4071,10 @@ function groupedBarChartSvg(title, weeks, series, opts) {
     [0.25,0.5,0.75].map(function(frac){
       const gy=(h-padB)-frac*(h-padT-padB);
       return '<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+gy.toFixed(1)+'" stroke="var(--chart-grid)" stroke-width="1"/>' +
-        '<text x="4" y="'+(gy+4).toFixed(1)+'" font-size="13" fill="var(--muted)">'+(maxV*frac).toFixed(0)+'</text>';
+        '<text x="4" y="'+(gy+4).toFixed(1)+'" class="c-axis">'+(maxV*frac).toFixed(0)+'</text>';
     }).join('') +
-    '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
-    '<text x="4" y="'+(h-padB+4)+'" font-size="13" fill="var(--muted)">0</text>' +
+    '<text x="4" y="'+(padT+6)+'" class="c-axis">'+maxV.toFixed(0)+'</text>' +
+    '<text x="4" y="'+(h-padB+4)+'" class="c-axis">0</text>' +
     bars +
   '</svg></div>';
 }
