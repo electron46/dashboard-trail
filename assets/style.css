@@ -1535,8 +1535,13 @@ main.activities-main{max-width:1600px;}
    principal de lecture, le donut n'est qu'un repère visuel d'ensemble. */
 .zone-donut{flex-shrink:0;width:74px;height:74px;filter:drop-shadow(0 0 8px rgba(107,142,78,.12));}
 .zone-donut-legend{flex:1 1 auto;display:flex;flex-direction:column;gap:5px;min-width:0;}
-.zdl-row{display:grid;grid-template-columns:8px 1fr auto auto;align-items:center;gap:7px;font-size:.82rem;}
-.zdl-label{color:var(--text);}
+/* `1fr` a un plancher de largeur mini-contenu : l'intitulé de zone (« Z2 — Endurance
+   fondamentale ») empêchait la ligne de rétrécir, et la légende débordait de sa carte dès que
+   celle-ci se resserrait — 20px de débordement horizontal mesurés à 1024px après le passage de
+   cette carte en format compact. `minmax(0,1fr)` autorise la piste à se réduire, et l'intitulé
+   s'y tronque proprement plutôt que de pousser la page. */
+.zdl-row{display:grid;grid-template-columns:8px minmax(0,1fr) auto auto;align-items:center;gap:7px;font-size:.82rem;}
+.zdl-label{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .zdl-pct{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;text-align:right;}
 .zdl-time{color:var(--muted);font-size:.74rem;font-variant-numeric:tabular-nums;text-align:right;min-width:44px;}
 .zone-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;}

@@ -60,21 +60,56 @@
     <button type="button" data-tab="details">Détails</button>
   </div>
 
+  <!-- ================================================================================
+       Ordre de lecture (Sprint 3, plan d'action §5) : ou j'en suis -> quoi faire ->
+       les courbes qui l'etayent.
+       Les recommandations etaient en DERNIERE position, sous quatre rangees de
+       graphiques : la seule chose actionnable de la page arrivait apres tout le reste.
+       L'etat de preparation, lui, etait la 3e carte d'une rangee de trois. Les deux
+       remontent en tete ; les graphiques passent derriere.
+       ================================================================================ -->
   <div class="tab-panel active" data-panel="apercu">
-    <div class="card-row-3 card-row-3--charts">
-      <section class="card"><h2>Évolution du volume</h2><div id="goalVolumeChartBox"></div></section>
-      <section class="card"><h2>Évolution du D+</h2><div id="goalDplusChartBox"></div></section>
-      <section class="card card-compact"><h2>Répartition des zones FC</h2><div id="goalZonesBox"></div></section>
-    </div>
-    <div class="card-row-3" style="margin-top:14px;">
-      <section class="card"><h2>Sortie longue la plus longue</h2><div id="goalLongestBox"></div></section>
-      <section class="card"><h2>Charge d'entraînement</h2><div id="goalChargeBox"></div></section>
+
+    <!-- 1. OU J'EN SUIS : le score, et la conformite reelle au plan a cote. -->
+    <div class="card-row-2">
       <section class="card"><h2>État de préparation</h2><div id="goalStateBox"></div></section>
+      <section class="card">
+        <h2>Réalisé vs planifié <small>(4 dernières semaines)</small></h2>
+        <div id="goalConformityBox"></div>
+      </section>
     </div>
+
+    <!-- 2. QUOI FAIRE : la seule partie actionnable de la page. -->
     <section class="card" style="margin-top:14px;">
       <h2>Prochaines étapes recommandées</h2>
       <div id="goalRecommendationsBox"></div>
     </section>
+
+    <!-- 3. CE QUI L'ETAYE : progression semaine par semaine. -->
+    <div class="section-head">
+      <div>
+        <h2>Progression</h2>
+        <p class="section-sub">Ce que tu as réellement fait, semaine par semaine, face à la cible du plan.</p>
+      </div>
+    </div>
+    <div class="card-row-2">
+      <section class="card"><h2>Volume hebdomadaire <small>(réalisé vs planifié, en km)</small></h2><div id="goalVolumeChartBox"></div></section>
+      <section class="card"><h2>Dénivelé hebdomadaire <small>(réalisé vs planifié, en m)</small></h2><div id="goalDplusChartBox"></div></section>
+    </div>
+
+    <!-- 4. REPERES SECONDAIRES : volontairement compacts, ils ne doivent pas rivaliser
+            avec l'etat de preparation ni avec les recommandations. -->
+    <div class="section-head">
+      <div>
+        <h2>Repères</h2>
+        <p class="section-sub">Sortie longue, charge d'entraînement et répartition d'intensité.</p>
+      </div>
+    </div>
+    <div class="card-row-3">
+      <section class="card card-compact"><h2>Sortie longue la plus longue</h2><div id="goalLongestBox"></div></section>
+      <section class="card card-compact"><h2>Charge d'entraînement</h2><div id="goalChargeBox"></div></section>
+      <section class="card card-compact"><h2>Répartition des zones FC</h2><div id="goalZonesBox"></div></section>
+    </div>
   </div>
 
   <div class="tab-panel" data-panel="charge">
@@ -510,6 +545,54 @@ function renderApercu() {
         (readiness.weakest ? '<div class="hint" style="margin-top:10px;">Point faible<br><strong style="color:var(--text);">' + escapeHtml(readiness.weakest.label) + ' — ' + readiness.weakest.score + '%</strong></div>' : '') +
       '</div>' +
     '</div>';
+  }
+
+  // Conformité au plan sur 4 semaines — le plan d'action demande de distinguer clairement
+  // « dans les temps », « attention » et « retard ». computePrepStatus() mesure exactement cela
+  // (réalisé / planifié sur 28 jours) et sert déjà à la page Plan avec les mêmes seuils 60%/130% :
+  // on le réutilise plutôt que d'inventer un second indicateur qui pourrait le contredire.
+  // Le statut est porté par un LIBELLÉ, pas seulement par une couleur.
+  const confBox = document.getElementById('goalConformityBox');
+  const prep = computePrepStatus(race.date);
+  // Combien de JOURS du plan sont réellement écoulés dans la fenêtre de 28 jours ? Un plan qui
+  // vient d'être importé n'a presque rien de planifié dans le passé : le rapport réalisé/planifié
+  // devient alors absurde (2000 % mesuré sur un plan démarrant le jour même). Plutôt que d'afficher
+  // ce chiffre ou de le plafonner — ce qui masquerait le problème derrière une valeur trompeuse —
+  // on dit explicitement que la comparaison n'a pas encore de sens.
+  const plan28 = (getPlan() || []).filter(p => {
+    const d0 = new Date(new Date().toISOString().slice(0,10)).getTime();
+    return p.date <= new Date(d0).toISOString().slice(0,10) && p.date >= new Date(d0 - 28*86400000).toISOString().slice(0,10);
+  }).length;
+  const PLAN_MIN_SEANCES_FENETRE = 4;
+  if (!prep) {
+    confBox.innerHTML = '<div class="empty">Importe ton plan d\'entraînement pour comparer ce que tu as réalisé à ce qui était prévu. <a href="parametres.html#plan">Importer un plan →</a></div>';
+  } else if (plan28 < PLAN_MIN_SEANCES_FENETRE) {
+    confBox.innerHTML =
+      '<div class="mini-list"><div class="mini-list-row"><span class="mini-list-lbl">Séances prévues sur 28 jours</span>' +
+      '<span class="mini-list-val">' + plan28 + '</span></div></div>' +
+      partialNoteHtml('Ton plan ne couvre encore que ' + plan28 + ' séance' + (plan28 > 1 ? 's' : '') +
+        ' sur les 28 derniers jours : la comparaison réalisé / planifié ne serait pas représentative. Elle apparaîtra une fois le plan entamé.');
+  } else {
+    const statut = prep.level === 'low'
+      ? { cls: 'status-late',  txt: 'En retard sur le plan' }
+      : (prep.level === 'high'
+        ? { cls: 'status-ahead', txt: 'Au-dessus du plan' }
+        : { cls: 'status-ok',    txt: 'Dans les temps' });
+    // « 180 / 9 km » ne dit pas lequel des deux est le réalisé. Les deux termes sont nommés.
+    const ligne = (label, done, planned, unit) =>
+      '<div class="mini-list-row"><span class="mini-list-lbl">' + label + '</span>' +
+      '<span class="mini-list-val">' + fmtNum(done, unit, 0) + ' réalisés<br>' +
+      '<span style="color:var(--muted);font-weight:400;">sur ' + fmtNum(planned, unit, 0) + ' prévus</span></span></div>';
+    confBox.innerHTML =
+      '<div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:12px;">' +
+        '<span class="badge ' + statut.cls + '">' + statut.txt + '</span>' +
+        '<span class="metric"><span class="val">' + prep.pct + '%</span></span>' +
+      '</div>' +
+      '<div class="mini-list">' +
+        ligne('Distance réalisée', prep.doneKm, prep.plannedKm, ' km') +
+        (prep.pctDplus != null ? ligne('Dénivelé réalisé', prep.doneDplus, prep.plannedDplus, ' m') : '') +
+      '</div>' +
+      '<p class="hint" style="margin-top:10px;">Comparaison des 28 derniers jours. En dessous de 60 % la préparation est jugée en retard, au-dessus de 130 % la charge dépasse nettement le plan.</p>';
   }
 
   const recBox = document.getElementById('goalRecommendationsBox');
