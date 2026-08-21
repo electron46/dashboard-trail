@@ -401,8 +401,8 @@ function renderInsight(deltas, runWalkByGrade, gradeBuckets, zoneDist) {
   const bullets = generateGlobalAnalysisInsight(deltas || {}, runWalkByGrade, gradeBuckets, zoneDist);
   if (!bullets.length) { row.innerHTML = ''; return; }
   row.innerHTML = '<div class="insight-card">' +
-    '<p class="insight-eyebrow"><img src="'+ICON('zap')+'" alt="">Insight ELEV</p>' +
-    bullets.map(b => '<div class="insight-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+    '<h2 class="insight-eyebrow"><img src="'+ICON('zap')+'" alt="">Insight ELEV</h2>' +
+    bullets.map(b => '<div class="insight-item"><h3>'+escapeHtml(b.title)+'</h3><p>'+escapeHtml(b.text)+'</p></div>').join('') +
   '</div>';
 }
 
@@ -420,7 +420,7 @@ function renderBests(sessions) {
   if (!bests.length) { box.innerHTML = '<div class="empty">Pas assez de séances sur cette période.</div>'; return; }
   box.innerHTML = '<div class="mini-list">' + bests.map(b =>
     '<a class="mini-list-row" href="activite.html?id=' + encodeURIComponent(b.activityId) + '" style="text-decoration:none;color:inherit;">' +
-    '<span class="mini-list-lbl">' + escapeHtml(b.label) + '<br><span style="font-size:.68rem;color:var(--muted-2);">' + b.date + '</span></span>' +
+    '<span class="mini-list-lbl">' + escapeHtml(b.label) + '<br><span style="font-size:.68rem;color:var(--muted);">' + b.date + '</span></span>' +
     '<span class="mini-list-val">' + escapeHtml(b.value) + '</span></a>'
   ).join('') + '</div>';
 }

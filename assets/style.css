@@ -142,9 +142,20 @@
 }
 html[data-theme="light"]{
   --bg:#E5E7EB; --panel:#FFFFFF; --panel-raised:#FFFFFF; --border:#D7DAE0; --text:#0F1720; --muted:#5B6472; --muted-2:#8891A0;
-  --accent:#6B8E4E; --accent-hover:#5C7A42; --accent-light:#6B8E4E; --accent-text:#FFFFFF; --accent-soft:#E9F1E3; --secondary:#1E293B;
-  --success:#4C7A3D; --success-soft:#E9F1E3; --danger:#B3402C; --danger-soft:#FBEAE5;
-  --warn:#8A6D1B; --warn-soft:#F3EEDD; --shadow:0 1px 3px rgba(43,43,43,.08);
+  /* Correctif 2026-08-22 (phase 16) — premier audit de contraste du thème clair page par page :
+     121 occurrences sous le seuil AA sur les 8 pages, dont deux causes seulement.
+     1) Le vert de marque #6B8E4E est ici posé sur des surfaces CLAIRES, où il ne rend que
+        3.03 à 3.75:1 — comme fond de bouton sous du blanc, et comme couleur de texte (flèches
+        « Voir → », badges, étoile d'objectif, étiquette Insight). En thème sombre le même vert
+        est un accent sur du quasi-noir, d'où l'absence du problème là-bas.
+        Il est donc assombri POUR CE THÈME UNIQUEMENT : 5.11 à 6.33:1 selon la surface, et le
+        blanc redevient lisible dessus (6.33:1 contre 3.75:1). Le vert du thème sombre, la
+        marque et le remplissage des graphiques (--chart-fill-*, en rgba figé) sont inchangés.
+     2) Succès et avertissement échouaient de peu sur leurs propres fonds teintés (4.08 et 4.22)
+        et sur le canvas. Assombris jusqu'à 4.6 minimum. */
+  --accent:#4A6832; --accent-hover:#3E5828; --accent-light:#4A6832; --accent-text:#FFFFFF; --accent-soft:#E9F1E3; --secondary:#1E293B;
+  --success:#446E37; --success-soft:#E9F1E3; --danger:#B3402C; --danger-soft:#FBEAE5;
+  --warn:#7E6318; --warn-soft:#F3EEDD; --shadow:0 1px 3px rgba(43,43,43,.08);
   --chart-fill-top:rgba(107,142,78,.22); --chart-fill-bottom:rgba(107,142,78,0);
   /* Correctif 2026-08-21 : ces 8 tokens n'existaient qu'en thème sombre et FUYAIENT tels quels
      dans le thème clair — modales (--surface-4), boutons secondaires (--surface-elevated),
@@ -169,7 +180,20 @@ body{
   background-attachment:fixed;
 }
 html[data-theme="light"] body{background:var(--bg);}
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
+/* Lien d'évitement (voir installSkipLink, assets/app.js) — hors écran tant qu'il n'a pas le
+   focus, puis affiché en haut à gauche. Volontairement pas `display:none` ni `visibility:hidden`,
+   qui le rendraient infocalisable, donc inutile. `main:focus` n'affiche aucun contour : la cible
+   n'est pas un contrôle, seul le déplacement du focus compte. */
+.skip-link{position:fixed;top:8px;left:8px;z-index:400;transform:translateY(-150%);
+  padding:11px 16px;border-radius:var(--radius-md);background:var(--accent);color:var(--accent-text);
+  font-weight:700;font-size:.88rem;text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.4);}
+.skip-link:focus-visible{transform:translateY(0);outline:2px solid var(--text);outline-offset:2px;}
+main:focus{outline:none;}
+
+/* `summary` est focalisable nativement, SANS tabindex : il manquait donc à cette liste et les
+   accordéons (Profil, sous-scores de l'Accueil) ne montraient rien du tout au clavier — seuls
+   ceux portant `.chart-table` avaient leur propre règle. */
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{
   outline:2px solid var(--accent-light);outline-offset:2px;border-radius:var(--radius-sm);
 }
 @media (prefers-reduced-motion:reduce){ *,*::before,*::after{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }
@@ -707,7 +731,7 @@ tr.session-row:hover{background:var(--panel-raised);}
 @media (min-width:1200px){ .coach-cards-grid{grid-template-columns:repeat(4,1fr);} }
 .coach-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;background:var(--panel-raised,var(--panel));transition:border-color var(--dur-fast) var(--ease-standard);}
 .coach-card:hover{border-color:var(--border-strong);}
-.coach-card h4{margin:0 0 8px;font-family:var(--font-display);font-size:.86rem;font-weight:700;}
+.coach-card h3{margin:0 0 8px;font-family:var(--font-display);font-size:.86rem;font-weight:700;}
 .coach-card p{margin:0 0 8px;font-size:.86rem;line-height:1.5;color:var(--text);font-weight:600;}
 .coach-card p:last-child{margin-bottom:0;}
 .coach-card ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:5px;}
@@ -763,7 +787,10 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
 .cmdk-backdrop{align-items:flex-start;padding-top:14vh;}
 .cmdk-modal{max-width:520px;padding:0;overflow:hidden;}
 .cmdk-input{width:100%;border:none;border-bottom:1px solid var(--border);background:transparent;color:var(--text);font-size:1rem;padding:16px 18px;box-sizing:border-box;font-family:var(--font-sans);}
-.cmdk-input:focus{outline:none;}
+/* Le champ de la palette occupe toute la largeur : un liseré rectangulaire y serait redondant
+   avec le cadre de la palette. Le repère de focus passe donc par sa bordure basse, mais il
+   existe — `outline:none` seul supprimait tout repère visible (WCAG 2.4.7). */
+.cmdk-input:focus-visible{outline:none;border-bottom-color:var(--accent-light);border-bottom-width:2px;padding-bottom:15px;}
 .cmdk-list{max-height:320px;overflow-y:auto;padding:6px;}
 .cmdk-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:var(--radius-md);text-decoration:none;color:var(--text);font-size:.88rem;font-weight:500;}
 .cmdk-item img{width:16px;height:16px;filter:invert(60%);flex-shrink:0;}
@@ -1289,7 +1316,14 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .insight-card.status-rising_fast::before{background:linear-gradient(90deg,transparent,var(--warn),transparent);}
 .insight-card.status-falling{border-color:var(--border);background:var(--panel-raised);}
 .insight-card.status-falling::before{background:linear-gradient(90deg,transparent,var(--muted-2),transparent);}
-.insight-card .insight-eyebrow{position:relative;display:flex;align-items:center;gap:6px;margin:0 0 14px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-light);}
+/* L'étiquette « Insight ELEV » est un vrai titre de région depuis la phase 16 (accessibilité) :
+   elle nomme le bloc pour la navigation par titres, au lieu de laisser les observations en h4
+   orphelins sous le h1 de la page. Le rendu ne change pas — la règle de classe (0,2,0) l'emporte
+   sur `section.card h2` (0,1,2) — mais le filet vert de section est neutralisé explicitement,
+   un ::before n'étant pas couvert par cette victoire de spécificité (piège déjà rencontré sur
+   le hero Objectifs, voir CLAUDE.md). */
+.insight-card .insight-eyebrow::before{content:none;}
+.insight-card .insight-eyebrow{padding-left:0;position:relative;display:flex;align-items:center;gap:6px;margin:0 0 14px;font-family:var(--font-sans);font-size:.68rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-light);}
 .insight-card .insight-eyebrow img{width:13px;height:13px;filter:invert(78%) sepia(20%) saturate(500%) hue-rotate(50deg);}
 .insight-card.status-rising_fast .insight-eyebrow{color:var(--warn);}
 .insight-card .insight-title{position:relative;margin:0 0 9px;font-family:var(--font-display);font-size:1.25rem;font-weight:700;letter-spacing:-.01em;}
@@ -1298,7 +1332,7 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
    qu'un paragraphe anonyme, pour donner plus de présence au bloc. */
 .insight-card .insight-item{margin-top:14px;}
 .insight-card .insight-item:first-of-type{margin-top:0;}
-.insight-card .insight-item h4{margin:0 0 3px;font-family:var(--font-display);font-size:.92rem;font-weight:700;color:var(--text);}
+.insight-card .insight-item h3{margin:0 0 3px;font-family:var(--font-display);font-size:.92rem;font-weight:700;color:var(--text);}
 
 /* Carte "dernière activité" — traitement le plus riche de la page : plus grande, cliquable
    dans son ensemble, légère élévation au survol (sans dépendre de la seule couleur pour signaler

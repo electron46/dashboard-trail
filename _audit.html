@@ -1,0 +1,201 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Audit ELEV</title>
+<style>body{font-family:system-ui;background:#0B0F0E;color:#F0F3F0;padding:16px;line-height:1.5}
+pre{white-space:pre-wrap;font-size:12px}iframe{border:1px solid #333}</style>
+</head><body>
+<h1>Harnais de mesure ELEV</h1>
+<div id="stage"></div>
+<pre id="out"></pre>
+<script>
+// Harnais de mesure local (developpement). Charge chaque page dans une iframe de MEME ORIGINE,
+// donc avec le meme localStorage que les fixtures, a une largeur donnee, puis mesure le DOM reel.
+// C'est cette mesure qui a trouve la majorite des defauts des passes precedentes, pas la lecture
+// du code.
+const PAGES = ['index.html','historique.html','analyse.html','objectifs.html','plan.html',
+               'profil.html','equipements.html','parametres.html'];
+
+function loadPage(url, width, height){
+  return new Promise(function(resolve){
+    const stage = document.getElementById('stage');
+    stage.innerHTML = '';
+    const f = document.createElement('iframe');
+    f.style.width = width + 'px';
+    f.style.height = (height||900) + 'px';
+    f.src = url;
+    let done = false;
+    f.onload = function(){
+      if (done) return; done = true;
+      // Les pages rendent apres DOMContentLoaded (renderAppNav, renderAll, graphiques mesures
+      // apres insertion). Une lecture immediate mesurerait un DOM encore vide.
+      setTimeout(function(){ resolve(f); }, 900);
+    };
+    stage.appendChild(f);
+  });
+}
+
+// --- Mesure 1 : hierarchie des titres ---
+function auditHeadings(doc){
+  const hs = Array.from(doc.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+    .filter(function(h){ return h.offsetParent !== null || h.getClientRects().length; });
+  const skips = [];
+  let prev = 0;
+  hs.forEach(function(h){
+    const lvl = +h.tagName[1];
+    if (prev && lvl > prev + 1) {
+      skips.push({ from:'h'+prev, to:'h'+lvl,
+                   text:(h.textContent||'').trim().slice(0,60),
+                   cls:h.className||'', parentCls:(h.parentElement&&h.parentElement.className)||'' });
+    }
+    prev = lvl;
+  });
+  return { count: hs.length, h1: hs.filter(function(h){return h.tagName==='H1';}).length, skips: skips };
+}
+
+// --- Mesure 2 : elements interactifs sans nom accessible ---
+function accName(el){
+  const al = el.getAttribute('aria-label');
+  if (al && al.trim()) return al.trim();
+  const lb = el.getAttribute('aria-labelledby');
+  if (lb) { const t = el.ownerDocument.getElementById(lb); if (t) return (t.textContent||'').trim(); }
+  const txt = (el.innerText || el.textContent || '').trim();
+  if (txt) return txt;
+  const title = el.getAttribute('title');
+  if (title && title.trim()) return title.trim();
+  // Champs de formulaire : un <label for> OU un <label> englobant fournit le nom accessible.
+  // Vaut pour input, textarea ET select — ne le reserver aux input produit des faux positifs.
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+    if (el.id) { const l = el.ownerDocument.querySelector('label[for="'+CSS.escape(el.id)+'"]');
+                 if (l && (l.textContent||'').trim()) return (l.textContent||'').trim(); }
+    const w = el.closest('label');
+    if (w && (w.textContent||'').trim()) return (w.textContent||'').trim();
+    const v = el.getAttribute('value');
+    if (v && (el.type==='submit'||el.type==='button')) return v;
+    // Un placeholder n'est PAS un nom accessible (il disparait a la saisie) : il est
+    // signale a part plutot que compte comme un nom valide.
+    const ph = el.getAttribute('placeholder');
+    if (ph && ph.trim()) return '[placeholder seul] ' + ph.trim();
+  }
+  const img = el.querySelector('img[alt]');
+  if (img && img.getAttribute('alt').trim()) return img.getAttribute('alt').trim();
+  return '';
+}
+const FOCUSABLE = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[tabindex]:not([tabindex="-1"])';
+// includeHidden : les modales sont fermees au chargement, donc invisibles. Elles sont pourtant
+// entierement parcourues au clavier une fois ouvertes — les auditer aussi.
+function auditNames(doc, includeHidden){
+  const out = [];
+  Array.from(doc.querySelectorAll(FOCUSABLE)).forEach(function(el){
+    if (el.disabled) return;
+    if (!includeHidden && !el.getClientRects().length) return;
+    if (el.getAttribute('aria-hidden') === 'true') return;
+    const n = accName(el);
+    if (!n || n.indexOf('[placeholder seul]') === 0) {
+      out.push({ tag:el.tagName.toLowerCase(), type:el.getAttribute('type')||'',
+                 id:el.id||'', cls:(el.className||'').toString().slice(0,50),
+                 why: n ? 'placeholder seul' : 'aucun nom',
+                 near:(el.parentElement.textContent||'').trim().slice(0,40) });
+    }
+  });
+  return out;
+}
+
+// --- Mesure 3 : contrastes WCAG ---
+function srgb(c){ c=c/255; return c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4); }
+function lum(rgb){ return 0.2126*srgb(rgb[0])+0.7152*srgb(rgb[1])+0.0722*srgb(rgb[2]); }
+function parseColor(s){
+  const m = String(s).match(/rgba?\(([^)]+)\)/);
+  if (!m) return null;
+  const p = m[1].split(/[,\s\/]+/).filter(Boolean).map(Number);
+  return { r:p[0], g:p[1], b:p[2], a:(p.length>3?p[3]:1) };
+}
+function over(fg, bg){ // composite d'une couleur semi-transparente sur son fond
+  const a = fg.a;
+  return { r:fg.r*a+bg.r*(1-a), g:fg.g*a+bg.g*(1-a), b:fg.b*a+bg.b*(1-a), a:1 };
+}
+function ratio(a,b){
+  const l1=lum([a.r,a.g,a.b]), l2=lum([b.r,b.g,b.b]);
+  return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);
+}
+// Fond effectif : on remonte les ancetres jusqu'a une couleur opaque, en compositant au passage
+// les couches semi-transparentes. Un fond declare en rgba(...) sur un panneau sombre ne donne pas
+// le meme contraste que la meme couleur posee sur du blanc.
+function effectiveBg(el, win){
+  let node = el, stack = [];
+  while (node && node.nodeType === 1) {
+    const cs = win.getComputedStyle(node);
+    if (cs.backgroundImage && cs.backgroundImage !== 'none') return { unknown:true };
+    const c = parseColor(cs.backgroundColor);
+    if (c && c.a > 0) { stack.push(c); if (c.a === 1) break; }
+    node = node.parentElement;
+  }
+  let bg = { r:255, g:255, b:255, a:1 };
+  for (let i = stack.length-1; i >= 0; i--) bg = over(stack[i], bg);
+  return bg;
+}
+function auditContrast(doc, win){
+  const bad = [];
+  const all = doc.querySelectorAll('body *');
+  all.forEach(function(el){
+    if (!el.getClientRects().length) return;
+    if (el.getAttribute('aria-hidden') === 'true') return;
+    // Seulement les elements portant DIRECTEMENT du texte, sinon on compte chaque ancetre.
+    const own = Array.from(el.childNodes)
+      .filter(function(n){ return n.nodeType === 3 && n.textContent.trim(); })
+      .map(function(n){ return n.textContent.trim(); }).join(' ');
+    if (!own) return;
+    const cs = win.getComputedStyle(el);
+    // Le texte SVG se colore par `fill`, pas par `color`.
+    const isSvg = el.ownerSVGElement || el.tagName === 'text';
+    const fgRaw = isSvg ? (cs.fill || cs.color) : cs.color;
+    const fg = parseColor(fgRaw);
+    if (!fg || fg.a === 0) return;
+    const bg = effectiveBg(el, win);
+    if (bg.unknown) return; // fond image/degrade : non mesurable de facon fiable
+    const fgOn = fg.a < 1 ? over(fg, bg) : fg;
+    const r = ratio(fgOn, bg);
+    const size = parseFloat(cs.fontSize);
+    const weight = parseInt(cs.fontWeight, 10) || 400;
+    const large = size >= 24 || (size >= 18.66 && weight >= 700);
+    const seuil = large ? 3 : 4.5;
+    if (r < seuil) {
+      bad.push({ texte: own.slice(0,42), ratio: Math.round(r*100)/100, seuil: seuil,
+                 taille: Math.round(size*10)/10, poids: weight,
+                 sel: el.tagName.toLowerCase()+'.'+(el.className||'').toString().split(' ').filter(Boolean).slice(0,2).join('.'),
+                 fg: fgRaw, bg: 'rgb('+Math.round(bg.r)+','+Math.round(bg.g)+','+Math.round(bg.b)+')' });
+    }
+  });
+  return bad;
+}
+
+// --- Mesure 4 : sante generale de la page ---
+function auditPage(doc, win){
+  const de = doc.documentElement;
+  return {
+    overflow: Math.max(0, de.scrollWidth - win.innerWidth),
+    imagesBroken: Array.from(doc.images)
+      .filter(function(i){ return i.complete && i.naturalWidth === 0; })
+      .map(function(i){ return i.getAttribute('src'); }),
+    emptyMain: (doc.querySelector('main') || {}).childElementCount === 0
+  };
+}
+
+async function run(mode, width, theme){
+  const res = {};
+  for (const p of PAGES){
+    // Le theme est pose AVANT le chargement : les pages lisent trail:theme au demarrage.
+    if (theme) localStorage.setItem('trail:theme', theme);
+    const f = await loadPage(p, width || 1280);
+    const doc = f.contentDocument, win = f.contentWindow;
+    if (theme) { doc.documentElement.setAttribute('data-theme', theme);
+                 await new Promise(function(r){ setTimeout(r, 350); }); } // laisser passer les transitions
+    const r = { page:p };
+    if (mode === 'headings') Object.assign(r, auditHeadings(doc));
+    if (mode === 'names')    r.unnamed = auditNames(doc, true);
+    if (mode === 'health')   Object.assign(r, auditPage(doc, win));
+    if (mode === 'contrast') r.bad = auditContrast(doc, win);
+    res[p] = r;
+  }
+  document.getElementById('out').textContent = JSON.stringify(res, null, 1);
+  return res;
+}
+window.run = run;
+</script></body></html>

@@ -1842,10 +1842,38 @@ function lucideIconUrl(name) {
 }
 function navIconUrl(name) { return lucideIconUrl(name); }
 
+// Lien d'évitement + nommage des repères de page. Mesuré en phase 16 : il fallait 11 tabulations
+// pour atteindre le contenu, sur CHAQUE page, sans aucun moyen de sauter la navigation
+// (WCAG 2.4.1 Bypass Blocks, niveau A). Posé ici plutôt que dans les 9 fichiers HTML, pour la même
+// raison que le menu lui-même : une source unique, sinon les copies divergent.
+function installSkipLink() {
+  const main = document.querySelector('main');
+  if (!main) return;
+  if (!main.id) main.id = 'contenu';
+  // Sans `tabindex="-1"`, plusieurs navigateurs déplacent la vue sans déplacer le focus : la
+  // tabulation suivante repartirait du début de la navigation, donc le lien ne servirait à rien.
+  if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+
+  // Deux <nav> sans nom se lisent « navigation » deux fois dans la liste des repères.
+  const sidebarNav = document.getElementById('sidebarNav');
+  if (sidebarNav && !sidebarNav.getAttribute('aria-label')) sidebarNav.setAttribute('aria-label', 'Navigation principale');
+  const mobileNav = document.getElementById('mobileNav');
+  if (mobileNav && !mobileNav.getAttribute('aria-label')) mobileNav.setAttribute('aria-label', 'Navigation principale (mobile)');
+
+  if (document.getElementById('skipToContent')) return;
+  const link = document.createElement('a');
+  link.id = 'skipToContent';
+  link.className = 'skip-link';
+  link.href = '#' + main.id;
+  link.textContent = 'Aller au contenu principal';
+  document.body.insertBefore(link, document.body.firstChild);
+}
+
 // activeHref : à passer explicitement par les pages qui ne correspondent à aucune entrée du menu
 // telles quelles (ex. activite.html?id=... doit surligner "Activités", pas rester sans repère).
 function renderAppNav(activeHref) {
   const current = activeHref || (location.pathname.split('/').pop() || 'index.html');
+  installSkipLink();
 
   // Le sommet de la sidebar : son `src` n'est plus ecrit en dur dans les 9 pages, il vient de la
   // meme source locale que le reste des icones. `width`/`height` restent dans le HTML pour que la
