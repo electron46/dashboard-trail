@@ -205,8 +205,12 @@ function renderObjective() {
 
   // Métriques de l'OBJECTIF uniquement (jamais de volume hebdomadaire ici) : compte à rebours,
   // distance et dénivelé de la course.
+  // Les trois métriques n'ont pas le même poids d'information. Le compte à rebours CHANGE tous
+  // les jours et conditionne l'entraînement ; la distance et le dénivelé de la course ne bougeront
+  // plus jamais. Le premier mène donc la rangée, les deux autres passent en rang secondaire — sans
+  // concurrencer le score de préparation, qui reste la seule valeur dominante de la scène.
   const metrics = [
-    { v: days >= 0 ? 'J-' + days : 'Passée', l: fmtDate(r.date) },
+    { v: days >= 0 ? 'J-' + days : 'Passée', l: fmtDate(r.date), lead: true },
     { v: fmtNum(r.distanceKm, ' km', 0), l: 'Distance' },
     { v: fmtNum(r.denivele, ' m', 0), l: 'Dénivelé positif' },
   ];
@@ -264,7 +268,7 @@ function renderObjective() {
             : '<p class="hint" style="margin:10px 0 0;">Pas encore assez de séances pour calculer ton état de préparation.</p>') +
         '</div>' +
         '<div class="objective-metrics">' +
-          metrics.map(m => '<div class="objective-metric"><span class="v">' + escapeHtml(m.v) + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +
+          metrics.map(m => '<div class="objective-metric' + (m.lead ? ' is-lead' : '') + '"><span class="v">' + escapeHtml(m.v) + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +
         '</div>' +
       '</div>' +
     '</div>' +

@@ -822,8 +822,18 @@ html[data-theme="light"] .terrain-label{background:rgba(11,15,14,.82);}
   font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;}
 .terrain-tip strong{font-family:var(--font-display);font-size:.82rem;color:var(--text);}
 /* Aide d'exploration : discrète, masquée dès qu'on n'a pas de pointeur précis. */
-.terrain-hint{margin:6px 0 0;font-size:.68rem;color:var(--muted);}
-@media (hover:none){ .terrain-hint{display:none;} }
+/* L'aide d'utilisation reste dans le DOM — un lecteur d'écran l'annonce, et l'instruction
+   clavier ne doit jamais disparaître sans alternative — mais elle cesse d'être une présence
+   visuelle permanente. Elle apparaît au survol ou au focus du profil qu'elle décrit. La place
+   reste réservée, donc aucun décalage de mise en page à l'apparition. */
+.terrain-hint{margin:6px 0 0;font-size:.68rem;color:var(--muted);opacity:0;transition:opacity var(--dur-fast) var(--ease-standard);}
+.terrain-profile:hover + .terrain-hint,
+.terrain-profile:focus-visible + .terrain-hint,
+.terrain-profile:focus-within + .terrain-hint{opacity:1;}
+@media (prefers-reduced-motion:reduce){ .terrain-hint{transition:none;} }
+/* Pointeur grossier : pas de survol possible, et l'aide parle de survol — on la retire de l'écran
+   tout en la laissant lisible par les technologies d'assistance. */
+@media (hover:none){ .terrain-hint{opacity:0;height:0;margin:0;overflow:hidden;} }
 
 /* État vide honnête : aucun profil n'est dessiné si la série d'altitude n'est pas exploitable
    (voir validateTerrainSeries) — on le dit, on ne remplit pas l'espace avec un faux relief. */
@@ -943,7 +953,12 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 /* Métriques de la COURSE (J-XX, distance, D+) — jamais des agrégats d'entraînement. */
 .objective-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,auto));justify-content:start;align-items:flex-end;gap:20px 34px;}
 .objective-metric{display:flex;flex-direction:column;gap:3px;}
-.objective-metric .v{font-family:var(--font-mono);font-size:1.45rem;font-weight:600;letter-spacing:-.01em;white-space:nowrap;}
+.objective-metric .v{font-family:var(--font-mono);font-size:1.15rem;font-weight:500;letter-spacing:-.01em;white-space:nowrap;color:var(--muted);}
+/* Le compte à rebours mène la rangée : il change chaque jour, contrairement à la distance
+   et au dénivelé de la course. Il reste nettement en dessous du score de préparation, qui
+   demeure la seule valeur dominante de la scène. */
+.objective-metric.is-lead .v{font-size:1.7rem;font-weight:600;color:var(--text);}
+.objective-metric.is-lead .l{color:var(--muted);}
 .objective-metric .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
 .objective-metric:first-child .v{color:var(--accent-light);}
 .objective-terrain{position:relative;margin-top:4px;}
@@ -964,7 +979,8 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 @media (min-width:900px){
   .objective-main{display:grid;grid-template-columns:minmax(0,42%) minmax(0,1fr);align-items:flex-end;gap:32px 40px;}
   .objective-metrics{grid-template-columns:repeat(3,minmax(0,auto));justify-content:space-between;gap:24px;padding-bottom:6px;}
-  .objective-metric .v{font-size:1.6rem;}
+  .objective-metric .v{font-size:1.25rem;}
+  .objective-metric.is-lead .v{font-size:2rem;}
 }
 @media (min-width:1024px){ .objective-content{padding-top:22px;} }
 @media (prefers-reduced-motion:reduce){ .objective-subscores > summary::after{transition:none;} }
@@ -1034,8 +1050,11 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .lastride-profile{position:relative;min-width:0;}
 .lastride-aside{display:flex;flex-direction:column;gap:12px;min-width:0;}
 /* Trace GPS (longitude/latitude) — représentation distincte du profil altimétrique ci-contre. */
-.lastride-trace{display:block;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);background:rgba(11,15,14,.35);padding:6px;}
-.lastride-trace svg{display:block;width:100%;height:auto;}
+/* Vignette d'accès à l'analyse, pas une seconde pièce maîtresse : mesurée à 387px de haut sur
+   desktop, elle pesait autant que le profil altimétrique juste au-dessus (163px) alors qu'elle ne
+   fait qu'ouvrir une autre page. Plafonnée, et le tracé s'y inscrit sans être déformé. */
+.lastride-trace{display:block;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);background:rgba(11,15,14,.35);padding:6px;max-height:190px;}
+.lastride-trace svg{display:block;width:100%;height:auto;max-height:178px;object-fit:contain;}
 .lastride-trace:hover{border-color:var(--accent);}
 .terrain-profile--lastride{height:clamp(160px,17vw,200px);}
 @media (min-width:1024px){
@@ -1049,7 +1068,8 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
   .terrain-profile--lastride{height:clamp(150px,38vw,180px);}
   .checkpoint-inner{padding:14px 14px;}
   .objective-metrics{gap:16px 22px;}
-  .objective-metric .v{font-size:1.2rem;}
+  .objective-metric .v{font-size:1.02rem;}
+  .objective-metric.is-lead .v{font-size:1.5rem;}
   .landscape-figures dd{font-size:.92rem;}
 }
 
@@ -1528,6 +1548,11 @@ main.analysis-main{max-width:1440px;}
   .mobile-nav button.active{color:var(--accent-light,#A8C47F);}
   .mobile-nav button.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
   main{padding:16px 16px 78px;}
+  /* La salutation disparaît sous 640px : elle occupait une ligne entière d'une topbar mesurée à
+     102px, soit 13% du viewport, pour une information non actionnable. Le <h1> « Aujourd'hui »
+     reste dans le DOM (visually-hidden) et la barre de navigation basse indique déjà la page. */
+  header.app-topbar .topbar-greeting{display:none;}
+  header.app-topbar--slim{padding-top:8px;padding-bottom:8px;}
   footer.app{padding-bottom:78px;}
 
   /* Cibles tactiles — mesurées à 375 px avant correction : 5 éléments interactifs sur 7 sous
