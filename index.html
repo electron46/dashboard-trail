@@ -524,12 +524,20 @@ function renderLastRide() {
       '<p class="terrain-hint">Survole le profil (ou explore-le au clavier avec ←/→) pour lire distance, altitude, allure et FC.</p>'
     : '<p class="terrain-empty">Cette sortie ne contient pas de série altitude/distance exploitable : aucun profil ne peut être tracé.</p>';
 
-  // Trace GPS vue du dessus (longitude/latitude) — représentation DISTINCTE du profil
-  // altimétrique ci-dessus, jamais l'une convertie en l'autre.
-  const trace = sessionPreviewSvg(s);
+  /* Trace GPS vue du dessus (longitude/latitude) — representation DISTINCTE du profil
+     altimetrique ci-dessus, jamais l'une convertie en l'autre.
+
+     Garde explicite sur la presence de coordonnees. `sessionPreviewSvg` retombe silencieusement
+     sur l'altitude quand la seance n'a pas de GPS (tapis, tunnel, perte de fix) : la scene
+     affichait alors DEUX FOIS la meme donnee, dans deux langages visuels differents, sans que
+     rien ne l'indique. Le profil au-dessus la porte deja et la porte mieux — avec ses reperes et
+     son exploration au survol. On ne montre donc la vignette que si elle apporte vraiment autre
+     chose, c'est-a-dire un vrai trace geographique. */
+  const hasGps = Array.isArray(s.series) && s.series.some(p => p.lat != null && p.lon != null);
+  const trace = hasGps ? sessionPreviewSvg(s) : '';
 
   box.innerHTML =
-    '<div class="lastride-inner">' +
+    '<div class="lastride-inner' + (trace ? '' : ' lastride-inner--no-trace') + '">' +
       '<div class="lastride-lead">' +
         '<p class="eyebrow">Dernière sortie</p>' +
         '<h2 class="lastride-title">' + escapeHtml(s.sport || 'Séance') + '</h2>' +
@@ -540,7 +548,10 @@ function renderLastRide() {
       '</div>' +
       '<div class="lastride-profile">' + terrainHtml + '</div>' +
       '<div class="lastride-aside">' +
-        (trace ? '<a class="lastride-trace" href="' + href + '" aria-label="Voir l\'analyse complète de la sortie">' + trace + '</a>' : '') +
+        // Legende explicite : deux representations de la meme sortie coexistent dans cette
+        // scene, le lecteur ne doit pas avoir a deviner laquelle est laquelle.
+        (trace ? '<a class="lastride-trace" href="' + href + '" aria-label="Voir l\'analyse complète de la sortie">' + trace + '</a>' +
+          '<p class="lastride-trace-cap">Tracé du parcours <span>vu du dessus</span></p>' : '') +
         '<a class="btn small secondary" href="' + href + '">Voir l\'analyse complète →</a>' +
       '</div>' +
     '</div>';

@@ -1054,11 +1054,19 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
    desktop, elle pesait autant que le profil altimétrique juste au-dessus (163px) alors qu'elle ne
    fait qu'ouvrir une autre page. Plafonnée, et le tracé s'y inscrit sans être déformé. */
 .lastride-trace{display:block;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--border);background:rgba(11,15,14,.35);padding:6px;max-height:190px;}
+/* Legende de la vignette geographique. Elle n'existe que lorsque la vignette existe, donc
+   uniquement quand la seance porte de vraies coordonnees. */
+.lastride-trace-cap{margin:4px 0 0;font-size:.66rem;color:var(--muted);text-align:center;line-height:1.3;}
+.lastride-trace-cap span{display:block;color:var(--text-muted);font-size:.62rem;}
 .lastride-trace svg{display:block;width:100%;height:auto;max-height:178px;object-fit:contain;}
 .lastride-trace:hover{border-color:var(--accent);}
 .terrain-profile--lastride{height:clamp(160px,17vw,200px);}
 @media (min-width:1024px){
   .lastride-inner{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.6fr) minmax(0,0.7fr);align-items:start;gap:28px;padding:20px 24px 22px;}
+  /* Sans coordonnees GPS, la vignette n'existe pas et la troisieme colonne ne porte plus que le
+     bouton d'analyse : elle se reduit a son contenu et rend sa place au profil, qui devient la
+     seule representation de la sortie. */
+  .lastride-inner--no-trace{grid-template-columns:minmax(0,0.9fr) minmax(0,2.1fr) auto;}
   .lastride-kpis{grid-template-columns:1fr 1fr;}
 }
 @media (max-width:767px){
