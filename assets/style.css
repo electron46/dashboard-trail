@@ -97,6 +97,9 @@
      Aucun effet visuel à l'ajout — ce sont des définitions. La migration des valeurs en dur vers
      ces tokens se fera progressivement, composant par composant, jamais en un remplacement
      massif qui risquerait de déplacer la mise en page partout à la fois. */
+  /* --text-2xs : palier « caption » demandé par le plan d'action, absent de l'échelle d'origine.
+     Réservé aux étiquettes denses (une par semaine sur un axe), jamais au texte courant. */
+  --text-2xs:11px;
   --text-xs:12px; --text-sm:13.5px; --text-base:15px; --text-md:17px;
   --text-lg:20px; --text-xl:26px; --text-2xl:34px; --text-3xl:48px;
   --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px;
@@ -1304,6 +1307,39 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .empty-state{text-align:center;padding:30px 18px;color:var(--muted);border:1px dashed var(--border);border-radius:var(--radius-md);}
 .empty-state .empty-title{font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--text);margin-bottom:4px;}
 .empty-state p{margin:0 0 14px;font-size:.86rem;}
+
+/* ============================================================================================
+   TYPOGRAPHIE DES GRAPHIQUES — source unique (phase 11 du plan d'action).
+   Les libellés d'axes étaient écrits en dur dans chaque générateur SVG, à 12px pour
+   volumeChartSvg et goalTrendChartSvg mais à 13px pour lineChartSvg et groupedBarChartSvg.
+   Sur la page Analyse, trois graphiques voisins affichaient donc leurs axes dans deux tailles
+   différentes. Deux rôles seulement désormais, définis ici et nulle part ailleurs :
+     .c-axis — graduations d'axe (valeurs) ;
+     .c-tick — étiquettes denses de l'axe des abscisses (une par semaine).
+   Ces règles ciblent `svg text` sans dépendre du conteneur : elles couvrent aussi le moteur de
+   profil altimétrique d'activite.html, qui vit hors de .chart-box.
+   Première consommation réelle de l'échelle --text-* définie en août et restée inutilisée. */
+svg text.c-axis{font-size:var(--text-xs);fill:var(--muted);}
+svg text.c-tick{font-size:var(--text-2xs);fill:var(--muted);}
+
+/* Alternative tabulaire d'un graphique (voir chartTableHtml). Discrète et repliée : le graphique
+   reste la lecture principale, mais les valeurs exactes deviennent atteignables au clavier et
+   annonçables par un lecteur d'écran. */
+.chart-table{margin-top:10px;border-top:1px solid var(--border);padding-top:8px;}
+.chart-table > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
+  font-size:var(--text-xs);color:var(--muted);padding:2px 0;min-height:24px;}
+.chart-table > summary::-webkit-details-marker{display:none;}
+.chart-table > summary::before{content:'▸';display:inline-block;transition:transform var(--dur-fast) var(--ease-standard);}
+.chart-table[open] > summary::before{transform:rotate(90deg);}
+.chart-table > summary:hover{color:var(--text);}
+.chart-table > summary:focus-visible{outline:2px solid var(--accent-light);outline-offset:3px;border-radius:var(--radius-sm);}
+.chart-table .ct-count{color:var(--muted-2);font-family:var(--font-mono);}
+/* Le tableau defile dans SON conteneur : il ne doit jamais elargir la page (regle du projet). */
+.chart-table .ct-scroll{overflow-x:auto;margin-top:8px;max-height:260px;overflow-y:auto;}
+.chart-table table{font-size:var(--text-xs);}
+.chart-table th[scope=row]{text-align:left;color:var(--muted);font-weight:500;white-space:nowrap;}
+.chart-table td{font-family:var(--font-mono);white-space:nowrap;}
+@media (prefers-reduced-motion:reduce){ .chart-table > summary::before{transition:none;} }
 
 /* ============================================================================================
    SECTION HEADER — composant partagé (Sprint 1/2). Titre de GROUPE, au-dessus de plusieurs

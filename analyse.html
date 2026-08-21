@@ -273,7 +273,13 @@ function renderVolumeChart(weeks) {
   }
   // Graphique de niveau 1 de la page : plus haut que les graphiques de comparaison qui suivent
   // (voir .chart-l1). La hiérarchie vient de la surface occupée, pas d'un habillage en plus.
-  box.innerHTML = volumeChartSvg(weeks, { hideTitle: true, height: 320 });
+  box.innerHTML = volumeChartSvg(weeks, { hideTitle: true, height: 320 })
+    // Alternative tabulaire (phase 11) : les valeurs exactes n'existaient que sous forme de
+    // pixels et d'info-bulles au survol — inaccessibles au clavier et aux lecteurs d'ecran.
+    + chartTableHtml('Volume hebdomadaire',
+        ['Semaine', 'Distance', 'Duree', 'Seances'],
+        withData.map(w => ['Sem. du ' + fmtDate(w.startISO), fmtNum(w.km, ' km', 1),
+                           fmtDuration(w.durationS), String(w.count)]));
   initChartTooltips(box);
 }
 function renderDplusChart(weeks) {
@@ -292,7 +298,11 @@ function renderDplusChart(weeks) {
     { name: 'D+', color: 'var(--accent)', values: weeks.map(w => Math.round(w.ascent)) },
     { name: 'D-', color: 'var(--secondary)', values: weeks.map(w => Math.round(w.descent || 0)) },
   ];
-  box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 220, hideTitle: true });
+  box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 220, hideTitle: true })
+    + chartTableHtml('Denivele hebdomadaire',
+        ['Semaine', 'D+', 'D-'],
+        withData.map(w => ['Sem. du ' + fmtDate(w.startISO), fmtNum(w.ascent, ' m', 0),
+                           fmtNum(w.descent || 0, ' m', 0)]));
   initChartTooltips(box);
 }
 // La VAM du KPI (période entière, voir aggregatePeriod) et la tendance hebdomadaire ici sont deux
@@ -317,7 +327,10 @@ function renderVamChart(weeks, periodVamAvg) {
     x: i, y: w.vamAvg, xLabel: w.shortLabel,
     label: 'Semaine du ' + fmtDate(w.startISO) + ' : VAM moyenne ' + w.vamAvg + ' m/h',
   }));
-  box.innerHTML = lineChartSvg('', pts, { decimals: 0, height: 220, hideTitle: true });
+  box.innerHTML = lineChartSvg('', pts, { decimals: 0, height: 220, hideTitle: true })
+    + chartTableHtml('VAM moyenne par semaine',
+        ['Semaine', 'VAM moyenne'],
+        withVam.map(w => ['Sem. du ' + fmtDate(w.startISO), w.vamAvg + ' m/h']));
   initChartTooltips(box);
 }
 
@@ -458,17 +471,11 @@ renderSidebarUser();
 // simplement rien a synchroniser (mode local, non connecte : silence normal) d'un veritable
 // echec, qui est annonce avec une action de reprise.
 async function onAuthReady() {
-  const box = document.getElementById('syncState');
   const res = await syncActivitiesWithSupabase();
-  const silencieux = !res || res.ok || res.reason === 'not-configured' || res.reason === 'not-logged-in';
-  if (silencieux) { if (box) box.innerHTML = ''; }
-  else {
-    renderErrorState('syncState', 'Synchronisation impossible',
-      'Les donnees affichees proviennent de ce navigateur et peuvent ne pas etre a jour.',
-      res.reason, () => { document.getElementById('syncState').innerHTML = skeletonHtml('text', 1); onAuthReady(); });
-  }
+  renderSyncState('syncState', res, onAuthReady);
   renderAnalysis();
 }
+
 </script>
 <script src="assets/authgate.js"></script>
 </body>
