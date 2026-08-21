@@ -70,6 +70,17 @@
   <!-- Issue de la resynchronisation Supabase (voir renderSyncState). -->
   <div id="syncState"></div>
 
+  <!-- ================================================================================
+       Resume de la semaine, AU-DESSUS DE LA LIGNE DE FLOTTAISON (plan d'action §3).
+       Il existait deja, mais dans la 2e scene (« Trajectoire actuelle ») : il fallait
+       faire defiler pour savoir ou on en etait de sa semaine.
+       Arbitrage : plutot que de le remonter en hero — ce qui aurait donne DEUX valeurs
+       dominantes et contredit la composition validee, ou l'objectif porte seul le grand
+       chiffre — il prend la forme d'une bande fine, en amont du paysage. Meme donnee
+       exactement (getWeeklyStats), rien de recalcule ni de duplique.
+       ================================================================================ -->
+  <div class="week-strip" id="weekStrip"></div>
+
   <!-- Home Rail : les 3 grands moments de la narration (État actuel → Paysage d'entraînement →
        Objectif). Chaque `.rail-stop` est FULL-BLEED : il annule le centrage de <main> par des
        marges négatives (--bleed-l/--bleed-r, affinées par initHomeBleed) et se redonne seulement
@@ -304,6 +315,29 @@ function renderObjective() {
    précédente (voir getWeeklyStats) — jamais 2 jours comparés à 7, ce qui affichait une chute
    spectaculaire dès le lundi. Le total de la semaine précédente complète reste montré comme
    repère, clairement étiqueté. */
+/* Bande de resume hebdomadaire, au-dessus de la ligne de flottaison. Consomme exactement les
+   memes valeurs que la scene « Trajectoire actuelle » plus bas (getWeeklyStats) : c'est un
+   raccourci de lecture, jamais un second calcul qui pourrait diverger.
+   Volontairement sobre — pas d'icone, pas de delta, pas de couleur d'accent : elle informe en un
+   coup d'oeil sans disputer la valeur dominante du hero, qui reste la preparation a l'objectif. */
+function renderWeekStrip() {
+  const el = document.getElementById('weekStrip');
+  const stats = getWeeklyStats();
+  if (!stats) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  const contexte = stats.isPartialWeek
+    ? stats.daysElapsed + (stats.daysElapsed > 1 ? ' jours écoulés' : ' jour écoulé') + ' sur 7'
+    : 'semaine terminée';
+  const items = [
+    ['Distance', fmtNum(stats.distanceKm, ' km', 1)],
+    ['D+', fmtNum(stats.ascent, ' m', 0)],
+    ['Durée', fmtDuration(stats.durationS)],
+    ['Sorties', String(stats.sessionsCount)],
+  ];
+  el.innerHTML = '<span class="ws-label">Cette semaine<small>' + escapeHtml(contexte) + '</small></span>' +
+    items.map(([l, v]) => '<span class="ws-item"><span class="ws-v">' + v + '</span><span class="ws-l">' + l + '</span></span>').join('');
+}
+
 let trendMetric = 'km';
 function renderTrajectory() {
   const box = document.getElementById('landscapeScene');
@@ -649,6 +683,7 @@ function renderFcSummary() {
 function renderAll() {
   renderGreeting();
   renderGearAlert();
+  renderWeekStrip();   // 0. Résumé de la semaine, au-dessus de la ligne de flottaison
   document.getElementById('terrainBackdropSvgLayer').innerHTML = elevMountainBackdropSvg({ contourOnly: true });
   renderObjective();   // 1. Objectif principal (objectif + GPX de l'objectif)
   renderTrajectory();  // 2. Trajectoire actuelle (agrégats hebdomadaires)
