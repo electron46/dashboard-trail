@@ -832,15 +832,43 @@ function parseCsvLine(line, delimiter) {
 //   par phase (échauffement / corps de séance / retour au calme / moyenne globale) + D- + objectif de séance
 // - l'ancien format (séparateur ,) où seule la colonne "Jour" (ex. "Ven 07/08") donne la date,
 //   complétée par l'année réglée dans Paramètres
+// Normalise un intitulé de colonne de plan : minuscules, BOM et espaces retirés, accents
+// supprimés. Permet d'écrire les tests de reconnaissance sans accent tout en acceptant les
+// intitulés français réels.
+function normalizePlanHeader(h) {
+  return String(h).replace(/^﻿/, '').trim().toLowerCase()
+    .normalize('NFD').replace(DIACRITICS_RE, '');
+}
+
+// Lit un nombre dans une cellule de plan écrite en langage humain. `parseFloat` exige que la
+// chaîne COMMENCE par un chiffre : « ≈9 km » et « ≈250 m » donnaient donc NaN, ramené à 0 par le
+// `|| 0` d'origine. Le plan s'importait alors en apparence correctement, avec toutes les
+// distances et tous les dénivelés à zéro — une corruption silencieuse qui fausse ensuite chaque
+// comparaison réalisé/planifié. On cherche donc le premier nombre où qu'il soit dans la cellule.
+function parsePlanNumber(v) {
+  if (v == null) return 0;
+  // Espaces (normaux ou insécables) utilisés comme séparateurs de milliers : « 1 700 » -> « 1700 ».
+  const cleaned = String(v).replace(/(\d)[\s ](?=\d)/g, '$1');
+  const m = cleaned.match(/-?\d+(?:[.,]\d+)?/);
+  return m ? (parseFloat(m[0].replace(',', '.')) || 0) : 0;
+}
+
 function parsePlanCsv(text) {
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length);
   if (!lines.length) return [];
   const delimiter = (lines[0].split(';').length > lines[0].split(',').length) ? ';' : ',';
-  const header = parseCsvLine(lines[0], delimiter).map(h => h.trim().toLowerCase());
+  // En-têtes normalisés : BOM retiré et ACCENTS supprimés avant comparaison. Les tests ci-dessous
+  // sont écrits sans accent ('duree', 'echauffement') alors que les intitulés français en portent
+  // naturellement ('Durée totale', 'FC échauffement') : ces deux colonnes n'étaient donc jamais
+  // trouvées, et leur contenu était perdu en silence à chaque import.
+  const header = parseCsvLine(lines[0], delimiter).map(h => normalizePlanHeader(h));
   const idx = {
     semaine: header.findIndex(h => h.includes('semaine')),
     bloc: header.findIndex(h => h.includes('bloc')),
-    date: header.findIndex(h => h.trim() === 'date'),
+    // La comparaison était STRICTEMENT égale à 'date' : un intitulé aussi courant que
+    // « Date (JJ/MM/AAAA) » n'était pas reconnu, aucune ligne n'obtenait de date, et le fichier
+    // entier était rejeté — 58 lignes pour 0 séance importée (mesuré).
+    date: header.findIndex(h => h.startsWith('date')),
     jour: header.findIndex(h => h.includes('jour')),
     type: header.findIndex(h => h.includes('type')),
     distance: header.findIndex(h => h.includes('distance')),
@@ -875,9 +903,9 @@ function parsePlanCsv(text) {
       bloc: (cols[idx.bloc] || '').trim(),
       jourLabel: idx.jour >= 0 ? (cols[idx.jour] || '').trim() : '',
       type: (cols[idx.type] || '').trim(),
-      distanceKm: parseFloat(cols[idx.distance]) || 0,
-      deniveleM: parseFloat(cols[idx.denivele]) || 0,
-      descenteM: idx.descente >= 0 ? (parseFloat(cols[idx.descente]) || 0) : null,
+      distanceKm: parsePlanNumber(cols[idx.distance]),
+      deniveleM: parsePlanNumber(cols[idx.denivele]),
+      descenteM: idx.descente >= 0 ? parsePlanNumber(cols[idx.descente]) : null,
       dureeDetail: idx.duree >= 0 ? (cols[idx.duree] || '').trim() : '',
       fcEchauffement: idx.fcEchauffement >= 0 ? (cols[idx.fcEchauffement] || '').trim() : '',
       fcCorpsSeance: idx.fcCorps >= 0 ? (cols[idx.fcCorps] || '').trim() : '',
