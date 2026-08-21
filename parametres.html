@@ -294,14 +294,25 @@ function renderCardData() {
   box.innerHTML =
     settingsRow('Mes données', 'Exporter toutes vos données en JSON', '', { id:'exportBtn', onClick:true }) +
     settingsRow('Importer un export', 'Restaurer depuis un fichier JSON', '', { id:'importBtn', onClick:true }) +
-    settingsRow('Confidentialité', 'Vos données ne sont accessibles qu\'à votre compte (règles de sécurité Supabase)', '') +
-    settingsRow('Supprimer mon compte', 'La suppression automatisée du compte cloud n\'est pas encore disponible', '', { danger:true }) +
-    '<p class="hint" style="margin-top:2px;">Pour supprimer définitivement ton compte et tes données cloud, une action manuelle est nécessaire via le tableau de bord de ton projet Supabase (Authentication → Users). Une suppression automatisée depuis ELEV n\'est pas encore implémentée.</p>' +
-    settingsRow('Réinitialiser les données locales', 'Efface les données stockées sur cet appareil', '', { id:'resetBtn', onClick:true, danger:true }) +
+    settingsRow('Confidentialité', 'Tes données ne sont accessibles qu\'à ton compte (règles de sécurité Supabase)', '') +
+    // Zone de danger (Phase 10 du plan d'action) : les deux actions destructrices étaient posées
+    // à la suite de l'export et de l'import, qui sont eux inoffensifs — rien ne signalait le
+    // changement de nature. Elles sont désormais regroupées et visuellement isolées.
+    '<div class="danger-zone">' +
+      '<h3>Zone de danger</h3>' +
+      '<p>Ces actions effacent des données et sont irréversibles depuis ELEV.</p>' +
+      settingsRow('Réinitialiser les données locales', 'Efface les séances, le plan, les courses, le profil et les équipements enregistrés sur cet appareil', '', { id:'resetBtn', onClick:true, danger:true }) +
+      settingsRow('Supprimer mon compte', 'Non disponible depuis ELEV — voir la marche à suivre ci-dessous', '', { danger:true }) +
+      '<p class="hint" style="margin-top:8px;">Pour supprimer définitivement ton compte et tes données cloud, une action manuelle est nécessaire via le tableau de bord de ton projet Supabase (Authentication → Users). Une suppression automatisée depuis ELEV n\'est pas encore implémentée.</p>' +
+    '</div>' +
     '<input type="file" id="importFileInput" accept=".json" style="display:none;">' +
     '<div id="importJsonMsg"></div>';
   document.getElementById('exportBtn').addEventListener('click', () => {
-    const data = { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear() };
+    // Même contenu que le payload de synchronisation : cet export est la sauvegarde manuelle de
+    // l'utilisateur, il ne doit rien omettre de ce qui part vers le cloud. Il oubliait `planNotes`
+    // (note libre de l'onglet Ajustements du Plan) et `planYear` (année de référence du CSV, qui
+    // date les séances planifiées) — une restauration depuis un export les perdait silencieusement.
+    const data = buildSyncPayload();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
