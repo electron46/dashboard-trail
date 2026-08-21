@@ -68,6 +68,30 @@
      se ressemblaient trop pour tout le monde. Vert et bleu-ardoise sont deux familles franchement
      distinctes. La légende textuelle reste obligatoire malgré tout. */
   --acute-load:#3D9E4F; --chronic-load:#6F8FD8;
+
+  /* ---- ZONES DE FRÉQUENCE CARDIAQUE — source unique (Sprint 1, 2026-08-21).
+     Les zones étaient colorées par DEUX systèmes contradictoires : les pastilles de légende
+     (.zone-dot) utilisaient la rampe ordinale à teinte unique validée par validate_palette.js,
+     tandis que les arcs des donuts (ZONE_DONUT_COLORS, assets/app.js) utilisaient une échelle
+     catégorielle gris/vert/ambre/saumon. Mesuré : sur le MÊME composant, côte à côte, la pastille
+     et l'arc qu'elle décrit n'avaient la même couleur pour AUCUNE des 5 zones — Z5 était vert clair
+     en légende et saumon dans le graphique, et les deux rampes allaient en sens inverse.
+     Ces tokens sont désormais la seule définition ; le CSS comme le JS les consomment.
+     Rampe ordinale : les zones sont des catégories ORDONNÉES (Z1 < ... < Z5), pas des identités
+     indépendantes. Écart assumé avec la convention Garmin/Strava où Z5 est rouge — réversible en
+     changeant ces cinq valeurs, et un seul endroit à changer désormais. */
+  --zone-1:#2F5D3A; --zone-2:#3D7A48; --zone-3:#4F9857; --zone-4:#66B76A; --zone-5:#8AD489;
+
+  /* ---- RAIL DE NAVIGATION (sidebar desktop + barre mobile).
+     Ces surfaces restent SOMBRES dans les deux thèmes : c'est un choix de composition (un rail
+     sombre encadre le contenu), pas un oubli. Elles ne peuvent donc pas consommer --text/--muted,
+     qui s'inversent en thème clair — une migration naïve vers ces tokens rendrait le rail
+     illisible. Elles avaient jusqu'ici des valeurs en dur, dont deux qui avaient DÉRIVÉ des tokens
+     dont elles étaient issues (#F4F7F5 alors que --text vaut #F0F3F0, #8E9B95 alors que --muted
+     vaut #A9B1AC) : deux blancs et deux gris différents pour le même rôle. Nommées ici. */
+  --rail-bg-top:#0A0E0C; --rail-bg-bottom:#090C0B;
+  --rail-text:#F0F3F0; --rail-text-muted:#8E9B95; --rail-text-dim:#7C8A83;
+  --rail-border:rgba(244,247,245,.07); --rail-hover:rgba(244,247,245,.05);
   /* Échelles nommées reprises de la charte (divergences 7 et 8, tranchées le 2026-08-21 en sa
      faveur : le produit n'en avait aucune, c'était une dette et non un choix esthétique).
      Aucun effet visuel à l'ajout — ce sont des définitions. La migration des valeurs en dur vers
@@ -154,7 +178,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
    vérifiée, pour éviter un flash de données avant la redirection vers connexion.html. */
 html.auth-pending .app-shell{display:none;}
 html.auth-pending body::before{content:'Connexion…';position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--font-sans);background:var(--bg);z-index:9999;}
-.sidebar{width:220px;flex-shrink:0;background:linear-gradient(180deg,#0A0E0C,#090C0B);border-right:1px solid rgba(244,247,245,.06);display:flex;flex-direction:column;padding:20px 14px;position:sticky;top:0;align-self:flex-start;height:100vh;box-sizing:border-box;}
+.sidebar{width:220px;flex-shrink:0;background:linear-gradient(180deg,var(--rail-bg-top),var(--rail-bg-bottom));border-right:1px solid rgba(244,247,245,.06);display:flex;flex-direction:column;padding:20px 14px;position:sticky;top:0;align-self:flex-start;height:100vh;box-sizing:border-box;}
 /* Bloc de marque : icône montagne (même bibliothèque d'icônes que le reste du site, pas un
    logo inventé) + wordmark texte — remplace l'ancien pavé blanc du PNG source, qui reste
    disponible dans assets/ pour les autres pages. */
@@ -164,17 +188,17 @@ html.auth-pending body::before{content:'Connexion…';position:fixed;inset:0;dis
 .sidebar-brand > img{width:100%;height:auto;display:block;}
 .sidebar-brand .brand-mark{width:30px;height:30px;flex-shrink:0;filter:invert(66%) sepia(14%) saturate(700%) hue-rotate(50deg) brightness(95%);}
 .sidebar-brand .brand-word{display:flex;flex-direction:column;line-height:1.15;}
-.sidebar-brand .brand-word strong{font-family:var(--font-display);font-size:1.05rem;font-weight:800;color:#F4F7F5;letter-spacing:.01em;}
+.sidebar-brand .brand-word strong{font-family:var(--font-display);font-size:1.05rem;font-weight:800;color:var(--rail-text);letter-spacing:.01em;}
 .sidebar-brand .brand-word span{font-family:var(--font-sans);font-size:.56rem;font-weight:600;color:#5C6A63;letter-spacing:.13em;text-transform:uppercase;}
 .sidebar-nav{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;overflow-y:auto;}
 .sidebar-nav-sep{height:1px;background:rgba(244,247,245,.07);margin:10px 8px;flex-shrink:0;}
 /* Lien de nav : la capsule active est une surface élevée + un filet lumineux de bord gauche
    (pas un aplat vert plein — le vert reste rare, réservé au repère "où je suis"), voir CLAUDE.md
    règle 40/93 de la refonte Mountain Intelligence OS. */
-.sidebar-link{position:relative;display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:var(--radius-md);text-decoration:none;font-family:var(--font-sans);font-size:.85rem;font-weight:500;color:#7C8A83;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);}
+.sidebar-link{position:relative;display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:var(--radius-md);text-decoration:none;font-family:var(--font-sans);font-size:.85rem;font-weight:500;color:var(--rail-text-dim);transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);}
 .sidebar-link img{width:16px;height:16px;filter:invert(55%);flex-shrink:0;transition:filter var(--dur-fast) var(--ease-standard);}
-.sidebar-link:hover{background:rgba(244,247,245,.05);color:#F4F7F5;}
-.sidebar-link.active{background:rgba(107,142,78,.13);color:#F4F7F5;font-weight:600;}
+.sidebar-link:hover{background:rgba(244,247,245,.05);color:var(--rail-text);}
+.sidebar-link.active{background:rgba(107,142,78,.13);color:var(--rail-text);font-weight:600;}
 .sidebar-link.active::before{content:'';position:absolute;left:-14px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent-light);box-shadow:0 0 10px 1px rgba(168,196,127,.45);}
 .sidebar-link.active img{filter:invert(82%) sepia(15%) saturate(500%) hue-rotate(50deg) brightness(1.05);}
 /* Bloc utilisateur épinglé en bas de sidebar — avatar généré à partir de l'initiale du prénom
@@ -182,7 +206,7 @@ html.auth-pending body::before{content:'Connexion…';position:fixed;inset:0;dis
 .sidebar-user{display:flex;align-items:center;gap:10px;padding:12px 8px 2px;margin-top:8px;border-top:1px solid rgba(244,247,245,.07);}
 .sidebar-user .avatar{width:34px;height:34px;border-radius:50%;background:var(--accent-soft);color:var(--accent-light);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:.9rem;flex-shrink:0;}
 .sidebar-user .user-info{display:flex;flex-direction:column;line-height:1.3;min-width:0;}
-.sidebar-user .user-info strong{font-size:.82rem;color:#F4F7F5;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sidebar-user .user-info strong{font-size:.82rem;color:var(--rail-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .sidebar-user .user-info a{font-size:.72rem;color:#6B7A73;text-decoration:none;}
 .sidebar-user .user-info a:hover{color:var(--accent-light);}
 .app-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;}
@@ -1281,6 +1305,63 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .empty-state .empty-title{font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--text);margin-bottom:4px;}
 .empty-state p{margin:0 0 14px;font-size:.86rem;}
 
+/* ============================================================================================
+   ÉTATS APPLICATIFS — Sprint 1 (2026-08-21). Le produit n'avait que l'état « vide » ; il lui
+   manquait « chargement » et « erreur », pourtant exigés au même titre par le plan d'action.
+   Conséquence concrète avant cette passe : une lecture Supabase qui échoue laissait la zone
+   VIDE, indiscernable d'un « tu n'as pas encore de données » — le pire des deux mondes, puisque
+   l'utilisateur conclut à une absence de données là où il y a une panne.
+   ============================================================================================ */
+
+/* --- Chargement. Le squelette reprend la GÉOMÉTRIE du contenu attendu (mêmes hauteurs, mêmes
+   rayons) : il réserve la place et évite le saut de mise en page à l'arrivée des données. */
+.skeleton{position:relative;overflow:hidden;background:var(--surface-2);border-radius:var(--radius-sm);}
+.skeleton::after{content:'';position:absolute;inset:0;transform:translateX(-100%);
+  background:linear-gradient(90deg,transparent,var(--edge-highlight),transparent);
+  animation:elev-shimmer 1.4s var(--ease-standard) infinite;}
+@keyframes elev-shimmer{100%{transform:translateX(100%);}}
+/* Sans mouvement : le squelette reste un aplat. Il continue d'indiquer le chargement par sa
+   présence et par aria-busy, jamais par la seule animation. */
+@media (prefers-reduced-motion:reduce){ .skeleton::after{animation:none;} }
+.skeleton-line{height:12px;margin-bottom:9px;}
+.skeleton-line:last-child{margin-bottom:0;}
+.skeleton-line.w-40{width:40%;} .skeleton-line.w-60{width:60%;} .skeleton-line.w-80{width:80%;}
+.skeleton-metric{height:34px;width:120px;margin-bottom:8px;}
+.skeleton-chart{height:180px;border-radius:var(--radius-md);}
+.skeleton-row{height:56px;border-radius:var(--radius-md);margin-bottom:6px;}
+
+/* --- Erreur. Même gabarit que .empty-state pour rester un langage unique, mais bord et
+   pastille en teinte d'alerte, et surtout une ACTION de reprise : un état d'erreur sans moyen
+   de réessayer laisse l'utilisateur sans issue. */
+.error-state{text-align:center;padding:26px 18px;color:var(--muted);border:1px solid var(--danger);
+  border-radius:var(--radius-md);background:var(--danger-soft);}
+.error-state .error-title{display:flex;align-items:center;justify-content:center;gap:7px;
+  font-family:var(--font-display);font-size:1rem;font-weight:700;color:var(--text);margin-bottom:4px;}
+/* Le symbole double la couleur : un statut ne doit jamais reposer sur la seule teinte. */
+.error-state .error-title::before{content:'!';flex:0 0 auto;width:18px;height:18px;border-radius:50%;
+  background:var(--danger);color:var(--canvas);font-family:var(--font-sans);font-size:.72rem;
+  font-weight:700;display:flex;align-items:center;justify-content:center;}
+.error-state p{margin:0 0 14px;font-size:.86rem;}
+.error-state .error-detail{font-family:var(--font-mono);font-size:.72rem;color:var(--muted);
+  word-break:break-word;margin-bottom:12px;}
+
+/* --- Données partielles : un bandeau discret qui NOMME ce qui manque, plutôt qu'une valeur par
+   défaut qui masquerait le trou. */
+.partial-note{display:flex;align-items:flex-start;gap:7px;margin-top:10px;padding:8px 11px;
+  border-left:2px solid var(--warn);background:var(--warn-soft);border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  font-size:.78rem;color:var(--text);line-height:1.45;}
+.partial-note::before{content:'i';flex:0 0 auto;width:15px;height:15px;border-radius:50%;
+  background:var(--warn);color:var(--canvas);font-size:.66rem;font-weight:700;
+  display:flex;align-items:center;justify-content:center;margin-top:1px;}
+
+/* --- Zone de danger : les actions destructrices sont regroupées et visuellement isolées du
+   reste, pour qu'aucune ne se déclenche par simple continuité de lecture. */
+.danger-zone{border:1px solid var(--danger);border-radius:var(--radius-lg);padding:16px 18px;margin-top:18px;
+  background:linear-gradient(180deg,var(--danger-soft),transparent 60%);}
+.danger-zone > h3{margin:0 0 4px;font-family:var(--font-display);font-size:.96rem;font-weight:700;color:var(--danger);}
+.danger-zone > p{margin:0 0 12px;font-size:.8rem;color:var(--muted);line-height:1.45;}
+.danger-zone .settings-row:last-child{border-bottom:none;}
+
 @media (prefers-reduced-motion: reduce){
 }
 
@@ -1437,8 +1518,8 @@ main.activities-main{max-width:1600px;}
    échoue : les paires chaudes voisines tombent à ΔE 2.2, indiscernables même en vision normale.
    Écart assumé avec la convention Garmin/Strava, où Z5 est rouge. Réversible en changeant ces
    cinq valeurs. Intitulés et pourcentages restent affichés, donc la couleur n'est jamais seule. */
-.zone-dot.z1{background:#2F5D3A;} .zone-dot.z2{background:#3D7A48;} .zone-dot.z3{background:#4F9857;}
-.zone-dot.z4{background:#66B76A;} .zone-dot.z5{background:#8AD489;}
+.zone-dot.z1{background:var(--zone-1);} .zone-dot.z2{background:var(--zone-2);} .zone-dot.z3{background:var(--zone-3);}
+.zone-dot.z4{background:var(--zone-4);} .zone-dot.z5{background:var(--zone-5);}
 
 /* Aperçu "Montées principales" (colonne d'analyse) — mini-tableau, détail complet dans l'onglet Montées */
 /* Pleine largeur (section dédiée, plus confinée à la colonne d'analyse) : 7 colonnes lisibles
@@ -1672,17 +1753,17 @@ section.card .goal-hero-identity h2::before{display:none;}
   .sidebar{display:none;}
   .mobile-nav{
     display:flex;position:fixed;left:0;right:0;bottom:0;
-    background:#0A0E0C;border-top:1px solid rgba(244,247,245,.07);
+    background:var(--rail-bg-top);border-top:1px solid var(--rail-border);
     padding:6px 2px calc(6px + env(safe-area-inset-bottom));
     z-index:20;
   }
   .mobile-nav a{
     position:relative;flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;
-    text-decoration:none;padding:8px 2px;min-height:44px;box-sizing:border-box;font-family:var(--font-sans);font-size:.62rem;color:#8E9B95;
+    text-decoration:none;padding:8px 2px;min-height:44px;box-sizing:border-box;font-family:var(--font-sans);font-size:.62rem;color:var(--rail-text-muted);
     transition:color var(--dur-fast) var(--ease-standard);
   }
   .mobile-nav a img{width:18px;height:18px;filter:invert(55%);transition:filter var(--dur-fast) var(--ease-standard);}
-  .mobile-nav a.active{color:var(--accent-light,#A8C47F);}
+  .mobile-nav a.active{color:var(--accent-light);}
   .mobile-nav a.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
   /* Repère actif : petite barre lumineuse en haut de l'icône (même langage que la capsule de la
      sidebar desktop — voir .sidebar-link.active — pour une identité cohérente entre les deux nav). */
@@ -1690,9 +1771,9 @@ section.card .goal-hero-identity h2::before{display:none;}
   /* Bouton "Plus" : même gabarit que les liens, réinitialisé (c'est un <button>, pas un <a>). */
   .mobile-nav button{position:relative;flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;
     background:none;border:none;padding:8px 2px;min-height:44px;box-sizing:border-box;
-    font-family:var(--font-sans);font-size:.62rem;color:#8E9B95;cursor:pointer;transition:color var(--dur-fast) var(--ease-standard);}
+    font-family:var(--font-sans);font-size:.62rem;color:var(--rail-text-muted);cursor:pointer;transition:color var(--dur-fast) var(--ease-standard);}
   .mobile-nav button img{width:18px;height:18px;filter:invert(55%);transition:filter var(--dur-fast) var(--ease-standard);}
-  .mobile-nav button.active{color:var(--accent-light,#A8C47F);}
+  .mobile-nav button.active{color:var(--accent-light);}
   .mobile-nav button.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
   main{padding:16px 16px 78px;}
   /* La salutation disparaît sous 640px : elle occupait une ligne entière d'une topbar mesurée à

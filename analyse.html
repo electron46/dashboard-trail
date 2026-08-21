@@ -57,6 +57,11 @@
     </div>
   </section>
 
+  <!-- Etat de la resynchronisation Supabase. Jusqu'ici un echec de lecture laissait la page
+       muette : l'utilisateur voyait une analyse vide et en concluait qu'il n'avait pas de
+       donnees, alors qu'il s'agissait d'une panne. -->
+  <div id="syncState"></div>
+
   <section class="kpi-grid" aria-label="Indicateurs principaux" id="kpiGrid"></section>
 
   <div class="card-row-3 card-row-3--charts">
@@ -402,7 +407,23 @@ function renderAnalysis() {
 renderAnalysis(); // premier rendu depuis le cache local, avant même la vérification de connexion
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderSidebarUser();
-async function onAuthReady() { await syncActivitiesWithSupabase(); renderAnalysis(); }
+// La page s'affiche d'abord depuis le cache local (renderAnalysis ci-dessus), puis se
+// resynchronise. Le resultat de syncActivitiesWithSupabase() etait ignore : un refus (RLS,
+// session expiree, reseau) ne se voyait nulle part. On distingue desormais les cas ou il n'y a
+// simplement rien a synchroniser (mode local, non connecte : silence normal) d'un veritable
+// echec, qui est annonce avec une action de reprise.
+async function onAuthReady() {
+  const box = document.getElementById('syncState');
+  const res = await syncActivitiesWithSupabase();
+  const silencieux = !res || res.ok || res.reason === 'not-configured' || res.reason === 'not-logged-in';
+  if (silencieux) { if (box) box.innerHTML = ''; }
+  else {
+    renderErrorState('syncState', 'Synchronisation impossible',
+      'Les donnees affichees proviennent de ce navigateur et peuvent ne pas etre a jour.',
+      res.reason, () => { document.getElementById('syncState').innerHTML = skeletonHtml('text', 1); onAuthReady(); });
+  }
+  renderAnalysis();
+}
 </script>
 <script src="assets/authgate.js"></script>
 </body>
