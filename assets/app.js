@@ -2602,6 +2602,71 @@ function getTrainingTrend() {
 // Insight ELEV : traduit la tendance de charge en une observation textuelle, à partir de règles explicites
 // et déterministes (pas d'IA, pas d'appel réseau). Ce sont des observations basées sur l'historique
 // d'entraînement — jamais un diagnostic médical ou physiologique.
+/* Tendance d'une série hebdomadaire quelconque — mêmes seuils que getTrainingTrend(), qui ne
+   savait raisonner que sur le volume. Extrait ici pour pouvoir interpréter AUSSI le dénivelé,
+   sans dupliquer la règle ni en inventer une seconde qui pourrait la contredire.
+   `values` va du plus ancien au plus récent. Retourne null si la moyenne est nulle : sans
+   référence, il n'y a rien à comparer, et un pourcentage y serait une division par zéro déguisée. */
+function weeklyTrend(values) {
+  if (!values || values.length < 2) return null;
+  const acute = values[values.length - 1];
+  const chronic = values.reduce((a, b) => a + b, 0) / values.length;
+  if (chronic <= 0) return null;
+  const ratio = +(acute / chronic).toFixed(2);
+  let level;
+  if (ratio >= TREND_RISING_FAST_RATIO) level = 'rising_fast';
+  else if (ratio >= TREND_RISING_RATIO) level = 'rising';
+  else if (ratio <= TREND_FALLING_RATIO) level = 'falling';
+  else level = 'stable';
+  return { level, ratio, acute, chronic, deltaPct: Math.round((acute / chronic - 1) * 100) };
+}
+
+/* Observations complémentaires de l'Accueil (phase 12 du plan d'action : passer de « montrer les
+   données » à « les interpréter »). L'interprétation de l'Accueil ne portait QUE sur le volume,
+   alors que le dénivelé est la mesure qui définit le trail et que la sortie longue conditionne la
+   préparation à une course.
+   Chaque observation suit le même contrat : un constat quantifié, ET la référence à laquelle il
+   se compare — sans référence explicite, un pourcentage n'est pas interprétable.
+   Rien n'est inventé : tout vient de getRecentWeeklyVolumes(), déjà calculé pour le graphique de
+   la page. Aucune observation sur la récupération : l'application ne suit ni sommeil ni FC de
+   repos dans le temps, il n'y a donc rien à en dire. */
+function generateElevSideInsights() {
+  const weeks = getRecentWeeklyVolumes(5);
+  if (!weeks || weeks.length < 3) return [];
+  const out = [];
+
+  const dTrend = weeklyTrend(weeks.map(w => w.dplus));
+  if (dTrend && dTrend.chronic >= 100) { // sous 100 m/sem. de moyenne, un ratio n'a pas de sens
+    const signe = dTrend.deltaPct >= 0 ? '+' : '';
+    out.push({
+      key: 'dplus',
+      title: dTrend.level === 'falling' ? 'Dénivelé en retrait'
+        : (dTrend.level === 'stable' ? 'Dénivelé stable' : 'Dénivelé en hausse'),
+      text: Math.round(dTrend.acute) + ' m cette semaine, ' + signe + dTrend.deltaPct +
+            ' % par rapport à ta moyenne des ' + weeks.length + ' dernières semaines (' +
+            Math.round(dTrend.chronic) + ' m).',
+    });
+  }
+
+  // Sortie longue : le maximum de la semaine face au meilleur des semaines précédentes.
+  const sessions = loadAllSessions();
+  const debutSemaine = weeks[weeks.length - 1].startISO;
+  const longueSemaine = Math.max(0, ...sessions.filter(s => s.date >= debutSemaine).map(s => s.distanceKm || 0));
+  const longuePrecedente = Math.max(0, ...sessions.filter(s => s.date < debutSemaine &&
+    s.date >= weeks[0].startISO).map(s => s.distanceKm || 0));
+  if (longueSemaine > 0 && longuePrecedente > 0) {
+    const ecart = Math.round((longueSemaine / longuePrecedente - 1) * 100);
+    out.push({
+      key: 'longue',
+      title: ecart >= 0 ? 'Sortie longue en progression' : 'Sortie longue plus courte',
+      text: longueSemaine.toFixed(1) + ' km cette semaine, contre ' + longuePrecedente.toFixed(1) +
+            ' km au mieux sur les ' + (weeks.length - 1) + ' semaines précédentes.',
+    });
+  }
+
+  return out.slice(0, 2);
+}
+
 function generateElevInsight() {
   const trend = getTrainingTrend();
   if (!trend) return null;
