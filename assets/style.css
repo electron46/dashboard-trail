@@ -5,7 +5,12 @@
    la surface réelle du produit selon la planche de marque ; le thème clair
    reste disponible via le bouton de bascule pour la lisibilité en plein soleil.
    ========================================================================= */
-@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+/* Les polices ne sont plus chargées par @import : un @import oblige le navigateur à
+   télécharger cette feuille, la lire, PUIS découvrir la requête de police, soit une chaîne
+   en série. Elles sont désormais déclarées par <link rel=preconnect> + <link rel=stylesheet>
+   dans le <head> de chaque page, ce qui les met en parallèle du CSS.
+   Raleway ne descend plus qu'en 700 et 800 : un audit des règles n'a trouvé AUCUN usage de
+   Raleway 500 ou 600 (30 règles en 700, 7 en 800, 0 ailleurs). Deux fichiers en moins. */
 
 :root{
   /* Sombre — thème par défaut (surface réelle du produit). Palette "Mountain Performance
@@ -158,6 +163,9 @@ header.app-topbar h1{margin:0;font-family:var(--font-display);font-size:1.6rem;f
    gardent la topbar normale. */
 header.app-topbar--slim{padding-top:12px;padding-bottom:10px;align-items:center;}
 header.app-topbar--slim h1{font-family:var(--font-sans);font-size:.92rem;font-weight:600;color:var(--muted);letter-spacing:0;}
+/* La salutation n'est plus un titre (voir index.html) : elle reprend exactement l'apparence
+   qu'avait le <h1> allégé, donc rien ne change visuellement. */
+header.app-topbar .topbar-greeting{margin:0;font-family:var(--font-sans);font-size:.92rem;font-weight:600;color:var(--muted);letter-spacing:0;}
 header.app-topbar--slim.scrolled{padding-top:10px;padding-bottom:8px;}
 header.app-topbar .app-topbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px;}
 #themeToggle{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:50%;font-size:.95rem;cursor:pointer;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),transform var(--dur-micro) var(--ease-standard);}
@@ -1125,7 +1133,10 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 #trendChartBox .chart-box{border:none;padding:0;}
 /* Lien/CTA secondaire générique (flèche) — utilisé partout où une action n'a pas besoin du
    poids visuel d'un bouton plein (ex. "Voir l'analyse →" sur une carte déjà cliquable). */
-.link-arrow{display:inline-flex;align-items:center;gap:4px;font-size:.82rem;color:var(--accent-light);text-decoration:none;font-weight:600;}
+/* min-height 24px : WCAG 2.2 SC 2.5.8 impose 24x24 CSS px pour toute cible, quel que soit le
+   pointeur — mesuré à 19px avant correction. La version tactile (44px) est dans la media
+   query mobile plus bas. */
+.link-arrow{display:inline-flex;align-items:center;min-height:24px;gap:4px;font-size:.82rem;color:var(--accent-light);text-decoration:none;font-weight:600;}
 .link-arrow:hover{color:var(--accent);}
 .trend-link{margin-top:10px;}
 
@@ -1486,6 +1497,14 @@ main.analysis-main{max-width:1440px;}
   .mobile-nav button.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
   main{padding:16px 16px 78px;}
   footer.app{padding-bottom:78px;}
+
+  /* Cibles tactiles — mesurées à 375 px avant correction : 5 éléments interactifs sur 7 sous
+     44x44, dont .link-arrow à 19 px de haut, soit sous le minimum WCAG 2.2 (24 px). La correction
+     est confinée à cette media query : la densité desktop, où le pointeur est précis, ne bouge
+     pas. `align-items:center` conserve l'apparence du bouton, seule la surface cliquable grandit. */
+  .btn.small,
+  .period-select button{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+  .link-arrow{min-height:44px;display:inline-flex;align-items:center;}
   /* Topbar sticky en haut d'écran : sur un téléphone à encoche, l'espace système (notch/île
      dynamique) doit s'ajouter au padding plutôt que de passer dessous. */
   header.app-topbar{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;}

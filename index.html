@@ -10,7 +10,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0B0F0E">
-<link rel="stylesheet" href="assets/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
@@ -43,7 +46,13 @@
      immédiatement sous la navigation. -->
 <header class="app-topbar app-topbar--slim">
   <div>
-    <h1 id="greetingTitle">Bonjour 👋</h1>
+    <!-- Le <h1> nomme la PAGE, pas l'utilisateur : c'est le titre du document, le premier repère
+         d'un lecteur d'écran et le libellé attendu dans la navigation ("Aujourd'hui"). La
+         salutation reste affichée mais redevient ce qu'elle est, une phrase, pas un titre.
+         L'emoji a été retiré : c'était le seul de la page dans un jeu d'icônes SVG, et son rendu
+         change selon le système d'exploitation. -->
+    <h1 class="visually-hidden">Aujourd'hui</h1>
+    <p class="topbar-greeting" id="greetingTitle">Bonjour</p>
   </div>
   <div class="app-topbar-actions">
     <a class="btn accent" href="historique.html">+ Importer une activité</a>
@@ -146,7 +155,7 @@ function renderGearAlert() {
 function renderGreeting() {
   const profile = getProfile();
   const prenom = (profile.nom || '').trim().split(/\s+/)[0];
-  document.getElementById('greetingTitle').textContent = prenom ? ('Bonjour ' + prenom + ' 👋') : 'Bonjour 👋';
+  document.getElementById('greetingTitle').textContent = prenom ? ('Bonjour ' + prenom) : 'Bonjour';
 
   // Avatar généré à partir de l'initiale du prénom (pas de photo) — reste discret si le profil est vide.
   const initial = prenom ? prenom[0].toUpperCase() : '?';
