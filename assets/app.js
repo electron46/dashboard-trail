@@ -2551,11 +2551,77 @@ function genericDonutSvg(segments, centerValue, centerLabel) {
 // axe Y), ligne = durée normalisée sur sa propre plage — pas de second axe superposé (même convention
 // que le fond de terrain en arrière-plan des autres graphiques : repère de tendance, pas une lecture
 // exacte au pixel près ; le détail exact reste dans le tooltip).
+/* ------------------------- GRAPHIQUES CONSCIENTS DE LEUR CONTENEUR -------------------------
+   `chartViewboxWidth()` ci-dessous raisonne sur la largeur de FENETRE. C'est une approximation
+   qui ne tient que tant qu'un graphique occupe toute la largeur disponible : des que deux
+   graphiques se partagent une ligne, chaque conteneur fait la moitie de ce que la fonction
+   suppose, l'echelle du SVG s'effondre et le texte des axes redevient illisible.
+
+   Le registre ci-dessous supprime l'approximation. Un appelant enregistre son conteneur avec une
+   fonction de rendu prenant une largeur ; le conteneur est mesure APRES insertion dans le DOM et
+   redessine a sa largeur reelle, puis a chaque redimensionnement utile. L'echelle du SVG vaut
+   alors 1 et un font-size="13" rend a 13px, quelle que soit la mise en page.
+
+   Le contenu est remplace A L'INTERIEUR du conteneur, jamais le conteneur lui-meme : les
+   info-bulles sont posees dessus en delegation (voir initChartTooltips et son garde
+   `dataset.tooltipWired`), elles survivent donc au redessin sans etre rearmees.
+
+   Meme principe que initTerrainProfiles() pour les labels du profil : mesurer le rendu reel
+   plutot que de le deviner. */
+const _responsiveCharts = new Map();
+
+function registerResponsiveChart(el, render) {
+  if (!el || typeof render !== 'function') return;
+  _responsiveCharts.set(el, render);
+  _drawResponsiveChart(el);
+  // La mise en page n'est pas toujours stabilisee au premier appel (scenes pleine largeur
+  // dimensionnees en JS) : on repasse une fois la frame suivante, puis un peu plus tard.
+  requestAnimationFrame(function () { _drawResponsiveChart(el); });
+  setTimeout(function () { _drawResponsiveChart(el); }, 220);
+}
+
+function _drawResponsiveChart(el) {
+  const render = _responsiveCharts.get(el);
+  if (!render || !el.isConnected) return;
+  const w = Math.round(el.clientWidth);
+  if (!w) return;                                   // pas encore mis en page
+  if (el.dataset.chartWidth === String(w)) return;  // deja dessine a cette largeur
+  el.dataset.chartWidth = String(w);
+  el.innerHTML = render(w);
+}
+
+function refreshResponsiveCharts() {
+  _responsiveCharts.forEach(function (fn, el) {
+    if (!el.isConnected) { _responsiveCharts.delete(el); return; }
+    _drawResponsiveChart(el);
+  });
+}
+
+// Un seul ecouteur de redimensionnement pour tous les graphiques de la page, debounce.
+(function () {
+  if (typeof window === 'undefined') return;
+  let t = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(t);
+    t = setTimeout(refreshResponsiveCharts, 150);
+  });
+})();
+
+/* Largeur du viewBox d'un graphique, adaptee a l'ecran.
+   Un viewBox fixe de 620 rend le texte illisible sur telephone : le SVG est ramene a ~343px de
+   large, soit une echelle de 0,55, et un font-size="13" arrive a 7,2px reels (mesure). Ce n'est
+   pas une valeur trop petite, c'est une mise a l'echelle. En rapprochant la largeur du viewBox de
+   la largeur reellement disponible, l'echelle revient pres de 1 et le texte retrouve sa taille
+   nominale. Les coordonnees internes suivent, la geometrie est inchangee. */
+function chartViewboxWidth(opts) {
+  if (opts && opts.width) return opts.width;
+  return (typeof window !== 'undefined' && window.innerWidth < 640) ? 330 : 620;
+}
 function volumeChartSvg(weeks, opts) {
   opts = opts || {};
   const titleHtml = opts.hideTitle ? '' : '<h3>Évolution du volume</h3>';
   if (weeks.length < 2) return '<div class="chart-box">' + titleHtml + '<div class="empty">Pas encore assez de séances pour ce graphique (2 semaines minimum).</div></div>';
-  const w = 620, h = 260, padL = 40, padR = 10, padT = 18, padB = 30;
+  const w = chartViewboxWidth(opts), h = 260, padL = 40, padR = 10, padT = 18, padB = 30;
   const maxKm = Math.max(1, ...weeks.map(x => x.km));
   const maxDurH = Math.max(1, ...weeks.map(x => x.durationS / 3600));
   const groupW = (w - padL - padR) / weeks.length;
@@ -2593,7 +2659,7 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
   opts = opts || {};
   const titleHtml = opts.hideTitle ? '' : '<h3>' + escapeHtml(opts.title || '') + '</h3>';
   if (weeks.length < 2) return '<div class="chart-box">' + titleHtml + '<div class="empty">Pas encore assez de séances sur cette fenêtre pour ce graphique.</div></div>';
-  const w = 620, h = opts.height || 220, padL = 44, padR = 10, padT = 18, padB = 30;
+  const w = chartViewboxWidth(opts), h = opts.height || 220, padL = 44, padR = 10, padT = 18, padB = 30;
   const fmt = opts.fmt || (v => Math.round(v));
   const realizedVals = weeks.map(x => x[key] || 0);
   const plannedVals = planMap ? weeks.map(x => (planMap.get(x.startISO) || {})[key] || 0) : [];
@@ -2637,7 +2703,16 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
   legend += '</div>';
   return '<div class="chart-box">' + titleHtml + legend + '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
     '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
+    // Quatre graduations + lignes de grille au lieu d'une seule valeur maximale : sans elles, la
+    // seule facon de lire une valeur etait le tooltip, ce que le skill dataviz interdit
+    // (« un tooltip n'est jamais le seul moyen de lire une valeur »).
+    [0.25, 0.5, 0.75].map(function (frac) {
+      const gy = (h - padB) - frac * (h - padT - padB);
+      return '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (w - padR) + '" y2="' + gy.toFixed(1) + '" stroke="var(--chart-grid)" stroke-width="1"/>' +
+        '<text x="2" y="' + (gy + 4).toFixed(1) + '" font-size="12" fill="var(--muted)">' + fmt(maxV * frac) + '</text>';
+    }).join('') +
     '<text x="2" y="' + (padT + 6) + '" font-size="12" fill="var(--muted)">' + fmt(maxV) + '</text>' +
+    '<text x="2" y="' + (h - padB + 4) + '" font-size="12" fill="var(--muted)">0</text>' +
     bars + planLine +
   '</svg></div>';
 }
@@ -3639,7 +3714,7 @@ let _chartGradientId = 0;
 function lineChartSvg(title, points, opts) {
   opts = opts || {};
   if (points.length < 2) return svgEmpty(title);
-  const w = 620, h = opts.height || 280, padL = 54, padR = 18, padT = 20, padB = 36;
+  const w = chartViewboxWidth(opts), h = opts.height || 280, padL = 54, padR = 18, padT = 20, padB = 36;
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = opts.yMin ?? Math.min(...ys), maxY = opts.yMax ?? Math.max(...ys);
@@ -3677,7 +3752,9 @@ function lineChartSvg(title, points, opts) {
     '</linearGradient></defs>' +
     backgroundPath +
     '<path d="'+areaPath+'" fill="url(#'+gradId+')" stroke="none"/>' +
-    '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
+    // Grille en trait PLEIN : un tireté sur une ligne de grille se lit comme un seuil ou une
+    // projection alors que ce n'est qu'un repère (anti-pattern documenté du skill dataviz).
+    '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--chart-grid)" stroke-width="1"/>' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+(opts.yMaxLabel ?? maxY.toFixed(opts.decimals??0))+'</text>' +
@@ -3691,7 +3768,7 @@ function lineChartSvg(title, points, opts) {
 function groupedBarChartSvg(title, weeks, series, opts) {
   opts = opts || {};
   if (!weeks.length) return svgEmpty(title);
-  const w = 620, h = opts.height || 290, padL = 54, padR = 18, padT = 20, padB = 44;
+  const w = chartViewboxWidth(opts), h = opts.height || 290, padL = 54, padR = 18, padT = 20, padB = 44;
   const maxV = Math.max(1, ...series.flatMap(s => s.values));
   const groupW = (w - padL - padR) / weeks.length;
   const barW = (groupW * 0.7) / series.length;
@@ -3710,10 +3787,23 @@ function groupedBarChartSvg(title, weeks, series, opts) {
       bars += '<text x="'+(groupX+groupW*0.35).toFixed(1)+'" y="'+(h-14)+'" font-size="11" fill="var(--muted)" text-anchor="middle">'+wk.shortLabel+'</text>';
     }
   });
-  const legend = '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>';
+  // Pas de legende pour une serie unique : le titre la nomme deja. Une legende a une entree est
+  // du bruit (regle du skill dataviz : legende obligatoire des 2 series, aucune pour une seule).
+  const legend = series.length > 1
+    ? '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>'
+    : '';
   return '<div class="chart-box' + (opts.hideTitle ? ' no-title' : '') + '">' + (opts.hideTitle ? '' : '<h3>' + title + '</h3>') + legend + '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    // Graduations intermediaires + lignes de grille. Avant : une seule valeur (le maximum), donc
+    // aucune valeur lisible sans survoler une barre — ce que le skill dataviz interdit
+    // explicitement (« un tooltip n'est jamais le seul moyen de lire une valeur »).
+    [0.25,0.5,0.75].map(function(frac){
+      const gy=(h-padB)-frac*(h-padT-padB);
+      return '<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+gy.toFixed(1)+'" stroke="var(--chart-grid)" stroke-width="1"/>' +
+        '<text x="4" y="'+(gy+4).toFixed(1)+'" font-size="13" fill="var(--muted)">'+(maxV*frac).toFixed(0)+'</text>';
+    }).join('') +
     '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
+    '<text x="4" y="'+(h-padB+4)+'" font-size="13" fill="var(--muted)">0</text>' +
     bars +
   '</svg></div>';
 }

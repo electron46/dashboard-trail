@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 470">
+<polygon points="40,230 190,55 210,55 360,230" fill="#2B2B2B"></polygon>
+<polygon points="115,230 205,120 300,230" fill="#2B2B2B" opacity=".55"></polygon>
+<path d="M95,225 L200,80" fill="none" stroke="#FF6B35" stroke-width="9" stroke-linecap="round"></path>
+<circle cx="95" cy="225" r="10" fill="#FF6B35"></circle>
+<circle cx="200" cy="80" r="9" fill="#fff" stroke="#FF6B35" stroke-width="5"></circle>
+<text x="200" y="330" text-anchor="middle" font-family="'IBM Plex Sans',sans-serif" font-weight="700" font-size="68" letter-spacing="2" fill="#2B2B2B">ELEV</text>
+<line x1="35" y1="365" x2="90" y2="365" stroke="#2B2B2B" stroke-width="1.5"></line>
+<text x="200" y="371" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="15" letter-spacing="3" fill="#2B2B2B">RUNNING / TRAIL</text>
+<line x1="310" y1="365" x2="365" y2="365" stroke="#2B2B2B" stroke-width="1.5"></line>
+<text x="200" y="415" text-anchor="middle" font-family="'IBM Plex Sans',sans-serif" font-style="italic" font-size="17" fill="#8A8680">"Une pratique suivie et mesurée."</text>
+</svg>

@@ -10,7 +10,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0B0F0E">
-<link rel="stylesheet" href="assets/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <link rel="stylesheet" href="assets/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
@@ -43,7 +46,13 @@
      immédiatement sous la navigation. -->
 <header class="app-topbar app-topbar--slim">
   <div>
-    <h1 id="greetingTitle">Bonjour 👋</h1>
+    <!-- Le <h1> nomme la PAGE, pas l'utilisateur : c'est le titre du document, le premier repère
+         d'un lecteur d'écran et le libellé attendu dans la navigation ("Aujourd'hui"). La
+         salutation reste affichée mais redevient ce qu'elle est, une phrase, pas un titre.
+         L'emoji a été retiré : c'était le seul de la page dans un jeu d'icônes SVG, et son rendu
+         change selon le système d'exploitation. -->
+    <h1 class="visually-hidden">Aujourd'hui</h1>
+    <p class="topbar-greeting" id="greetingTitle">Bonjour</p>
   </div>
   <div class="app-topbar-actions">
     <a class="btn accent" href="historique.html">+ Importer une activité</a>
@@ -146,7 +155,7 @@ function renderGearAlert() {
 function renderGreeting() {
   const profile = getProfile();
   const prenom = (profile.nom || '').trim().split(/\s+/)[0];
-  document.getElementById('greetingTitle').textContent = prenom ? ('Bonjour ' + prenom + ' 👋') : 'Bonjour 👋';
+  document.getElementById('greetingTitle').textContent = prenom ? ('Bonjour ' + prenom) : 'Bonjour';
 
   // Avatar généré à partir de l'initiale du prénom (pas de photo) — reste discret si le profil est vide.
   const initial = prenom ? prenom[0].toUpperCase() : '?';
@@ -196,8 +205,12 @@ function renderObjective() {
 
   // Métriques de l'OBJECTIF uniquement (jamais de volume hebdomadaire ici) : compte à rebours,
   // distance et dénivelé de la course.
+  // Les trois métriques n'ont pas le même poids d'information. Le compte à rebours CHANGE tous
+  // les jours et conditionne l'entraînement ; la distance et le dénivelé de la course ne bougeront
+  // plus jamais. Le premier mène donc la rangée, les deux autres passent en rang secondaire — sans
+  // concurrencer le score de préparation, qui reste la seule valeur dominante de la scène.
   const metrics = [
-    { v: days >= 0 ? 'J-' + days : 'Passée', l: fmtDate(r.date) },
+    { v: days >= 0 ? 'J-' + days : 'Passée', l: fmtDate(r.date), lead: true },
     { v: fmtNum(r.distanceKm, ' km', 0), l: 'Distance' },
     { v: fmtNum(r.denivele, ' m', 0), l: 'Dénivelé positif' },
   ];
@@ -255,7 +268,7 @@ function renderObjective() {
             : '<p class="hint" style="margin:10px 0 0;">Pas encore assez de séances pour calculer ton état de préparation.</p>') +
         '</div>' +
         '<div class="objective-metrics">' +
-          metrics.map(m => '<div class="objective-metric"><span class="v">' + escapeHtml(m.v) + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +
+          metrics.map(m => '<div class="objective-metric' + (m.lead ? ' is-lead' : '') + '"><span class="v">' + escapeHtml(m.v) + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +
         '</div>' +
       '</div>' +
     '</div>' +
@@ -308,7 +321,7 @@ function renderTrajectory() {
   const isKm = trendMetric === 'km';
   const unit = isKm ? ' km' : ' m';
   const dec = isKm ? 1 : 0;
-  let chartHtml, insightHtml = '';
+  let chartHtml, insightHtml = '', trendRender = null;
 
   if (weeks.length < 2) {
     chartHtml = svgEmpty('Évolution du volume');
@@ -330,7 +343,22 @@ function renderTrajectory() {
     }));
     // Hauteur volontairement contenue : un graphique de 12 points n'a pas besoin d'occuper la
     // moitié de l'écran. L'espace récupéré sert à l'Insight et aux repères chiffrés à droite.
-    chartHtml = lineChartSvg('', points, { decimals: dec, height: 280, hideTitle: true });
+    /* BARRES, pas une courbe. Un volume hebdomadaire est une suite de TOTAUX DISCRETS : une ligne
+       continue affirme qu'il se passe quelque chose entre deux lundis, ce qui est faux. Les barres
+       disent la vraie nature de la donnee, et partent naturellement de zero — plus besoin de
+       forcer yMin. `groupedBarChartSvg` est reutilise avec une seule serie plutot que d'ecrire une
+       enieme fonction de graphique ; sa legende se supprime d'elle-meme dans ce cas.
+       Le rendu est differe : le conteneur est mesure apres insertion et le graphique dessine a sa
+       largeur reelle (voir registerResponsiveChart), pour que l'echelle du SVG vaille 1 quelle que
+       soit la mise en page — y compris quand un graphique ne prend qu'une colonne. */
+    chartHtml = '';
+    trendRender = function (w) {
+      return groupedBarChartSvg('', weeks, [{
+        name: isKm ? 'Volume' : 'Dénivelé positif',
+        color: 'var(--chart-line)',
+        values: weeks.map(x => +(isKm ? x.km : x.dplus).toFixed(dec)),
+      }], { hideTitle: true, height: 280, width: w });
+    };
   }
 
   const insight = generateElevInsight();
@@ -387,6 +415,13 @@ function renderTrajectory() {
       '<div class="landscape-head">' +
         '<h2>Trajectoire actuelle</h2>' +
         '<span class="week-context' + (stats.isPartialWeek ? ' is-partial' : '') + '">' + escapeHtml(weekLabel) + '</span>' +
+        /* Le filtre vit au-dessus de la section, pas dans la carte du graphique : un filtre
+           enferme dans une carte laisse croire qu'il ne pilote que cette carte (anti-pattern
+           dataviz). Ici il porte sur tout ce qui suit dans la section. */
+        '<div class="period-select" id="trendMetricSelect">' +
+          '<button type="button" data-metric="km" class="' + (isKm ? 'active' : '') + '">Volume</button>' +
+          '<button type="button" data-metric="dplus" class="' + (!isKm ? 'active' : '') + '">D+</button>' +
+        '</div>' +
       '</div>' +
       '<div class="week-stats-inline">' + weekGrid + '</div>' +
       '<div class="landscape-grid">' +
@@ -396,10 +431,6 @@ function renderTrajectory() {
               (weeks.length >= 12 ? '12 dernières semaines'
                 : weeks.length > 1 ? escapeHtml(weeks.length + ' semaines renseignées')
                 : 'Historique trop court') + '</p></div>' +
-            '<div class="period-select" id="trendMetricSelect">' +
-              '<button type="button" data-metric="km" class="' + (isKm ? 'active' : '') + '">Volume</button>' +
-              '<button type="button" data-metric="dplus" class="' + (!isKm ? 'active' : '') + '">D+</button>' +
-            '</div>' +
           '</div>' +
           '<div id="trendChartBox" style="margin-top:8px;">' + chartHtml + '</div>' +
         '</div>' +
@@ -408,7 +439,9 @@ function renderTrajectory() {
       '<a class="link-arrow trend-link" href="analyse.html">Voir toute l\'analyse de tendance →</a>' +
     '</div>';
 
-  initChartTooltips(document.getElementById('trendChartBox'));
+  const trendBox = document.getElementById('trendChartBox');
+  initChartTooltips(trendBox);
+  if (trendRender) registerResponsiveChart(trendBox, trendRender);
   box.querySelectorAll('#trendMetricSelect button').forEach(btn => btn.addEventListener('click', () => {
     trendMetric = btn.dataset.metric;
     renderTrajectory();
@@ -491,12 +524,20 @@ function renderLastRide() {
       '<p class="terrain-hint">Survole le profil (ou explore-le au clavier avec ←/→) pour lire distance, altitude, allure et FC.</p>'
     : '<p class="terrain-empty">Cette sortie ne contient pas de série altitude/distance exploitable : aucun profil ne peut être tracé.</p>';
 
-  // Trace GPS vue du dessus (longitude/latitude) — représentation DISTINCTE du profil
-  // altimétrique ci-dessus, jamais l'une convertie en l'autre.
-  const trace = sessionPreviewSvg(s);
+  /* Trace GPS vue du dessus (longitude/latitude) — representation DISTINCTE du profil
+     altimetrique ci-dessus, jamais l'une convertie en l'autre.
+
+     Garde explicite sur la presence de coordonnees. `sessionPreviewSvg` retombe silencieusement
+     sur l'altitude quand la seance n'a pas de GPS (tapis, tunnel, perte de fix) : la scene
+     affichait alors DEUX FOIS la meme donnee, dans deux langages visuels differents, sans que
+     rien ne l'indique. Le profil au-dessus la porte deja et la porte mieux — avec ses reperes et
+     son exploration au survol. On ne montre donc la vignette que si elle apporte vraiment autre
+     chose, c'est-a-dire un vrai trace geographique. */
+  const hasGps = Array.isArray(s.series) && s.series.some(p => p.lat != null && p.lon != null);
+  const trace = hasGps ? sessionPreviewSvg(s) : '';
 
   box.innerHTML =
-    '<div class="lastride-inner">' +
+    '<div class="lastride-inner' + (trace ? '' : ' lastride-inner--no-trace') + '">' +
       '<div class="lastride-lead">' +
         '<p class="eyebrow">Dernière sortie</p>' +
         '<h2 class="lastride-title">' + escapeHtml(s.sport || 'Séance') + '</h2>' +
@@ -507,7 +548,10 @@ function renderLastRide() {
       '</div>' +
       '<div class="lastride-profile">' + terrainHtml + '</div>' +
       '<div class="lastride-aside">' +
-        (trace ? '<a class="lastride-trace" href="' + href + '" aria-label="Voir l\'analyse complète de la sortie">' + trace + '</a>' : '') +
+        // Legende explicite : deux representations de la meme sortie coexistent dans cette
+        // scene, le lecteur ne doit pas avoir a deviner laquelle est laquelle.
+        (trace ? '<a class="lastride-trace" href="' + href + '" aria-label="Voir l\'analyse complète de la sortie">' + trace + '</a>' +
+          '<p class="lastride-trace-cap">Tracé du parcours <span>vu du dessus</span></p>' : '') +
         '<a class="btn small secondary" href="' + href + '">Voir l\'analyse complète →</a>' +
       '</div>' +
     '</div>';
@@ -530,8 +574,10 @@ function renderLoadChart() {
     { name: 'Aiguë (semaine)', color: 'var(--acute-load)', values: weeks.map(w => +w.km.toFixed(1)) },
     { name: 'Chronique (moy. 4 sem.)', color: 'var(--chronic-load)', values: weeks.map(w => w.chronic) },
   ];
-  box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 170, hideTitle: true });
   initChartTooltips(box);
+  registerResponsiveChart(box, function (w) {
+    return groupedBarChartSvg('', weeks, series, { height: 170, hideTitle: true, width: w });
+  });
 }
 
 // Répartition du temps passé par zone FC sur les 30 derniers jours — lecture seule sur l'Accueil
