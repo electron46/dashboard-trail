@@ -1438,6 +1438,15 @@ main.activities-main{max-width:1600px;}
 .filter-search:focus{border-color:var(--accent-light);}
 
 /* Résumé compact de la période filtrée — pas de cartes, juste une ligne de repères rapides. */
+/* Filtres actifs : rien n'indiquait qu'un filtre etait pose, et aucun geste ne permettait de tout
+   remettre a zero. Chaque filtre est NOMME plutot que signale par un simple changement d'etat
+   dans la barre d'outils, qu'il fallait aller relire. */
+.active-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 4px;}
+.active-filters .af-label{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;}
+.active-filters .af-chip{font-size:.74rem;color:var(--text);background:var(--accent-soft);
+  border:1px solid var(--accent-soft);border-radius:var(--radius-pill);padding:3px 11px;}
+.active-filters .btn{margin-left:2px;}
+
 .activities-summary{display:flex;gap:22px;flex-wrap:wrap;padding:2px 4px;font-size:.82rem;color:var(--muted);}
 .activities-summary span{font-variant-numeric:tabular-nums;}
 .activities-summary span:first-child{color:var(--text);font-weight:600;}
@@ -1456,6 +1465,11 @@ main.activities-main{max-width:1600px;}
 .activity-row{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 160px 130px;align-items:center;gap:16px;padding:11px 16px;border:1px solid transparent;border-radius:var(--radius-md);background:var(--panel);text-decoration:none;color:inherit;transition:background var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard);}
 .activity-row:hover{background:var(--panel-raised);border-color:var(--border-strong);transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.24);}
 .activity-row:hover .link-arrow{color:var(--accent);}
+/* La ligne entiere est un lien, mais rien ne la signalait au CLAVIER : seul le survol souris la
+   distinguait. Le plan d'action exige un focus visible et interdit que la nature cliquable
+   dependre du seul hover. */
+.activity-row:focus-visible{outline:2px solid var(--accent-light);outline-offset:2px;
+  background:var(--panel-raised);border-color:var(--border-strong);}
 .activity-row .cell{min-width:0;}
 .activity-row .cell-date{font-family:var(--font-mono);color:var(--muted);line-height:1.15;}
 .activity-row .cell-date .cell-day{display:block;font-size:1.1rem;font-weight:700;color:var(--text);font-family:var(--font-display);}
@@ -1482,7 +1496,10 @@ main.activities-main{max-width:1600px;}
   .activities-table-head > *{min-width:0;}
 }
 @container activities (max-width:859px){
-  .activity-row{position:relative;grid-template-columns:1fr 1fr;grid-template-areas:"date activity" "d1 d2" "d3 d4" "d5 d5";row-gap:8px;padding-right:26px;}
+  /* Le mini-profil du terrain etait masque en disposition carte, alors que le plan d'action le
+     demande explicitement sur mobile — c'est justement ce qui distingue cette liste d'un tableau
+     de chiffres. Il occupe une bande basse pleine largeur, en hauteur reduite. */
+  .activity-row{position:relative;grid-template-columns:1fr 1fr;grid-template-areas:"date activity" "d1 d2" "d3 d4" "d5 d5" "visual visual";row-gap:8px;padding-right:26px;}
   .activity-row .cell-date{grid-area:date;display:flex;gap:4px;align-items:baseline;}
   .activity-row .cell-date .cell-day{display:inline;font-size:.95rem;}
   .activity-row .cell-date .cell-month,.activity-row .cell-date .cell-year{display:inline;}
@@ -1492,7 +1509,8 @@ main.activities-main{max-width:1600px;}
   .activity-row .cell-stat:nth-of-type(5){grid-area:d3;}
   .activity-row .cell-stat:nth-of-type(6){grid-area:d4;}
   .activity-row .cell-stat:nth-of-type(7){grid-area:d5;}
-  .activity-row .cell-visual,.activity-row .cell-arrow{display:none;}
+  .activity-row .cell-arrow{display:none;}
+  .activity-row .cell-visual{grid-area:visual;height:44px;margin-top:2px;}
   /* Chevron discret indiquant que la ligne est cliquable (remplace le lien texte, masqué ci-dessus) */
   .activity-row::after{content:'›';position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:1.3rem;font-weight:700;}
   /* Couple « micro-libellé en capitales + valeur » de l'Accueil : hors tableau, l'en-tête de

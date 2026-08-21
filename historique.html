@@ -55,9 +55,23 @@
       <button type="button" class="chip-btn" data-period="90">3 mois</button>
       <button type="button" class="chip-btn" data-period="365">1 an</button>
     </div>
-    <select id="sportFilterSelect" class="filter-select"></select>
-    <input type="text" id="searchInput" class="filter-search" placeholder="Rechercher…">
+    <select id="sportFilterSelect" class="filter-select" aria-label="Filtrer par type de sport"></select>
+    <!-- Le tri n'existait pas : la liste etait figee en date decroissante, sans moyen de chercher
+         la plus longue sortie ou le plus gros denivele. Le plan d'action demande explicitement
+         d'afficher le tri. -->
+    <select id="sortSelect" class="filter-select" aria-label="Trier les activités">
+      <option value="date-desc">Plus récentes</option>
+      <option value="date-asc">Plus anciennes</option>
+      <option value="dist-desc">Plus longues</option>
+      <option value="dplus-desc">Plus de D+</option>
+      <option value="duree-desc">Plus longues en durée</option>
+    </select>
+    <input type="text" id="searchInput" class="filter-search" placeholder="Rechercher…" aria-label="Rechercher une activité">
   </section>
+
+  <!-- Filtres actifs + reinitialisation : rien n'indiquait qu'un filtre etait pose, et aucun
+       moyen de tout remettre a zero d'un geste. -->
+  <div id="activeFiltersRow"></div>
 
   <div class="activities-summary" id="activitiesSummary"></div>
 
@@ -112,6 +126,13 @@ async function handleFiles(fileList) {
   if (!files.length) { showMsg('importMsg', 'Aucun fichier .fit valide sélectionné.', 'err'); return; }
   let ok = 0, fail = 0;
   const errors = [];
+  // Etat « import en cours » : le parsing d'un .fit peut prendre plusieurs secondes sur un gros
+  // fichier, et rien ne l'indiquait — la page semblait simplement figee. Le squelette reserve
+  // aussi la place des lignes a venir, donc pas de saut de mise en page a l'arrivee.
+  const cta = document.getElementById('importCta');
+  cta.disabled = true;
+  showMsg('importMsg', 'Lecture de ' + files.length + ' fichier' + (files.length > 1 ? 's' : '') + '…', 'info');
+  document.getElementById('historyList').innerHTML = skeletonHtml('row', Math.min(files.length, 5));
   for (const file of files) {
     try {
       const buffer = await file.arrayBuffer();
@@ -138,6 +159,7 @@ async function handleFiles(fileList) {
   let msg = ok + ' séance(s) importée(s).';
   if (fail) msg += ' ' + fail + ' échec(s) : ' + errors.join(' | ');
   showMsg('importMsg', msg, fail ? 'err' : 'ok');
+  cta.disabled = false;
   fileInput.value = '';
   refreshAll();
 }
@@ -166,6 +188,29 @@ document.querySelectorAll('#periodFilterRow [data-period]').forEach(btn => btn.a
   renderHistory();
 }));
 
+// Tri de la liste. Les cles numeriques placent les valeurs absentes en dernier plutot que de les
+// traiter comme des zeros, qui remonteraient artificiellement en tete d'un tri croissant.
+const SORTS = {
+  'date-desc':  (a,b) => b.date.localeCompare(a.date),
+  'date-asc':   (a,b) => a.date.localeCompare(b.date),
+  'dist-desc':  (a,b) => (b.distanceKm ?? -1) - (a.distanceKm ?? -1),
+  'dplus-desc': (a,b) => (b.ascent ?? -1) - (a.ascent ?? -1),
+  'duree-desc': (a,b) => (b.durationS ?? -1) - (a.durationS ?? -1),
+};
+let sortKey = 'date-desc';
+document.getElementById('sortSelect').addEventListener('change', e => { sortKey = e.target.value; renderHistory(); });
+
+function resetFilters() {
+  document.getElementById('searchInput').value = '';
+  sportFilterVal = 'all';
+  periodFilterDays = null;
+  sortKey = 'date-desc';
+  document.getElementById('sortSelect').value = 'date-desc';
+  document.querySelectorAll('#periodFilterRow [data-period]').forEach(b => b.classList.toggle('active', b.dataset.period === 'all'));
+  renderSportFilterChips();
+  renderHistory();
+}
+
 function renderHistory() {
   const sessions = loadAllSessions();
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
@@ -175,7 +220,21 @@ function renderHistory() {
     if (fromDate && s.date < fromDate) return false;
     if (sportFilterVal !== 'all' && s.sport !== sportFilterVal) return false;
     return true;
-  }).sort((a,b) => b.date.localeCompare(a.date));
+  }).sort(SORTS[sortKey] || SORTS['date-desc']);
+
+  // Filtres actifs, nommes, avec une action unique de remise a zero.
+  const actifs = [];
+  if (search) actifs.push('Recherche : « ' + search + ' »');
+  if (periodFilterDays != null) actifs.push(periodFilterDays === 30 ? '30 derniers jours' : (periodFilterDays === 90 ? '3 derniers mois' : 'Dernière année'));
+  if (sportFilterVal !== 'all') actifs.push('Sport : ' + sportFilterVal);
+  const fRow = document.getElementById('activeFiltersRow');
+  fRow.innerHTML = actifs.length
+    ? '<div class="active-filters"><span class="af-label">Filtres actifs</span>' +
+      actifs.map(a => '<span class="af-chip">' + escapeHtml(a) + '</span>').join('') +
+      '<button type="button" class="btn small" id="resetFiltersBtn">Réinitialiser</button></div>'
+    : '';
+  const rf = document.getElementById('resetFiltersBtn');
+  if (rf) rf.addEventListener('click', resetFilters);
 
   const summary = document.getElementById('activitiesSummary');
   if (filtered.length) {
@@ -187,7 +246,22 @@ function renderHistory() {
   } else { summary.innerHTML = ''; }
 
   const list = document.getElementById('historyList');
-  document.getElementById('historyEmpty').style.display = filtered.length ? 'none' : 'block';
+  // Deux situations tres differentes etaient annoncees par le MEME message : « Aucune seance
+  // importee pour l'instant » s'affichait aussi avec 56 activites en base des qu'une recherche
+  // ne trouvait rien — un message faux, qui laissait croire a une perte de donnees.
+  const vide = document.getElementById('historyEmpty');
+  vide.style.display = filtered.length ? 'none' : 'block';
+  if (!filtered.length) {
+    vide.innerHTML = sessions.length
+      ? '<div class="empty-state"><div class="empty-title">Aucune activité ne correspond</div>' +
+        '<p>' + sessions.length + ' activité' + (sessions.length > 1 ? 's' : '') + ' au total, mais aucune ne passe les filtres actuels.</p>' +
+        '<button type="button" class="btn small accent" id="emptyResetBtn">Réinitialiser les filtres</button></div>'
+      : '<div class="empty-state"><div class="empty-title">Aucune activité importée</div>' +
+        "<p>Glisse un fichier .fit n'importe où sur cette page, ou utilise le bouton « Importer une activité ».</p>" +
+        '<button type="button" class="btn small accent" id="emptyImportBtn">Importer une activité</button></div>';
+    const er = document.getElementById('emptyResetBtn'); if (er) er.addEventListener('click', resetFilters);
+    const ei = document.getElementById('emptyImportBtn'); if (ei) ei.addEventListener('click', () => fileInput.click());
+  }
   document.getElementById('historyEnd').style.display = filtered.length ? 'block' : 'none';
   // Constructeur partage (assets/app.js) : cette page et Analyse en avaient chacune une copie,
   // qui avaient deja diverge sur les libelles de mesure.
