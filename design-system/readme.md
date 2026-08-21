@@ -98,31 +98,30 @@ Aucune source ne définissait d'inventaire de composants figé (pas de codebase 
 choisir une troisième voie. Tant qu'une ligne n'est pas tranchée, **c'est la colonne « Produit »
 qui s'applique**.
 
-| # | Sujet | Charte | Produit | Décision |
+| # | Sujet | Charte | Produit | Décision (2026-08-21) |
 |---|---|---|---|---|
-| 1 | Thème | clair (`#F2F1EE`) | sombre (`#0C0F0E`) | — |
-| 2 | Accent | aucun, volontairement | vert `#6B8E4E` | — |
-| 3 | Titres | IBM Plex Sans 700 | Raleway 700/800 | — |
-| 4 | Texte | IBM Plex Sans | Inter | — |
-| 5 | Chiffres | **IBM Plex Mono**, jamais le texte courant | Inter + `tabular-nums` | — |
-| 6 | Neutres | chauds (`#DCD9D2`) | froids (`#29312D`) | — |
-| 7 | Échelle typo | `--text-xs` à `--text-3xl` (12 → 48px) | valeurs en `rem`, pas d'échelle nommée | — |
-| 8 | Espacement | `--space-1` à `--space-16`, base 4px | valeurs en dur, pas d'échelle nommée | — |
+| 1 | Thème | clair (`#F2F1EE`) | sombre (`#0C0F0E`) | ✅ **le produit** — porte l'identité |
+| 2 | Accent | aucun, volontairement | vert `#6B8E4E` | ✅ **le produit** — déjà acté plus haut |
+| 3 | Titres | IBM Plex Sans 700 | Raleway 700/800 | ✅ **le produit** — Raleway conservé |
+| 4 | Texte | IBM Plex Sans | Inter | ✅ **le produit** — Inter conservé |
+| 5 | Chiffres | **IBM Plex Mono** | Inter + `tabular-nums` | ✅ **la charte** — Plex Mono adopté |
+| 6 | Neutres | chauds (`#DCD9D2`) | froids (`#29312D`) | ✅ **le produit** — cohérent avec 1 et 2 |
+| 7 | Échelle typo | `--text-xs` → `--text-3xl` | valeurs en `rem`, sans échelle | ✅ **la charte** — échelle nommée ajoutée |
+| 8 | Échelle d'espacement | `--space-1` → `--space-16` | valeurs en dur | ✅ **la charte** — échelle nommée ajoutée |
 
-Notes de contexte pour la décision :
+**Les 8 lignes sont tranchées.** ELEV garde donc son thème sombre, son vert et ses deux familles
+de titre/texte, et récupère de la charte la police dédiée aux données ainsi que les deux échelles
+nommées qui lui manquaient. C'est un partage : ni la charte ni le code n'a gagné en bloc.
 
-- **5 est le plus chargé.** L'utilisateur a formulé l'attente comme « je veux qu'il me dise *voici
-  tes mesures* », ce qui correspond mot pour mot à l'intention de la charte (« la signature
-  visuelle de la marque… réservée aux distances, allures, D+, temps, dates »). Il a en revanche
-  écarté le mot « instrument » comme trop froid. IBM Plex Mono est une mono humaniste, sensiblement
-  plus chaleureuse que les monos techniques ; ce n'est pas la même proposition qu'une JetBrains
-  Mono. À examiner sur pièce avant de trancher.
-- **1, 2 et 6 sont probablement acquis au produit.** Le sombre, le vert et les neutres froids
-  portent l'identité actuelle et plusieurs refontes successives. Les inscrire dans la charte
-  clôturerait l'écart plutôt que de l'entretenir.
-- **7 et 8 ne sont pas des choix esthétiques** mais une dette : le produit n'a simplement pas
-  d'échelle nommée. Les adopter est un gain net, sans effet visuel si les valeurs actuelles sont
-  reprises telles quelles.
+Conséquence de la décision 5, appliquée le 2026-08-21 : `--font-mono` pointait sur `--font-sans`,
+donc n'existait pas. Il pointe désormais sur IBM Plex Mono (graisses 500 et 600 chargées ; la
+famille plafonne à 700, ne pas lui demander 800, le navigateur synthétiserait la graisse). Elle
+est appliquée aux valeurs chiffrées de l'Accueil : score de préparation, métriques d'objectif,
+statistiques de la semaine, valeurs de cartes KPI, KPI de la dernière sortie. Les intitulés
+restent en Inter, les titres en Raleway. Une mono étant tabulaire par construction,
+`font-variant-numeric` devient sans objet sur ces éléments et a été retiré.
+
+Reste à faire pour clore ce chantier :
 
 Une fois ces lignes tranchées : mettre à jour `tokens/*.css`, `guidelines/*.html` et `SKILL.md`
 pour qu'ils décrivent le produit, puis synchroniser vers claude.ai/design avec `DesignSync`

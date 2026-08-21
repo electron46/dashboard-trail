@@ -1,24 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+/* Aligné sur assets/style.css le 2026-08-21. Divergences 3 et 4 tranchées en faveur du produit
+   (Raleway + Inter conservés), divergence 5 en faveur de la charte : IBM Plex Mono devient bien
+   la police des données chiffrées, rôle qu'elle n'avait jamais rempli. Voir readme.md.
+   Les polices sont chargées par <link> dans le <head> de chaque page, plus par @import ici :
+   un @import impose un téléchargement en série. */
 :root{
-  --font-sans:'IBM Plex Sans',-apple-system,'Segoe UI',Roboto,sans-serif;
-  --font-mono:'IBM Plex Mono','JetBrains Mono',ui-monospace,Consolas,monospace;
+  --font-display:'Raleway',sans-serif;                  /* titres — 700 et 800 uniquement */
+  --font-sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;   /* texte, intitulés */
+  --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Consolas,monospace;
+  /* --font-mono : distances, D+, allures, durées, dates, scores. JAMAIS le texte courant.
+     Graisses disponibles 500 et 600 ; la famille plafonne à 700. */
 
-  --text-xs:12px;
-  --text-sm:13.5px;
-  --text-base:15px;
-  --text-md:17px;
-  --text-lg:20px;
-  --text-xl:26px;
-  --text-2xl:34px;
-  --text-3xl:48px;
+  --text-xs:12px; --text-sm:13.5px; --text-base:15px; --text-md:17px;
+  --text-lg:20px; --text-xl:26px; --text-2xl:34px; --text-3xl:48px;
 
-  --weight-regular:400;
-  --weight-medium:500;
-  --weight-semibold:600;
-  --weight-bold:700;
-
-  --leading-tight:1.15;
-  --leading-normal:1.5;
-  --tracking-wide:.06em;
-  --tracking-wider:.12em;
+  --weight-regular:400; --weight-medium:500; --weight-semibold:600; --weight-bold:700;
+  --leading-tight:1.15; --leading-normal:1.5;
+  --tracking-wide:.06em; --tracking-wider:.12em;
 }

@@ -1,33 +1,38 @@
+/* Aligné sur assets/style.css le 2026-08-21 (divergences 1, 2 et 6 tranchées en faveur du
+   produit — voir readme.md). Ce fichier décrivait auparavant une proposition en thème clair,
+   deux tons anthracite/blanc cassé et sans couleur d'accent, qui n'a jamais été implémentée. */
 :root{
-  /* base */
-  --color-anthracite:#2B2B2B;
-  --color-anthracite-700:#454340;
-  --color-offwhite:#F2F1EE;
-  --color-white:#FFFFFF;
-  --color-border:#DCD9D2;
-  --color-border-strong:#B9B5AC;
-  --color-muted:#8A8680;
-  --color-muted-2:#BDBAB4;
+  /* surfaces — thème sombre, neutres froids */
+  --canvas:#0C0F0E;
+  --surface-1:#181D1B;
+  --surface-2:#202622;
+  --surface-elevated:#242B27;
 
-  /* accent — brand decision: no vivid accent color. The mono data typeface
-     itself is the signature; "accent" resolves to the same anthracite so
-     emphasis comes from font-family + weight, never from color. */
-  --color-accent:#2B2B2B;
+  --border-subtle:#29312D;
+  --border-default:#343E38;
+  --border-strong:#465249;
 
-  /* functional feedback (not brand accent — kept muted/desaturated) */
-  --color-success:#2F7A3D;
-  --color-success-soft:#E7F0E5;
-  --color-danger:#B3402C;
-  --color-danger-soft:#FBEAE5;
-  --color-warning:#8A6D1B;
-  --color-warning-soft:#F3EEDD;
+  /* texte — contrastes mesurés sur la surface la plus claire (#242B27) */
+  --text-primary:#F0F3F0;    /* 12.96:1 */
+  --text-secondary:#A9B1AC;  /*  6.60:1 */
+  --text-muted:#8B958E;      /*  4.68:1 */
+  --text-disabled:#5F6863;   /*  2.52:1 — contrôles désactivés uniquement, exemptés par WCAG */
 
-  /* semantic aliases */
-  --surface-page:var(--color-offwhite);
-  --surface-card:var(--color-white);
-  --surface-inverse:var(--color-anthracite);
-  --text-primary:var(--color-anthracite);
-  --text-inverse:var(--color-offwhite);
-  --text-muted:var(--color-muted);
-  --border-default:var(--color-border);
+  /* accent — vert de marque, rare et signifiant */
+  --color-accent:#6B8E4E;
+  --color-accent-hover:#7FA05E;
+  --color-accent-light:#A8C47F;
+  --color-accent-text:#0C0F0E;   /* 5.14:1 sur l'accent ; le blanc n'y tenait que 3.75:1 */
+  --elev-green:#62F58C;          /* profil GPX, focus, état actif */
+
+  /* données — validées par le validateur de palette du skill dataviz */
+  --acute-load:#3D9E4F;
+  --chronic-load:#6F8FD8;
+  --chart-line:#9BBD7E;
+  --chart-grid:#29312D;
+
+  /* feedback fonctionnel — jamais un accent de marque */
+  --color-success:#7FB86B;
+  --color-danger:#D8796F;
+  --color-warning:#D2A85A;
 }
