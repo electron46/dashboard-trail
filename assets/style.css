@@ -718,6 +718,27 @@ tr.session-row:hover{background:var(--panel-raised);}
 .filters label.field{flex:1 1 140px;}
 
 footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);font-size:.78rem;text-align:center;}
+
+/* ============================================================================================
+   LIENS DE CONTENU — règle unique (phase 15 du plan d'action, jamais traitée comme telle).
+   Le projet stylait des liens au cas par cas (.link-arrow, .empty a, p.hint a, .alert-banner a…)
+   mais n'avait AUCUNE règle générale : un simple <a> dans un paragraphe retombait sur le bleu
+   par défaut du navigateur, #0000EE, soit un contraste mesuré de 2,05:1 sur le canvas sombre —
+   très en dessous du seuil AA de 4,5:1, et sans aucun rapport avec l'identité.
+   Deux cas connus : le lien du pied de page (les 9 pages) et « Paramètres » dans l'état sans plan
+   de plan.html. Une règle générale les couvre, ainsi que tout lien ajouté plus tard.
+   `:where()` garde une spécificité NULLE : n'importe quelle règle existante continue de gagner,
+   donc aucun lien déjà stylé ne change d'apparence.
+   ============================================================================================ */
+:where(main, footer.app) a:not([class]){
+  color:var(--accent-light);
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+:where(main, footer.app) a:not([class]):hover{color:var(--text);}
+:where(main, footer.app) a:not([class]):focus-visible{
+  outline:2px solid var(--accent-light);outline-offset:2px;border-radius:var(--radius-sm);
+}
 .hint{font-size:.78rem;color:var(--muted);margin-top:6px;}
 
 /* Cartes génériques (courses, chaussures...) */
@@ -1320,7 +1341,9 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
   padding:2px 2px 10px;border-bottom:1px solid var(--border);margin-bottom:4px;}
 .week-strip .ws-label{display:flex;flex-direction:column;gap:1px;font-size:.72rem;font-weight:700;
   text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-right:4px;}
-.week-strip .ws-label small{font-size:.66rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted-2);}
+/* --muted (et non --muted-2) : c'est un libelle A LIRE. La regle du projet reserve --muted-2
+   aux elements purement decoratifs — contraste mesure a 3,34:1, sous le seuil AA de 4,5:1. */
+.week-strip .ws-label small{font-size:.66rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted);}
 .week-strip .ws-item{display:flex;align-items:baseline;gap:6px;white-space:nowrap;}
 .week-strip .ws-v{font-family:var(--font-mono);font-size:1rem;font-weight:600;color:var(--text);}
 .week-strip .ws-l{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
@@ -1390,7 +1413,8 @@ svg text.c-tick{font-size:var(--text-2xs);fill:var(--muted);}
 .chart-table[open] > summary::before{transform:rotate(90deg);}
 .chart-table > summary:hover{color:var(--text);}
 .chart-table > summary:focus-visible{outline:2px solid var(--accent-light);outline-offset:3px;border-radius:var(--radius-sm);}
-.chart-table .ct-count{color:var(--muted-2);font-family:var(--font-mono);}
+/* Idem : « N lignes » est une information, pas un ornement (mesure a 2,96:1 en --muted-2). */
+.chart-table .ct-count{color:var(--muted);font-family:var(--font-mono);}
 /* Le tableau defile dans SON conteneur : il ne doit jamais elargir la page (regle du projet). */
 .chart-table .ct-scroll{overflow-x:auto;margin-top:8px;max-height:260px;overflow-y:auto;}
 .chart-table table{font-size:var(--text-xs);}

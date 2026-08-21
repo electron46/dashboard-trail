@@ -4351,7 +4351,7 @@ function initCommandPalette() {
   backdrop.id = 'cmdkBackdrop';
   backdrop.innerHTML =
     '<div class="modal cmdk-modal">' +
-      '<input type="text" class="cmdk-input" id="cmdkInput" placeholder="Aller à…" autocomplete="off">' +
+      '<input type="text" class="cmdk-input" id="cmdkInput" placeholder="Aller à…" aria-label="Rechercher une page" autocomplete="off">' +
       '<div class="cmdk-list" id="cmdkList"></div>' +
     '</div>';
   document.body.appendChild(backdrop);
