@@ -339,11 +339,16 @@ function renderTrajectory() {
     }));
     // Hauteur volontairement contenue : un graphique de 12 points n'a pas besoin d'occuper la
     // moitié de l'écran. L'espace récupéré sert à l'Insight et aux repères chiffrés à droite.
-    // yMin:0 — sans baseline a zero l'axe demarrait a la plus petite valeur observee (mesure :
-    // 21 a 36 km), ce qui faisait lire une variation de 30 % comme une montagne russe. Le zero
-    // n'est impose QUE sur le volume/D+ : une courbe d'allure ou de FC partant de zero n'aurait
-    // aucun sens, et lineChartSvg reste partage avec les autres pages.
-    chartHtml = lineChartSvg('', points, { decimals: dec, height: 280, hideTitle: true, yMin: 0 });
+    /* BARRES, pas une courbe. Un volume hebdomadaire est une suite de TOTAUX DISCRETS : une ligne
+       continue affirme qu'il se passe quelque chose entre deux lundis, ce qui est faux. Les barres
+       disent la vraie nature de la donnee, et partent naturellement de zero — plus besoin de
+       forcer yMin. `groupedBarChartSvg` est reutilise avec une seule serie plutot que d'ecrire une
+       enieme fonction de graphique ; sa legende se supprime d'elle-meme dans ce cas. */
+    chartHtml = groupedBarChartSvg('', weeks, [{
+      name: isKm ? 'Volume' : 'Dénivelé positif',
+      color: 'var(--chart-line)',
+      values: weeks.map(w => +(isKm ? w.km : w.dplus).toFixed(dec)),
+    }], { hideTitle: true, height: 280 });
   }
 
   const insight = generateElevInsight();
@@ -400,6 +405,13 @@ function renderTrajectory() {
       '<div class="landscape-head">' +
         '<h2>Trajectoire actuelle</h2>' +
         '<span class="week-context' + (stats.isPartialWeek ? ' is-partial' : '') + '">' + escapeHtml(weekLabel) + '</span>' +
+        /* Le filtre vit au-dessus de la section, pas dans la carte du graphique : un filtre
+           enferme dans une carte laisse croire qu'il ne pilote que cette carte (anti-pattern
+           dataviz). Ici il porte sur tout ce qui suit dans la section. */
+        '<div class="period-select" id="trendMetricSelect">' +
+          '<button type="button" data-metric="km" class="' + (isKm ? 'active' : '') + '">Volume</button>' +
+          '<button type="button" data-metric="dplus" class="' + (!isKm ? 'active' : '') + '">D+</button>' +
+        '</div>' +
       '</div>' +
       '<div class="week-stats-inline">' + weekGrid + '</div>' +
       '<div class="landscape-grid">' +
@@ -409,10 +421,6 @@ function renderTrajectory() {
               (weeks.length >= 12 ? '12 dernières semaines'
                 : weeks.length > 1 ? escapeHtml(weeks.length + ' semaines renseignées')
                 : 'Historique trop court') + '</p></div>' +
-            '<div class="period-select" id="trendMetricSelect">' +
-              '<button type="button" data-metric="km" class="' + (isKm ? 'active' : '') + '">Volume</button>' +
-              '<button type="button" data-metric="dplus" class="' + (!isKm ? 'active' : '') + '">D+</button>' +
-            '</div>' +
           '</div>' +
           '<div id="trendChartBox" style="margin-top:8px;">' + chartHtml + '</div>' +
         '</div>' +

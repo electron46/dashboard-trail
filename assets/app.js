@@ -2551,11 +2551,21 @@ function genericDonutSvg(segments, centerValue, centerLabel) {
 // axe Y), ligne = durée normalisée sur sa propre plage — pas de second axe superposé (même convention
 // que le fond de terrain en arrière-plan des autres graphiques : repère de tendance, pas une lecture
 // exacte au pixel près ; le détail exact reste dans le tooltip).
+/* Largeur du viewBox d'un graphique, adaptee a l'ecran.
+   Un viewBox fixe de 620 rend le texte illisible sur telephone : le SVG est ramene a ~343px de
+   large, soit une echelle de 0,55, et un font-size="13" arrive a 7,2px reels (mesure). Ce n'est
+   pas une valeur trop petite, c'est une mise a l'echelle. En rapprochant la largeur du viewBox de
+   la largeur reellement disponible, l'echelle revient pres de 1 et le texte retrouve sa taille
+   nominale. Les coordonnees internes suivent, la geometrie est inchangee. */
+function chartViewboxWidth(opts) {
+  if (opts && opts.width) return opts.width;
+  return (typeof window !== 'undefined' && window.innerWidth < 640) ? 330 : 620;
+}
 function volumeChartSvg(weeks, opts) {
   opts = opts || {};
   const titleHtml = opts.hideTitle ? '' : '<h3>Évolution du volume</h3>';
   if (weeks.length < 2) return '<div class="chart-box">' + titleHtml + '<div class="empty">Pas encore assez de séances pour ce graphique (2 semaines minimum).</div></div>';
-  const w = 620, h = 260, padL = 40, padR = 10, padT = 18, padB = 30;
+  const w = chartViewboxWidth(opts), h = 260, padL = 40, padR = 10, padT = 18, padB = 30;
   const maxKm = Math.max(1, ...weeks.map(x => x.km));
   const maxDurH = Math.max(1, ...weeks.map(x => x.durationS / 3600));
   const groupW = (w - padL - padR) / weeks.length;
@@ -2593,7 +2603,7 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
   opts = opts || {};
   const titleHtml = opts.hideTitle ? '' : '<h3>' + escapeHtml(opts.title || '') + '</h3>';
   if (weeks.length < 2) return '<div class="chart-box">' + titleHtml + '<div class="empty">Pas encore assez de séances sur cette fenêtre pour ce graphique.</div></div>';
-  const w = 620, h = opts.height || 220, padL = 44, padR = 10, padT = 18, padB = 30;
+  const w = chartViewboxWidth(opts), h = opts.height || 220, padL = 44, padR = 10, padT = 18, padB = 30;
   const fmt = opts.fmt || (v => Math.round(v));
   const realizedVals = weeks.map(x => x[key] || 0);
   const plannedVals = planMap ? weeks.map(x => (planMap.get(x.startISO) || {})[key] || 0) : [];
@@ -3648,7 +3658,7 @@ let _chartGradientId = 0;
 function lineChartSvg(title, points, opts) {
   opts = opts || {};
   if (points.length < 2) return svgEmpty(title);
-  const w = 620, h = opts.height || 280, padL = 54, padR = 18, padT = 20, padB = 36;
+  const w = chartViewboxWidth(opts), h = opts.height || 280, padL = 54, padR = 18, padT = 20, padB = 36;
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = opts.yMin ?? Math.min(...ys), maxY = opts.yMax ?? Math.max(...ys);
@@ -3702,7 +3712,7 @@ function lineChartSvg(title, points, opts) {
 function groupedBarChartSvg(title, weeks, series, opts) {
   opts = opts || {};
   if (!weeks.length) return svgEmpty(title);
-  const w = 620, h = opts.height || 290, padL = 54, padR = 18, padT = 20, padB = 44;
+  const w = chartViewboxWidth(opts), h = opts.height || 290, padL = 54, padR = 18, padT = 20, padB = 44;
   const maxV = Math.max(1, ...series.flatMap(s => s.values));
   const groupW = (w - padL - padR) / weeks.length;
   const barW = (groupW * 0.7) / series.length;
@@ -3721,7 +3731,11 @@ function groupedBarChartSvg(title, weeks, series, opts) {
       bars += '<text x="'+(groupX+groupW*0.35).toFixed(1)+'" y="'+(h-14)+'" font-size="11" fill="var(--muted)" text-anchor="middle">'+wk.shortLabel+'</text>';
     }
   });
-  const legend = '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>';
+  // Pas de legende pour une serie unique : le titre la nomme deja. Une legende a une entree est
+  // du bruit (regle du skill dataviz : legende obligatoire des 2 series, aucune pour une seule).
+  const legend = series.length > 1
+    ? '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>'
+    : '';
   return '<div class="chart-box' + (opts.hideTitle ? ' no-title' : '') + '">' + (opts.hideTitle ? '' : '<h3>' + title + '</h3>') + legend + '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     // Graduations intermediaires + lignes de grille. Avant : une seule valeur (le maximum), donc
