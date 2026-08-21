@@ -61,15 +61,45 @@
     <button type="button" data-tab="ajustements">Ajustements</button>
   </div>
 
+  <!-- ================================================================================
+       Ordre de lecture (Sprint 4, plan d'action §6). La page doit repondre d'abord a
+       « que dois-je faire aujourd'hui ». La seance du jour etait jusqu'ici une ligne
+       parmi sept dans « Apercu de la semaine », signalee par un discret
+       « (aujourd'hui) » — l'information la plus demandee de la page etait la moins
+       visible, et aucune action ne permettait d'ouvrir la seance realisee.
+       Les graphiques passent sous le planning operationnel.
+       ================================================================================ -->
   <div class="tab-panel active" data-panel="apercu" id="panelApercu">
+
+    <!-- 1. AUJOURD'HUI -->
+    <!-- Masquee par defaut : sans plan importe, renderPlanToday() n'est pas appelee et cette
+         carte resterait affichee vide (le reste de la page est deja gouverne de la meme facon
+         par renderPlanPage). -->
+    <section class="card" id="planTodayCard" style="display:none;"><h2>Aujourd'hui</h2><div id="planTodayBox"></div></section>
+
+    <!-- 2. LA SEMAINE : etat chiffre + les 7 jours + ce qui vient ensuite -->
+    <div class="section-head">
+      <div>
+        <h2>Cette semaine</h2>
+        <p class="section-sub">Ce qui est prévu, ce qui est fait, ce qui a été manqué.</p>
+      </div>
+    </div>
     <div class="card-row-3 plan-top-row">
       <section class="card"><h2>Semaine en cours</h2><div id="planWeekBox"></div></section>
       <section class="card"><h2>Aperçu de la semaine</h2><div id="planWeekSessionsBox"></div></section>
       <section class="card"><h2>Prochaine séance</h2><div id="planNextSessionBox"></div></section>
     </div>
-    <div class="card-row-3" style="margin-top:14px;">
-      <section class="card"><h2>Évolution du volume</h2><div id="planVolumeChartBox"></div></section>
-      <section class="card"><h2>Évolution du D+</h2><div id="planDplusChartBox"></div></section>
+
+    <!-- 3. ANALYSE — releguee sous le planning operationnel, conformement au plan. -->
+    <div class="section-head">
+      <div>
+        <h2>Analyse</h2>
+        <p class="section-sub">Comment la charge évolue sur l'ensemble de la préparation.</p>
+      </div>
+    </div>
+    <div class="card-row-3">
+      <section class="card card-compact"><h2>Évolution du volume</h2><div id="planVolumeChartBox"></div></section>
+      <section class="card card-compact"><h2>Évolution du D+</h2><div id="planDplusChartBox"></div></section>
       <section class="card card-compact">
         <h2>Charge d'entraînement</h2>
         <div id="planChargeBox"></div>
@@ -306,6 +336,63 @@ function renderPlanWeekSessions() {
   }).join('') + '</div>';
 }
 
+/* Séance du jour — bloc de tête de la page (plan d'action §6 : « Mettre Aujourd'hui au-dessus »).
+   Trois états explicites, jamais confondus :
+     - séance(s) prévue(s) ET réalisée(s)  -> lien « Voir la séance » vers l'activité réelle ;
+     - séance(s) prévue(s) non réalisée(s) -> le détail de ce qu'il y a à faire ;
+     - rien de prévu                       -> repos annoncé comme tel, ou activité libre si une
+                                              séance a été enregistrée hors plan.
+   Aucune donnée n'est fabriquée : tout vient du plan importé et des séances réellement présentes. */
+function renderPlanToday() {
+  const box = document.getElementById('planTodayBox');
+  const card = document.getElementById('planTodayCard');
+  const plan = getPlan();
+  if (!plan || !plan.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const planned = plan.filter(p => p.date === todayISO);
+  const done = loadAllSessions().filter(s => s.date === todayISO);
+
+  const lienSeance = s =>
+    '<a class="link-arrow" href="activite.html?id=' + encodeURIComponent(s.id) + '">Voir la séance →</a>';
+
+  // Rien au plan aujourd'hui.
+  if (!planned.length) {
+    box.innerHTML = done.length
+      ? '<div class="plan-next-card"><span class="badge status-done">Séance enregistrée</span>' +
+        '<span class="pnc-title">' + escapeHtml(done[0].sport || 'Séance') + '</span>' +
+        '<p class="hint">Aucune séance n\'était prévue au plan aujourd\'hui.</p>' +
+        lienSeance(done[0]) + '</div>'
+      : '<div class="plan-next-card"><span class="badge status-rest">Repos</span>' +
+        '<p class="hint" style="margin-top:8px;">Aucune séance prévue au plan aujourd\'hui.</p></div>';
+    return;
+  }
+
+  const keyDates = new Set(getKeyPlannedSessions(plan).map(p => p.date));
+  box.innerHTML = planned.map((p, i) => {
+    const realisee = done[i] || (planned.length === 1 ? done[0] : null);
+    const badge = realisee
+      ? '<span class="badge status-done">Terminé</span>'
+      : '<span class="badge status-todo">À faire</span>';
+    // Les séances clés étaient visibles uniquement dans un onglet séparé. Le repère remonte ici,
+    // là où il change une décision — la règle de détection reste celle de getKeyPlannedSessions.
+    const cle = keyDates.has(p.date) ? '<span class="badge principal">Séance clé</span>' : '';
+    return '<div class="plan-next-card"' + (i ? ' style="margin-top:14px;"' : '') + '>' +
+      '<div class="row" style="gap:7px;">' + badge + cle + '</div>' +
+      '<span class="pnc-title">' + escapeHtml(p.type || 'Séance') + '</span>' +
+      '<div class="metrics-grid" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));">' +
+        (p.dureeDetail ? '<div class="metric"><div class="lbl">Durée</div><div class="val">' + escapeHtml(p.dureeDetail) + '</div></div>' : '') +
+        '<div class="metric"><div class="lbl">Distance</div><div class="val">' + fmtNum(p.distanceKm, ' km', 1) + '</div></div>' +
+        '<div class="metric"><div class="lbl">D+</div><div class="val">' + fmtNum(p.deniveleM, ' m', 0) + '</div></div>' +
+        (p.intensite ? '<div class="metric"><div class="lbl">Intensité</div><div class="val" style="font-size:.82rem;">' + escapeHtml(p.intensite) + '</div></div>' : '') +
+      '</div>' +
+      (p.notes ? '<p class="hint">Objectif : ' + escapeHtml(p.notes) + '</p>' : '') +
+      (realisee ? lienSeance(realisee) : '') +
+    '</div>';
+  }).join('');
+}
+
 function renderPlanNextSession() {
   const box = document.getElementById('planNextSessionBox');
   const plan = getPlan();
@@ -517,6 +604,7 @@ function renderPlanPage() {
   renderPlanHero();
   const plan = getPlan();
   if (plan && plan.length) {
+    renderPlanToday();
     renderPlanWeekBox();
     renderPlanWeekSessions();
     renderPlanNextSession();
