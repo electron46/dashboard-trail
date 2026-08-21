@@ -244,16 +244,29 @@ async function renderCardConnect() {
   const cfg = getSupabaseConfig();
   const client = getSupabaseClient();
   let syncLine = 'Non configurée', syncDot = '';
-  let lastSync = null;
-  try { const meta = JSON.parse(localStorage.getItem(SUPA_META_KEY) || 'null'); if (meta && meta.lastRemoteUpdatedAt) lastSync = meta.lastRemoteUpdatedAt; } catch(e){}
+  const meta = getSyncMeta();
+  const lastSync = meta.lastRemoteUpdatedAt || null;
   if (cfg.url && cfg.anonKey) {
     syncLine = 'Configurée';
     if (client) { const user = await supaGetUser(); if (user) { syncLine = 'Connectée'; syncDot = '<span class="dot ok"></span>'; } }
   }
+  // Le dernier envoi echoue-t-il ? Jusqu'ici un refus (session expiree, RLS, table absente,
+  // reseau) n'apparaissait NULLE PART : la ligne affichait « Connectee » et une date de derniere
+  // synchro pendant que plus rien ne partait. On montre desormais l'echec reel.
+  const pushFailed = meta.lastPushOk === false && !!meta.lastPushError;
+  let syncSub;
+  if (pushFailed) {
+    syncSub = 'Dernier envoi refusé : ' + escapeHtml(String(meta.lastPushError)).slice(0, 120);
+  } else if (lastSync) {
+    syncSub = 'Dernière synchro : ' + fmtDate(lastSync.slice(0,10));
+  } else {
+    syncSub = 'Synchronisation de tes données entre appareils';
+  }
+  if (pushFailed) { syncLine = "Erreur d'envoi"; syncDot = ''; }
   const detected = getDetectedDevices(5);
   const apiKey = getApiKey();
   box.innerHTML =
-    settingsRow('Synchronisation ELEV', lastSync ? ('Dernière synchro : ' + fmtDate(lastSync.slice(0,10))) : 'Synchronisation de vos données entre appareils', syncDot + syncLine, { id:'goSupaConfig', onClick:true }) +
+    settingsRow('Synchronisation ELEV', syncSub, syncDot + syncLine, { id:'goSupaConfig', onClick:true }) +
     settingsRow('Import de séances', 'Fichiers .fit (manuel)', '', { id:'goImport', onClick:true }) +
     settingsRow('Appareils détectés', 'Derniers appareils via fichiers FIT', detected.length ? (detected.length + ' appareil' + (detected.length>1?'s':'')) : 'Aucun', { id:'goDevices', onClick:true }) +
     settingsRow('API IA', 'Utilisée uniquement pour le retour Coach ELEV nécessitant l\'API', apiKey ? ('Configurée (••••' + escapeHtml(apiKey.slice(-4)) + ')') : 'Non configurée') +
@@ -334,6 +347,10 @@ function renderCardData() {
       ? 'Supprimer toutes les données LOCALES de cet appareil (séances, plan, courses, profil, équipements, clé API) ? Tes données synchronisées resteront disponibles dans le cloud (récupérables via "Récupérer depuis le cloud").'
       : 'Supprimer TOUTES les données (séances, plan, courses, profil, équipements, clé API) enregistrées dans ce navigateur ? Aucune synchronisation cloud n\'est active : cette action est IRRÉVERSIBLE. Pense à exporter tes données avant si besoin.';
     if (!confirm(warn)) return;
+    // Les suppressions ci-dessous appellent scheduleSync() : sans cette annulation, un envoi
+    // differe (1,5 s) pouvait partir APRES le vidage et pousser un etat vide vers Supabase,
+    // detruisant precisement la copie cloud que le message ci-dessus promet de conserver.
+    cancelPendingSync();
     const idx = loadIndex();
     idx.forEach(deleteSession);
     localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(KEY_KEY);
@@ -360,6 +377,9 @@ function renderCardBackup() {
   const clearCacheBtn = document.getElementById('clearCacheBtn');
   if (clearCacheBtn && canClearCache) clearCacheBtn.addEventListener('click', async () => {
     if (!confirm('Vider le cache local et resynchroniser depuis le cloud ?')) return;
+    // Meme raison que pour la reinitialisation : ne pas laisser un envoi differe pousser le cache
+    // vide vers le cloud, en particulier si le syncPull() ci-dessous echoue.
+    cancelPendingSync();
     const idx = loadIndex();
     idx.forEach(deleteSession);
     localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(RACES_KEY); localStorage.removeItem(PROFILE_KEY); localStorage.removeItem(GEAR_KEY);

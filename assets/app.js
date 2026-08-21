@@ -980,7 +980,11 @@ async function supaGetUser() {
 }
 
 function buildSyncPayload() {
-  return { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes() };
+  // `planYear` était sauvegardé par savePlanYear() AVEC un scheduleSync(), mais n'a jamais figuré
+  // dans ce payload : le réglage déclenchait donc une synchronisation complète sans jamais être
+  // lui-même synchronisé. C'est une vraie donnée de configuration (elle sert à dater les séances
+  // d'un CSV de plan qui ne porte que jour/mois, voir parsePlanCsv).
+  return { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
 }
 // Pendant l'application des données reçues du cloud, on désactive scheduleSync() pour ne pas
 // renvoyer immédiatement vers Supabase ce qu'on vient d'en recevoir.
@@ -994,11 +998,19 @@ function applySyncPayload(payload) {
       payload.sessions.forEach(s => { if (s && s.id) { saveSession(s.id, s); ids.push(s.id); } });
       saveIndex(ids);
     }
-    if (payload.plan) savePlan(payload.plan);
-    if (Array.isArray(payload.races) && payload.races.length) saveRaces(payload.races);
+    // Règle appliquée ci-dessous : on distingue « la clé est absente du payload » (payload ancien
+    // ou partiel — on ne touche à rien en local) de « la clé est présente et vide » (l'utilisateur
+    // a réellement tout supprimé sur l'autre appareil — la suppression doit se propager).
+    // Auparavant `if (payload.plan)` et `if (... && payload.races.length)` traitaient les deux cas
+    // de la même façon : supprimer toutes ses courses sur un appareil ne se propageait jamais, et
+    // l'appareil resté en arrière renvoyait ensuite sa liste périmée, ressuscitant les courses
+    // supprimées. Le même raisonnement vaut pour un plan effacé via clearPlan().
+    if ('plan' in payload) { if (payload.plan) savePlan(payload.plan); else clearPlan(); }
+    if (Array.isArray(payload.races)) saveRaces(payload.races);
     if (payload.profile) saveProfile(payload.profile);
     if (Array.isArray(payload.gear)) saveGear(payload.gear);
     if (typeof payload.planNotes === 'string') savePlanNotes(payload.planNotes);
+    if (Number.isFinite(payload.planYear)) savePlanYear(payload.planYear);
   } finally { _applyingRemote = false; }
 }
 
@@ -1009,7 +1021,28 @@ function scheduleSync() {
   if (_applyingRemote) return;
   if (!getSupabaseClient()) return;
   clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(() => { syncPush(); }, 1500);
+  // Le résultat de syncPush() était jeté : un envoi refusé (session expirée, RLS, réseau coupé,
+  // table absente) ne laissait AUCUNE trace, ni console, ni interface. L'utilisateur croyait ses
+  // données synchronisées alors qu'elles ne quittaient pas l'appareil. On consigne désormais
+  // l'issue du dernier envoi, que la page Paramètres affiche.
+  _syncTimer = setTimeout(() => {
+    syncPush().then(res => {
+      if (!res.ok && res.reason !== 'not-configured' && res.reason !== 'not-logged-in') {
+        console.error('Synchronisation ELEV : envoi refusé —', res.reason);
+      }
+    });
+  }, 1500);
+}
+// Annule un envoi programmé mais pas encore parti. Indispensable avant une réinitialisation
+// locale : les suppressions appellent scheduleSync(), et cet envoi différé pouvait partir APRÈS
+// le vidage du stockage local, donc écraser les données du cloud par un état vide — exactement
+// l'inverse de ce que promet le message « tes données synchronisées resteront disponibles ».
+function cancelPendingSync() { clearTimeout(_syncTimer); _syncTimer = null; }
+function getSyncMeta() {
+  try { return JSON.parse(localStorage.getItem(SUPA_META_KEY) || '{}'); } catch (e) { return {}; }
+}
+function setSyncMeta(patch) {
+  try { localStorage.setItem(SUPA_META_KEY, JSON.stringify(Object.assign(getSyncMeta(), patch))); } catch (e) {}
 }
 async function syncPush() {
   const client = getSupabaseClient();
@@ -1018,8 +1051,11 @@ async function syncPush() {
   if (!user) return { ok:false, reason:'not-logged-in' };
   const nowIso = new Date().toISOString();
   const { error } = await client.from('trail_data').upsert({ user_id: user.id, payload: buildSyncPayload(), updated_at: nowIso });
-  if (error) return { ok:false, reason: error.message };
-  try { localStorage.setItem(SUPA_META_KEY, JSON.stringify({ lastRemoteUpdatedAt: nowIso })); } catch (e) {}
+  if (error) {
+    setSyncMeta({ lastPushAt: nowIso, lastPushOk: false, lastPushError: error.message });
+    return { ok:false, reason: error.message };
+  }
+  setSyncMeta({ lastRemoteUpdatedAt: nowIso, lastPushAt: nowIso, lastPushOk: true, lastPushError: null });
   return { ok:true };
 }
 async function syncPull() {
@@ -1031,7 +1067,9 @@ async function syncPull() {
   if (error) return { ok:false, reason: error.message };
   if (!data) return { ok:false, reason:'empty' };
   applySyncPayload(data.payload || {});
-  try { localStorage.setItem(SUPA_META_KEY, JSON.stringify({ lastRemoteUpdatedAt: data.updated_at })); } catch (e) {}
+  // setSyncMeta (fusion) et non un remplacement complet : ecraser l'objet effacerait l'issue du
+  // dernier envoi que la page Parametres affiche.
+  setSyncMeta({ lastRemoteUpdatedAt: data.updated_at });
   return { ok:true, updatedAt: data.updated_at };
 }
 // Au chargement d'une page : si le cloud a une version plus récente que la dernière connue ici,
@@ -1043,8 +1081,7 @@ async function autoPullIfNewer() {
   if (!user) return;
   const { data, error } = await client.from('trail_data').select('updated_at').eq('user_id', user.id).maybeSingle();
   if (error || !data) return;
-  let meta = {};
-  try { meta = JSON.parse(localStorage.getItem(SUPA_META_KEY) || '{}'); } catch (e) {}
+  const meta = getSyncMeta();
   if (meta.lastRemoteUpdatedAt && new Date(data.updated_at) <= new Date(meta.lastRemoteUpdatedAt)) return;
   const guardKey = 'trail:autoPullGuard';
   if (sessionStorage.getItem(guardKey) === data.updated_at) return; // évite une boucle de rechargement
@@ -1074,15 +1111,13 @@ async function uploadFitFile(client, userId, clientId, arrayBuffer) {
   if (error) { console.error('Upload du fichier .fit échoué :', error.message); return null; }
   return path;
 }
-async function pushActivityRow(session, fitArrayBuffer) {
-  const client = getSupabaseClient();
-  if (!client) return { ok:false, reason:'not-configured' };
-  const user = await supaGetUser();
-  if (!user) return { ok:false, reason:'not-logged-in' };
-  let fitFilePath = null;
-  if (fitArrayBuffer) fitFilePath = await uploadFitFile(client, user.id, session.id, fitArrayBuffer);
-  const row = {
-    user_id: user.id,
+// Construction de la ligne `activities` à partir d'une séance. Extraite de pushActivityRow pour
+// être vérifiable seule et confrontable à activityRowToSession : c'est l'aller d'un aller-retour,
+// et tout champ absent ici est un champ DÉTRUIT au retour (voir syncActivitiesWithSupabase, qui
+// réécrit le cache local à partir des lignes Supabase).
+function sessionToActivityRow(session, userId, fitFilePath) {
+  return {
+    user_id: userId,
     client_id: session.id,
     date: session.date,
     sport: session.sport,
@@ -1099,14 +1134,50 @@ async function pushActivityRow(session, fitArrayBuffer) {
     calories: session.calories,
     cadence_spm: session.cadenceSpm,
     gear_id: session.gearId || null,
-    context: session.context || null,
+    // La note de contexte saisie par l'utilisateur s'appelle `contexte` PARTOUT dans l'application
+    // (activite.html l'écrit et la relit sous ce nom, et le prompt Coach ELEV la consomme). Cette
+    // fonction lisait `session.context`, qui n'existe nulle part : la colonne recevait donc
+    // toujours null, et activityRowToSession réécrivait ensuite la séance locale SANS la note.
+    // La note de l'utilisateur était donc détruite au premier rechargement d'une page synchronisée.
+    // `session.context` reste accepté en second choix au cas où une ligne l'aurait déjà porté.
+    context: session.contexte ?? session.context ?? null,
     ai_feedback: session.aiFeedback || null,
     series: session.series || null,
     laps: session.laps || null,
-    raw: Object.assign({ events: session.events || [], devices: session.devices || [] }, session.raw || {}),
+    // `clientMeta` : champs propres au client qui n'ont pas de colonne dédiée. Sans cela ils étaient
+    // perdus à l'aller-retour — `fileName` alimente pourtant la RECHERCHE de la page Activités
+    // (historique.html), et `dateApprox` l'astérisque affiché sur 4 pages. Les loger dans `raw`,
+    // déjà en jsonb et déjà prévu pour « ce qui n'entre pas dans les colonnes ci-dessus », évite
+    // d'exiger une migration : la correction est effective sans aucune action dans Supabase.
+    raw: Object.assign(
+      {
+        events: session.events || [],
+        devices: session.devices || [],
+        clientMeta: {
+          fileName: session.fileName ?? null,
+          importedAt: session.importedAt ?? null,
+          dateApprox: session.dateApprox ?? null,
+        },
+      },
+      session.raw || {}
+    ),
     fit_file_path: fitFilePath,
     updated_at: new Date().toISOString(),
   };
+}
+
+async function pushActivityRow(session, fitArrayBuffer) {
+  const client = getSupabaseClient();
+  if (!client) return { ok:false, reason:'not-configured' };
+  const user = await supaGetUser();
+  if (!user) return { ok:false, reason:'not-logged-in' };
+  let fitFilePath = null;
+  if (fitArrayBuffer) fitFilePath = await uploadFitFile(client, user.id, session.id, fitArrayBuffer);
+  const row = sessionToActivityRow(session, user.id, fitFilePath);
+  // Ne jamais écraser par null un chemin de fichier déjà enregistré : cette fonction est aussi
+  // appelée SANS fichier (resynchronisation d'une séance importée avant la mise en place du
+  // Storage). `upsert` remplace la ligne entière, un null effacerait donc le lien vers le .fit.
+  if (fitFilePath == null) delete row.fit_file_path;
   const { error } = await client.from('activities').upsert(row, { onConflict: 'user_id,client_id' });
   if (error) return { ok:false, reason: error.message };
   return { ok:true };
@@ -1132,14 +1203,41 @@ function activityRowToSession(row) {
     calories: row.calories,
     cadenceSpm: row.cadence_spm,
     gearId: row.gear_id || undefined,
-    context: row.context || undefined,
+    // Relu sous le nom utilisé par l'application (`contexte`), pas sous le nom de la colonne :
+    // c'est ce décalage qui faisait disparaître la note de l'utilisateur à chaque resynchro.
+    contexte: row.context || undefined,
     aiFeedback: row.ai_feedback || undefined,
     series: row.series || [],
     laps: row.laps || [],
     events: (row.raw && row.raw.events) || [],
     devices: (row.raw && row.raw.devices) || [],
+    // Champs client sans colonne dédiée (voir sessionToActivityRow). Restitués s'ils sont
+    // présents ; absents pour les lignes écrites avant cette correction, auquel cas la séance
+    // locale garde simplement la valeur qu'elle avait déjà (voir mergeSessionFromRemote).
+    fileName: (row.raw && row.raw.clientMeta && row.raw.clientMeta.fileName) || undefined,
+    importedAt: (row.raw && row.raw.clientMeta && row.raw.clientMeta.importedAt) || undefined,
+    dateApprox: (row.raw && row.raw.clientMeta && row.raw.clientMeta.dateApprox) || undefined,
+    // Conservé pour que l'application sache qu'un fichier .fit original existe côté Storage.
+    fitFilePath: row.fit_file_path || undefined,
     raw: row.raw || {},
   };
+}
+
+// Fusion d'une séance venue de Supabase avec celle déjà présente en cache local.
+// syncActivitiesWithSupabase écrasait la séance locale par la version reconstruite : tout champ
+// que la ligne Supabase ne portait pas (parce qu'écrite avant une correction, ou parce qu'aucune
+// colonne ne l'accueille) était donc SUPPRIMÉ du cache local. On ne remplace désormais une valeur
+// locale que par une valeur distante réellement renseignée.
+function mergeSessionFromRemote(local, remote) {
+  if (!local) return remote;
+  const merged = Object.assign({}, local);
+  Object.keys(remote).forEach(k => {
+    const v = remote[k];
+    if (v === undefined || v === null) return;
+    if (Array.isArray(v) && v.length === 0 && Array.isArray(merged[k]) && merged[k].length) return;
+    merged[k] = v;
+  });
+  return merged;
 }
 // Supabase = source de vérité pour les séances (table `activities`), localStorage = cache local.
 // 1) pousse les séances locales pas encore connues côté Supabase (cas des séances importées avant
@@ -1166,9 +1264,12 @@ async function syncActivitiesWithSupabase() {
   if (error || !rows) return { ok:false, reason: error ? error.message : 'empty' };
   const ids = [];
   rows.forEach(row => {
-    const session = activityRowToSession(row);
-    saveSession(session.id, session);
-    ids.push(session.id);
+    const remote = activityRowToSession(row);
+    // Fusion plutôt que remplacement : une ligne écrite avant les corrections de mapping ne porte
+    // ni la note de contexte, ni le nom de fichier, ni l'indicateur de date approximative. Les
+    // écraser reviendrait à détruire en local des données que Supabase n'a jamais reçues.
+    saveSession(remote.id, mergeSessionFromRemote(loadSession(remote.id), remote));
+    ids.push(remote.id);
   });
   saveIndex(ids);
   return { ok:true, count: rows.length };
