@@ -478,6 +478,38 @@ section.card.card-compact h2::before{display:none;}
 .equip-status-line:last-child{border-bottom:none;}
 
 /* Page Paramètres (refonte) */
+/* ============================================================================================
+   NAVIGATION INTERNE DES PARAMÈTRES (Sprint 7, plan d'action §10).
+   La page mélangeait une barre de 2 onglets et 6 accordéons empilés : deux paradigmes pour un
+   même niveau d'information, et une page qu'il fallait parcourir en entier. Navigation
+   secondaire verticale sur desktop ; sous 900px elle redevient une bande horizontale
+   défilante, contenue dans son propre conteneur — elle n'élargit jamais la page.
+   ============================================================================================ */
+.settings-layout{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
+.settings-layout > *{min-width:0;}
+.settings-nav{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
+.settings-nav button{flex:0 0 auto;font:inherit;font-family:var(--font-sans);font-size:.84rem;
+  color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-pill);
+  padding:9px 15px;min-height:44px;cursor:pointer;white-space:nowrap;
+  transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard);}
+.settings-nav button:hover{color:var(--text);border-color:var(--border-strong);}
+.settings-nav button.active{background:var(--accent);border-color:var(--accent);color:var(--accent-text);font-weight:600;}
+.settings-nav button:focus-visible{outline:2px solid var(--accent-light);outline-offset:2px;}
+@media (min-width:900px){
+  .settings-layout{grid-template-columns:216px minmax(0,1fr);gap:24px;}
+  /* Sticky : la navigation reste atteignable quand un panneau est long (le plan importé). */
+  .settings-nav{position:sticky;top:88px;flex-direction:column;overflow:visible;gap:2px;}
+  .settings-nav button{width:100%;text-align:left;border-radius:var(--radius-md);border-color:transparent;
+    background:transparent;min-height:auto;padding:10px 12px;}
+  .settings-nav button:hover{background:var(--rail-hover);border-color:transparent;}
+  /* Même langage que la sidebar principale : capsule discrète + filet lumineux, pas un aplat
+     plein — le vert de marque reste rare et réservé au repère « où je suis ». */
+  .settings-nav button.active{position:relative;background:rgba(107,142,78,.13);border-color:transparent;
+    color:var(--text);}
+  .settings-nav button.active::before{content:'';position:absolute;left:0;top:7px;bottom:7px;width:3px;
+    border-radius:0 3px 3px 0;background:var(--accent-light);box-shadow:0 0 10px 1px rgba(168,196,127,.45);}
+}
+
 .settings-row{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--border);background:none;border-left:none;border-right:none;border-top:none;cursor:default;font:inherit;color:inherit;}
 .settings-row:last-child{border-bottom:none;}
 button.settings-row{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard);border-radius:var(--radius-sm);}
