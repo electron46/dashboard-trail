@@ -1312,6 +1312,23 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .objective-card .obj-sub-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--text);font-size:.74rem;}
 
 /* Bandeau compact "cette semaine" (fusionné avec la tendance principale) */
+/* Bande de résumé hebdomadaire (Accueil, au-dessus de la ligne de flottaison). Volontairement
+   sobre : pas d'icône, pas de couleur d'accent, pas de carte. Elle informe en un coup d'œil sans
+   disputer la valeur dominante du hero — c'est une ligne de contexte, pas un bloc de plus.
+   Sur mobile elle défile horizontalement DANS son conteneur, donc n'élargit jamais la page. */
+.week-strip{display:flex;align-items:baseline;gap:10px 26px;flex-wrap:wrap;
+  padding:2px 2px 10px;border-bottom:1px solid var(--border);margin-bottom:4px;}
+.week-strip .ws-label{display:flex;flex-direction:column;gap:1px;font-size:.72rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-right:4px;}
+.week-strip .ws-label small{font-size:.66rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted-2);}
+.week-strip .ws-item{display:flex;align-items:baseline;gap:6px;white-space:nowrap;}
+.week-strip .ws-v{font-family:var(--font-mono);font-size:1rem;font-weight:600;color:var(--text);}
+.week-strip .ws-l{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+@media (max-width:640px){
+  .week-strip{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:18px;}
+  .week-strip > *{flex:0 0 auto;}
+}
+
 .week-stats-inline{display:flex;flex-wrap:wrap;gap:22px;margin:10px 0 18px;}
 .week-stat{display:flex;align-items:center;gap:9px;}
 .week-stat img{width:17px;height:17px;filter:invert(55%);flex-shrink:0;}
