@@ -321,7 +321,7 @@ function renderTrajectory() {
   const isKm = trendMetric === 'km';
   const unit = isKm ? ' km' : ' m';
   const dec = isKm ? 1 : 0;
-  let chartHtml, insightHtml = '';
+  let chartHtml, insightHtml = '', trendRender = null;
 
   if (weeks.length < 2) {
     chartHtml = svgEmpty('Évolution du volume');
@@ -347,12 +347,18 @@ function renderTrajectory() {
        continue affirme qu'il se passe quelque chose entre deux lundis, ce qui est faux. Les barres
        disent la vraie nature de la donnee, et partent naturellement de zero — plus besoin de
        forcer yMin. `groupedBarChartSvg` est reutilise avec une seule serie plutot que d'ecrire une
-       enieme fonction de graphique ; sa legende se supprime d'elle-meme dans ce cas. */
-    chartHtml = groupedBarChartSvg('', weeks, [{
-      name: isKm ? 'Volume' : 'Dénivelé positif',
-      color: 'var(--chart-line)',
-      values: weeks.map(w => +(isKm ? w.km : w.dplus).toFixed(dec)),
-    }], { hideTitle: true, height: 280 });
+       enieme fonction de graphique ; sa legende se supprime d'elle-meme dans ce cas.
+       Le rendu est differe : le conteneur est mesure apres insertion et le graphique dessine a sa
+       largeur reelle (voir registerResponsiveChart), pour que l'echelle du SVG vaille 1 quelle que
+       soit la mise en page — y compris quand un graphique ne prend qu'une colonne. */
+    chartHtml = '';
+    trendRender = function (w) {
+      return groupedBarChartSvg('', weeks, [{
+        name: isKm ? 'Volume' : 'Dénivelé positif',
+        color: 'var(--chart-line)',
+        values: weeks.map(x => +(isKm ? x.km : x.dplus).toFixed(dec)),
+      }], { hideTitle: true, height: 280, width: w });
+    };
   }
 
   const insight = generateElevInsight();
@@ -433,7 +439,9 @@ function renderTrajectory() {
       '<a class="link-arrow trend-link" href="analyse.html">Voir toute l\'analyse de tendance →</a>' +
     '</div>';
 
-  initChartTooltips(document.getElementById('trendChartBox'));
+  const trendBox = document.getElementById('trendChartBox');
+  initChartTooltips(trendBox);
+  if (trendRender) registerResponsiveChart(trendBox, trendRender);
   box.querySelectorAll('#trendMetricSelect button').forEach(btn => btn.addEventListener('click', () => {
     trendMetric = btn.dataset.metric;
     renderTrajectory();
@@ -555,8 +563,10 @@ function renderLoadChart() {
     { name: 'Aiguë (semaine)', color: 'var(--acute-load)', values: weeks.map(w => +w.km.toFixed(1)) },
     { name: 'Chronique (moy. 4 sem.)', color: 'var(--chronic-load)', values: weeks.map(w => w.chronic) },
   ];
-  box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 170, hideTitle: true });
   initChartTooltips(box);
+  registerResponsiveChart(box, function (w) {
+    return groupedBarChartSvg('', weeks, series, { height: 170, hideTitle: true, width: w });
+  });
 }
 
 // Répartition du temps passé par zone FC sur les 30 derniers jours — lecture seule sur l'Accueil

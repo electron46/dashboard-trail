@@ -2551,6 +2551,62 @@ function genericDonutSvg(segments, centerValue, centerLabel) {
 // axe Y), ligne = durée normalisée sur sa propre plage — pas de second axe superposé (même convention
 // que le fond de terrain en arrière-plan des autres graphiques : repère de tendance, pas une lecture
 // exacte au pixel près ; le détail exact reste dans le tooltip).
+/* ------------------------- GRAPHIQUES CONSCIENTS DE LEUR CONTENEUR -------------------------
+   `chartViewboxWidth()` ci-dessous raisonne sur la largeur de FENETRE. C'est une approximation
+   qui ne tient que tant qu'un graphique occupe toute la largeur disponible : des que deux
+   graphiques se partagent une ligne, chaque conteneur fait la moitie de ce que la fonction
+   suppose, l'echelle du SVG s'effondre et le texte des axes redevient illisible.
+
+   Le registre ci-dessous supprime l'approximation. Un appelant enregistre son conteneur avec une
+   fonction de rendu prenant une largeur ; le conteneur est mesure APRES insertion dans le DOM et
+   redessine a sa largeur reelle, puis a chaque redimensionnement utile. L'echelle du SVG vaut
+   alors 1 et un font-size="13" rend a 13px, quelle que soit la mise en page.
+
+   Le contenu est remplace A L'INTERIEUR du conteneur, jamais le conteneur lui-meme : les
+   info-bulles sont posees dessus en delegation (voir initChartTooltips et son garde
+   `dataset.tooltipWired`), elles survivent donc au redessin sans etre rearmees.
+
+   Meme principe que initTerrainProfiles() pour les labels du profil : mesurer le rendu reel
+   plutot que de le deviner. */
+const _responsiveCharts = new Map();
+
+function registerResponsiveChart(el, render) {
+  if (!el || typeof render !== 'function') return;
+  _responsiveCharts.set(el, render);
+  _drawResponsiveChart(el);
+  // La mise en page n'est pas toujours stabilisee au premier appel (scenes pleine largeur
+  // dimensionnees en JS) : on repasse une fois la frame suivante, puis un peu plus tard.
+  requestAnimationFrame(function () { _drawResponsiveChart(el); });
+  setTimeout(function () { _drawResponsiveChart(el); }, 220);
+}
+
+function _drawResponsiveChart(el) {
+  const render = _responsiveCharts.get(el);
+  if (!render || !el.isConnected) return;
+  const w = Math.round(el.clientWidth);
+  if (!w) return;                                   // pas encore mis en page
+  if (el.dataset.chartWidth === String(w)) return;  // deja dessine a cette largeur
+  el.dataset.chartWidth = String(w);
+  el.innerHTML = render(w);
+}
+
+function refreshResponsiveCharts() {
+  _responsiveCharts.forEach(function (fn, el) {
+    if (!el.isConnected) { _responsiveCharts.delete(el); return; }
+    _drawResponsiveChart(el);
+  });
+}
+
+// Un seul ecouteur de redimensionnement pour tous les graphiques de la page, debounce.
+(function () {
+  if (typeof window === 'undefined') return;
+  let t = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(t);
+    t = setTimeout(refreshResponsiveCharts, 150);
+  });
+})();
+
 /* Largeur du viewBox d'un graphique, adaptee a l'ecran.
    Un viewBox fixe de 620 rend le texte illisible sur telephone : le SVG est ramene a ~343px de
    large, soit une echelle de 0,55, et un font-size="13" arrive a 7,2px reels (mesure). Ce n'est
