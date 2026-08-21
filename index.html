@@ -55,7 +55,10 @@
     <p class="topbar-greeting" id="greetingTitle">Bonjour</p>
   </div>
   <div class="app-topbar-actions">
-    <a class="btn accent" href="historique.html">+ Importer une activité</a>
+    <!-- Le vert d'accent est reserve a l'action attendue. Avec un historique deja constitue,
+         importer n'est plus l'action principale de la page : le bouton redevient secondaire
+         (classe posee par renderGreeting selon la presence de seances, plan §3). -->
+    <a class="btn" id="importCta" href="historique.html">+ Importer une activité</a>
     <button id="themeToggle" type="button">☀</button>
   </div>
 </header>
@@ -122,18 +125,22 @@
        <main> : seules les scènes narratives ci-dessus sont pleine largeur. -->
   <div class="dash-secondary-grid dash-full reveal-on-scroll">
     <section class="card card-compact">
-      <h2>Charge d'entraînement <small>(12 sem.)</small></h2>
+      <!-- La periode n'est pas le sujet de la carte : elle qualifie la donnee. Elle passe donc en
+           metadonnee sous le titre plutot que dans le titre lui-meme (plan §3). -->
+      <h2>Charge d'entraînement</h2>
+      <p class="card-period">12 dernières semaines</p>
       <div id="loadChartBox"></div>
     </section>
     <section class="card card-compact">
-      <h2>Intensité <small>(30 derniers jours)</small></h2>
+      <h2>Intensité</h2>
+      <p class="card-period">30 derniers jours</p>
       <div id="fcSummaryBox"></div>
     </section>
   </div>
 
 </main>
 
-<footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée dans Paramètres).</footer>
+<footer class="app">Tes données restent les tiennes. <a href="parametres.html#donnees">Confidentialité et données</a></footer>
 </div>
 </div>
 
@@ -158,7 +165,13 @@ function renderGearAlert() {
 function renderGreeting() {
   const profile = getProfile();
   const prenom = (profile.nom || '').trim().split(/\s+/)[0];
-  document.getElementById('greetingTitle').textContent = prenom ? ('Bonjour ' + prenom) : 'Bonjour';
+  // « Bonjour » seul n'apprend rien. La salutation annonce ce que la page montre — et le dit
+  // differemment selon qu'il y a des donnees ou non, plutot qu'une formule figee (plan §3).
+  const aDesSeances = loadIndex().length > 0;
+  const suite = aDesSeances ? ' — voici où tu en es cette semaine.' : ' — importe une première sortie pour démarrer ton suivi.';
+  document.getElementById('greetingTitle').textContent = (prenom ? ('Bonjour ' + prenom) : 'Bonjour') + suite;
+  // Import mis en avant uniquement tant qu'il n'y a rien a montrer.
+  document.getElementById('importCta').classList.toggle('accent', !aDesSeances);
 
   // Avatar généré à partir de l'initiale du prénom (pas de photo) — reste discret si le profil est vide.
   const initial = prenom ? prenom[0].toUpperCase() : '?';
