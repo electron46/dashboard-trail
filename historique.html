@@ -153,7 +153,9 @@ async function handleFiles(fileList) {
           .then(res => { if (!res.ok) console.warn('Synchro activité (table `activities`) non effectuée :', res.reason); })
           .catch(err => console.error('Synchro activité échouée :', err));
       }
-      else fail++;
+      // Une écriture refusée est presque toujours un quota de navigateur atteint. La raison est
+      // reprise telle quelle plutôt qu'un « échec » sans cause, qui ne dit pas quoi faire.
+      else { fail++; if (lastStorageError) errors.push(file.name + ' : ' + lastStorageError); }
     } catch (err) { fail++; errors.push(file.name + ' : ' + err.message); }
   }
   let msg = ok + ' séance(s) importée(s).';
