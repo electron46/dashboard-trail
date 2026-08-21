@@ -32,17 +32,19 @@
 <header class="app-topbar">
   <div>
     <h1>Mes équipements</h1>
-    <p class="hint" style="margin-top:2px;">Gérez votre matériel et suivez son usure.</p>
+    <p class="page-sub">Ton matériel de trail et le suivi de son usure.</p>
   </div>
   <div class="app-topbar-actions">
     <button class="btn primary" id="addEquipBtn" type="button">+ Ajouter un équipement</button>
-    <button id="themeToggle" type="button">☀ Clair</button>
+    <button id="themeToggle" type="button">☀</button>
   </div>
 </header>
 
 <main>
 
-  <section class="kpi-grid" id="kpiGrid" style="display:none;"></section>
+  <!-- kpi-grid--4 : cette page affiche toujours 4 indicateurs, on demande donc une repartition
+       reguliere (2x2 puis 4x1) plutot que le 3+1 que produisait `auto-fit`. -->
+  <section class="kpi-grid kpi-grid--4" id="kpiGrid" style="display:none;"></section>
 
   <div id="detectBannerBox"></div>
 
@@ -80,7 +82,7 @@
       </div>
     </section>
 
-    <div class="analysis-charts-row" style="margin-top:14px;">
+    <div class="card-row-3" style="margin-top:14px;">
       <section class="card card-compact">
         <h2>Répartition par catégorie</h2>
         <div id="catBreakdownBox"></div>

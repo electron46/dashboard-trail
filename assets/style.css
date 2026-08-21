@@ -46,14 +46,21 @@
      3. DATA — couleurs volontairement NON vertes pour les séries secondaires (§18, §19), afin
         que la couleur cesse d'être le seul véhicule de sens. */
   --canvas:var(--bg);
-  --surface-1:var(--panel);
-  --surface-2:var(--panel-raised);
   --surface-elevated:#242B27;
-  --border-subtle:#29312D; --border-default:#343E38; --border-strong:#465249;
+  --border-subtle:#29312D; --border-default:#343E38;
   --text-primary:var(--text); --text-secondary:var(--muted); --text-muted:#8B958E; --text-disabled:#5F6863;
   --elev-green:#62F58C; --elev-green-soft:#9BBD7E; --elev-green-muted:#6F8B65;
   --data-cool:#91A5B2; --data-mineral:#B5AB93; --data-neutral:#B7C0C5;
-  --warning-soft:#D2A85A; --danger-soft:#D8796F;
+  /* Teintes PLEINES d'alerte, pour un texte/une pastille — à ne pas confondre avec --warn-soft /
+     --danger-soft juste au-dessus, qui sont des FONDS translucides.
+     Correctif 2026-08-21 : ce bloc redéclarait `--danger-soft:#D8796F`, écrasant en thème sombre
+     le fond translucide défini plus haut. Les 7 composants qui l'utilisent comme fond (badge
+     « Manqué »/« En retard », .msg.err, .alert-banner.danger, .badge.danger-badge, .btn.danger:hover)
+     affichaient donc du saumon plein sous un texte saumon : contraste mesuré 1.09:1, illisible sur
+     Plan, Équipements, Analyse et le bandeau d'usure de l'Accueil. Le thème clair n'était pas touché
+     (il redéclare le token à sa propre valeur), ce qui explique que le défaut soit passé inaperçu.
+     Les noms sont désormais distincts, la collision ne peut plus se reproduire silencieusement. */
+  --warning-strong:#D2A85A; --danger-strong:#D8796F;
   /* Charge d'entraînement — validé par scripts/validate_palette.js du skill dataviz
      (mode dark, surface #181D1B) : ALL CHECKS PASS. Les valeurs précédentes (#829F68/#AAB6C1)
      échouaient sur trois critères, dont le plancher de vision NORMALE (ΔE 14.1, sous 15) : elles
@@ -86,6 +93,8 @@
      existant ; ces alias donnent un vocabulaire explicite pour le nouveau shell/les nouvelles cartes
      sans dupliquer les valeurs ni forcer une migration des composants déjà écrits. */
   --surface-0:var(--bg);
+  /* --surface-1/--surface-2 : déclarés ICI et nulle part ailleurs (ils l'étaient deux fois, à
+     l'identique — doublon retiré, aucun effet visuel). */
   --surface-1:var(--panel);
   --surface-2:var(--panel-raised);
   --surface-3:linear-gradient(180deg,rgba(107,142,78,.10),var(--panel-raised) 70%);
@@ -110,6 +119,16 @@ html[data-theme="light"]{
   --success:#4C7A3D; --success-soft:#E9F1E3; --danger:#B3402C; --danger-soft:#FBEAE5;
   --warn:#8A6D1B; --warn-soft:#F3EEDD; --shadow:0 1px 3px rgba(43,43,43,.08);
   --chart-fill-top:rgba(107,142,78,.22); --chart-fill-bottom:rgba(107,142,78,0);
+  /* Correctif 2026-08-21 : ces 8 tokens n'existaient qu'en thème sombre et FUYAIENT tels quels
+     dans le thème clair — modales (--surface-4), boutons secondaires (--surface-elevated),
+     panneau de navigation mobile, info-bulles de graphiques et palette de commandes s'affichaient
+     en anthracite sur fond clair, sur toutes les pages ; les bordures translucides blanches
+     (--border-strong/--border-soft/--edge-highlight) y étaient invisibles. Aucune page n'aurait pu
+     corriger cela seule : c'est une lacune de la couche de tokens. */
+  --surface-elevated:#F3F4F6; --surface-4:#FFFFFF;
+  --border-default:#C9CDD5; --border-strong:rgba(15,23,32,.16);
+  --border-soft:rgba(15,23,32,.06); --edge-highlight:rgba(15,23,32,.05);
+  --text-muted:#6B7382; --text-disabled:#9AA2B0;
 }
 *{box-sizing:border-box;}
 /* Canvas — halo atmosphérique très diffus (relief/altitude évoqué, jamais une photo). Fixe (n'affecte
@@ -185,6 +204,14 @@ header.app-topbar--slim h1{font-family:var(--font-sans);font-size:.92rem;font-we
    qu'avait le <h1> allégé, donc rien ne change visuellement. */
 header.app-topbar .topbar-greeting{margin:0;font-family:var(--font-sans);font-size:.92rem;font-weight:600;color:var(--muted);letter-spacing:0;}
 header.app-topbar--slim.scrolled{padding-top:10px;padding-bottom:8px;}
+/* Sous-titre de page. Les 8 pages hors Accueil répétaient `<p class="hint" style="margin-top:2px">`
+   (ou un `<div class="hint">` sans marge du tout) : même intention, trois rendus différents et un
+   style inline dupliqué. Une seule classe désormais, alignée sur les libellés secondaires de
+   l'Accueil (.hint : .78rem/--muted). */
+header.app-topbar .page-sub{margin:3px 0 0;font-size:.82rem;color:var(--muted);line-height:1.45;max-width:62ch;}
+/* Lien de retour au-dessus du titre (détail de séance) : l'écart était posé en style inline sur
+   le <h1>. Il appartient au lien, pas au titre. */
+header.app-topbar .topbar-back{margin-bottom:8px;}
 header.app-topbar .app-topbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px;}
 #themeToggle{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:50%;font-size:.95rem;cursor:pointer;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),transform var(--dur-micro) var(--ease-standard);}
 #themeToggle:hover{background:var(--bg);color:var(--text);}
@@ -228,6 +255,30 @@ section.card h2 small{font-family:var(--font-sans);color:var(--muted);font-weigh
 section.card.card-compact h2{padding-left:0;}
 section.card.card-compact h2::before{display:none;}
 .metric .val,.kpi-value,td,.badge{font-variant-numeric:tabular-nums;}
+
+/* ------------------------------------------------------------------------------------------
+   VOIX DES CHIFFRES — IBM Plex Mono (règle du 2026-08-21, divergence 5 de design-system/readme.md :
+   « réservée aux distances, allures, D+, temps et dates, jamais au texte courant »).
+   L'Accueil l'applique déjà à son score de préparation, à ses métriques d'objectif, aux stats de
+   la semaine et aux KPI de la dernière sortie. Les autres pages rendaient les MÊMES natures de
+   valeurs en Inter ou en Raleway : la distance d'une sortie changeait de typographie selon la page
+   d'où on la lisait. Cette liste ne cible que des emplacements dont le contenu est toujours
+   numérique — les lignes clé/valeur qui portent aussi du texte (« Français », « Lundi », un nom de
+   course) restent volontairement en Inter, une mono y serait un contresens.
+   Une mono étant tabulaire par construction, `font-variant-numeric` y devient sans objet. */
+.kpi-strip .kpi-item .v,
+.mini-list-val,
+.zdl-pct,.zdl-time,
+.plan-week-card .pwc-row strong,
+.plan-actual-card .pa-after,
+.goal-subscore-val,
+.equip-row .equip-km-val,
+.profile-zone-row .z-range,
+.activities-summary span,
+.activity-row .cell-stat{font-family:var(--font-mono);font-weight:500;}
+/* Ces deux-là portaient un poids 700/800 hérité d'une police de titres : IBM Plex Mono est chargée
+   en 500 et 600 seulement, au-delà le navigateur synthétise la graisse (rendu épaissi et flou). */
+.kpi-strip .kpi-item .v,.plan-actual-card .pa-after{font-weight:600;}
 
 /* Grille du cockpit (Accueil, ≥1024px) : deux colonnes pour éviter l'empilement intégral en
    une seule colonne verticale. En dessous de 1024px, tout redevient une pile simple (les
@@ -420,7 +471,14 @@ button.settings-row:hover{background:rgba(244,247,245,.03);}
 .hr-zone-edit-row input{padding:6px 9px;}
 .badge.method-badge{background:var(--accent-soft);color:var(--accent-light);border:1px solid transparent;}
 
-.profile-card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+/* `align-items:start` : les cartes de cette grille ont des contenus de longueurs très inégales
+   (3 lignes pour « Informations personnelles », 8 pour « Fréquence cardiaque »). L'étirement par
+   défaut allongeait la plus courte à la hauteur de sa voisine, produisant de grandes boîtes à
+   moitié vides. Chaque carte reprend sa hauteur naturelle.
+   Volontairement distinct de `.dash-grid` (Accueil), où l'étirement est un choix assumé : là-bas
+   les cartes d'une même rangée sont de même nature et doivent s'aligner. */
+.profile-card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start;}
+.profile-card-grid > *{min-width:0;}
 @media (max-width:1280px){ .profile-card-grid{grid-template-columns:1fr 1fr;} }
 @media (max-width:760px){ .profile-card-grid{grid-template-columns:1fr;} }
 
@@ -441,6 +499,12 @@ button.settings-row:hover{background:rgba(244,247,245,.03);}
 .profile-accordion:hover{border-color:var(--border-strong);}
 .profile-accordion summary{padding:16px 20px;cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:.98rem;list-style:none;display:flex;justify-content:space-between;align-items:center;}
 .profile-accordion summary::-webkit-details-marker{display:none;}
+/* Sous-titre d'accordéon (page Paramètres). La classe .acc-sub était posée dans le HTML des 6
+   sections mais n'avait AUCUNE règle : le sous-titre s'affichait donc collé au titre, dans la
+   même graisse et la même police — « Compte & profilEmail, mot de passe, langue, fuseau horaire ».
+   Il redevient une ligne secondaire, dans le registre des libellés secondaires du reste du site. */
+.profile-accordion summary .acc-sub{display:block;margin-top:3px;font-family:var(--font-sans);font-size:.74rem;font-weight:400;color:var(--muted);line-height:1.4;}
+.profile-accordion summary > span{min-width:0;}
 .profile-accordion summary::after{content:'+';color:var(--muted);font-size:1.1rem;transition:transform var(--dur-fast) var(--ease-standard);}
 .profile-accordion[open] summary::after{content:'+';transform:rotate(45deg);color:var(--accent-light);}
 .profile-accordion .accordion-body{padding:0 20px 20px;animation:elev-rise var(--dur-fast) var(--ease-standard) both;}
@@ -667,6 +731,14 @@ footer.app{max-width:1000px;margin:0 auto;padding:20px 24px;color:var(--muted);f
    distinguer des sections plus larges qui suivent. Beaucoup d'espace négatif, accent limité
    à la sparkline / à l'anneau de progression. */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;}
+/* `auto-fit` ne connaît pas le nombre de tuiles : à largeur moyenne il en pose 3 par ligne et
+   laisse la 4e seule sur une deuxième ligne, étirée sur toute la largeur — une rangée d'indicateurs
+   de même poids se lisait alors comme « 3 + 1 hiérarchisés ». Une page qui SAIT qu'elle affiche
+   quatre tuiles demande donc une répartition régulière : 2×2, puis 4×1 quand la largeur le permet. */
+.kpi-grid.kpi-grid--4{grid-template-columns:repeat(2,minmax(0,1fr));}
+@media (min-width:1180px){
+  .kpi-grid.kpi-grid--4{grid-template-columns:repeat(4,minmax(0,1fr));}
+}
 /* Choreographie d'entree : chaque carte KPI apparait avec un leger decalage (stagger) plutot que
    toutes en meme temps — l'ensemble se lit comme une sequence, pas une pop instantanee. Limite a
    6 enfants (au-dela, les cartes suivantes gardent le meme delai que la 6e). */
@@ -1252,10 +1324,17 @@ main.activities-main{max-width:1600px;}
 .activity-row:hover .cell-arrow{transform:translateX(2px);}
 .activities-list-end{text-align:center;padding:14px 0 2px;color:var(--muted);font-size:.78rem;}
 
-@media (min-width:641px){
+/* La disposition en tableau à 9 colonnes ne s'active qu'à partir de 1100px. Elle démarrait à
+   641px, où ses colonnes fixes (56 + 160 + 130px) plus 8 gouttières de 16px dépassaient la largeur
+   disponible : débordement horizontal mesuré à 231px (768px de large) et 99px (961px), avec des
+   valeurs qui se cassaient sur deux lignes (« 30.8 » / « km ») et un nom d'activité tronqué à
+   « Tr… ». Entre 641 et 1099px, la mise en page en cartes (ci-dessous) est reprise : elle est
+   lisible, alors que le tableau ne l'était pas. */
+@media (min-width:1100px){
   .activities-table-head{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 160px 130px;gap:16px;padding:0 16px 10px;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  .activities-table-head > *{min-width:0;}
 }
-@media (max-width:640px){
+@media (max-width:1099px){
   .activity-row{position:relative;grid-template-columns:1fr 1fr;grid-template-areas:"date activity" "d1 d2" "d3 d4" "d5 d5";row-gap:8px;padding-right:26px;}
   .activity-row .cell-date{grid-area:date;display:flex;gap:4px;align-items:baseline;}
   .activity-row .cell-date .cell-day{display:inline;font-size:.95rem;}
@@ -1269,6 +1348,29 @@ main.activities-main{max-width:1600px;}
   .activity-row .cell-visual,.activity-row .cell-arrow{display:none;}
   /* Chevron discret indiquant que la ligne est cliquable (remplace le lien texte, masqué ci-dessus) */
   .activity-row::after{content:'›';position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:1.3rem;font-weight:700;}
+  /* Couple « micro-libellé en capitales + valeur » de l'Accueil : hors tableau, l'en-tête de
+     colonnes n'existe plus, cinq nombres nus ne se distinguent pas. */
+  .activity-row .cell-stat{display:flex;flex-direction:column;gap:1px;}
+  .activity-row .cell-stat::before{content:attr(data-l);font-family:var(--font-sans);font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  .activity-row .cell-stat{font-family:var(--font-mono);font-weight:500;}
+}
+
+/* Palier intermédiaire (tablette et petit portable) : il n'en existait aucun — la page passait
+   directement du tableau à 9 colonnes à la carte mobile à 2 colonnes, alors qu'à 900px il y a
+   largeur pour les 5 mesures sur une ligne ET le mini-profil du terrain, qui est justement ce qui
+   distingue cette liste d'un tableau brut. */
+@media (min-width:641px) and (max-width:1099px){
+  .activity-row{
+    grid-template-columns:58px repeat(5,minmax(0,1fr)) 132px;
+    grid-template-areas:"date activity activity activity activity activity visual"
+                        "date d1       d2       d3       d4       d5       visual";
+    column-gap:14px;row-gap:10px;align-items:center;padding-right:16px;
+  }
+  .activity-row .cell-date{flex-direction:column;gap:0;}
+  .activity-row .cell-date .cell-day{display:block;font-size:1.1rem;}
+  .activity-row .cell-activity{text-align:left;}
+  .activity-row .cell-visual{display:flex;grid-area:visual;height:56px;}
+  .activity-row::after{display:none;}
 }
 
 /* Repère plein écran affiché seulement pendant un glisser-déposer de fichier (page Activités) —
@@ -1409,8 +1511,11 @@ main.activities-main{max-width:1600px;}
    (grilles de mise en page, run/walk par pente) sont ajoutés ici. */
 main.analysis-main{max-width:1440px;}
 .analysis-period-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:-4px 0 4px;}
-.analysis-custom-dates{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--muted);}
-.analysis-custom-dates input[type=date]{width:auto;padding:5px 8px;font-size:.78rem;}
+/* Le retour à la ligne était réservé à `max-width:640px`, mais les deux champs de date tiennent
+   difficilement bien au-delà : débordement horizontal de 6px mesuré à 641px, juste au-dessus du
+   palier. Le retour à la ligne devient donc inconditionnel, et les champs peuvent rétrécir. */
+.analysis-custom-dates{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;font-size:.78rem;color:var(--muted);}
+.analysis-custom-dates input[type=date]{width:auto;min-width:0;max-width:100%;padding:5px 8px;font-size:.78rem;}
 @media (max-width:640px){
   /* Les filtres rapides restent la voie principale (plus visibles que les dates manuelles, voir
      CLAUDE.md) : ils défilent horizontalement plutôt que de se compresser ou de faire déborder la
@@ -1420,15 +1525,41 @@ main.analysis-main{max-width:1440px;}
   .analysis-custom-dates{width:100%;flex-wrap:wrap;}
 }
 .analysis-period-label{font-size:.78rem;color:var(--muted);margin:0 0 2px;}
-.analysis-charts-row{display:grid;grid-template-columns:1fr;gap:14px;}
+/* Rangée de 3 cartes — primitive de mise en page PARTAGÉE. Elle s'appelait `.analysis-charts-row`
+   alors qu'Objectifs, Plan et Équipements s'en servaient déjà pour des rangées de cartes qui ne
+   contiennent aucun graphique : un nom de page et un nom de contenu pour un rôle qui n'est ni l'un
+   ni l'autre. Renommée `.card-row-3`, avec un modificateur pour le cas des graphiques. */
+.card-row-3{display:grid;grid-template-columns:1fr;gap:14px;}
 .analysis-secondary-row{display:grid;grid-template-columns:1fr;gap:14px;}
 .analysis-bottom-row{display:grid;grid-template-columns:1fr;gap:14px;}
+/* Une piste de grille vaut par défaut `minmax(auto,1fr)` : elle ne peut pas descendre sous la
+   largeur mini-contenu de son enfant. Un tableau ou une ligne clé/valeur non sécable poussait donc
+   la carte HORS de la page — débordement horizontal mesuré à 270px (768px de large) et 179px
+   (1024px) sur Analyse, alors que le projet interdit tout débordement horizontal. `min-width:0`
+   autorise la piste à rétrécir et laisse l'enfant gérer son propre dépassement. */
+.card-row-3 > *,
+.analysis-secondary-row > *,
+.analysis-bottom-row > *{min-width:0;}
 @media (min-width:768px){
   .analysis-secondary-row{grid-template-columns:1fr 1fr;}
 }
 @media (min-width:1024px){
-  .analysis-charts-row{grid-template-columns:repeat(3,1fr);}
+  .card-row-3{grid-template-columns:repeat(3,minmax(0,1fr));}
   .analysis-bottom-row{grid-template-columns:1.4fr 1fr;align-items:start;}
+}
+/* Modificateur pour une rangée dont les cellules sont de vrais GRAPHIQUES : elle ne passe à trois
+   colonnes qu'à partir de 1280px. À 1024px, trois colonnes ramenaient chaque courbe à ~110px de
+   large (mesuré), illisible dans une carte à moitié vide — alors qu'une rangée de cartes de texte
+   tient très bien à cette largeur, d'où le modificateur plutôt qu'un changement du cas général. */
+.card-row-3--charts{grid-template-columns:1fr;}
+@media (min-width:900px){
+  .card-row-3--charts{grid-template-columns:1fr 1fr;}
+}
+@media (min-width:1024px){
+  .card-row-3--charts{grid-template-columns:1fr 1fr;}
+}
+@media (min-width:1280px){
+  .card-row-3--charts{grid-template-columns:repeat(3,minmax(0,1fr));}
 }
 /* Les 4 cartes trail (locomotion/zones/pente/run-walk) ne repassent à 4 colonnes qu'à partir de
    1280px : en dessous, chaque carte devient trop étroite pour rester lisible (labels/barres/%
@@ -1488,7 +1619,15 @@ main.analysis-main{max-width:1440px;}
 .goal-hero-identity{flex:1 1 260px;min-width:0;}
 .goal-hero-eyebrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
 /* Nom de la course : plus de présence typographique (priorité n°1 du hero, voir CLAUDE.md). */
-.goal-hero-identity h2{margin:0;font-family:var(--font-display);font-size:1.9rem;font-weight:800;letter-spacing:-.015em;line-height:1.15;}
+/* Nom de la course : c'est le titre de DESTINATION de la page, pas un titre de section.
+   Correctif 2026-08-21 — cette règle n'a jamais été appliquée : `section.card h2` (spécificité
+   0,1,2) l'emportait sur `.goal-hero-identity h2` (0,1,1), et le nom s'affichait à 16,8px/700
+   avec le filet vert de section (mesuré), au lieu des 30,4px/800 prévus ici. Le hero d'Objectifs
+   et celui de Plan présentaient donc l'objectif dans le registre d'un simple intitulé de carte,
+   alors que l'Accueil lui donne son plus grand titre — c'était la rupture la plus visible entre
+   les deux pages. On monte la spécificité et on neutralise explicitement le filet. */
+section.card .goal-hero-identity h2{margin:0;padding-left:0;font-family:var(--font-display);font-size:clamp(1.6rem,3vw,2.1rem);font-weight:800;letter-spacing:-.02em;line-height:1.1;}
+section.card .goal-hero-identity h2::before{display:none;}
 .goal-hero-pills{display:flex;flex-wrap:wrap;gap:20px;margin-top:14px;}
 .goal-hero-pill{display:flex;flex-direction:column;gap:2px;}
 .goal-hero-pill .l{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}

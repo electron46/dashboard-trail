@@ -2495,7 +2495,12 @@ function ringSvg(pct, size, centerText) {
   const stroke = Math.max(4, Math.round(size * 0.09)), r = (size - stroke) / 2, c = size / 2;
   const circumference = 2 * Math.PI * r;
   const offset = circumference * (1 - Math.max(0, Math.min(100, pct)) / 100);
-  const text = centerText ? '<text x="'+c+'" y="'+(c + size*0.09)+'" text-anchor="middle" font-family="var(--font-display)" font-weight="800" font-size="'+(size*0.24).toFixed(1)+'" fill="var(--text)">'+escapeHtml(centerText)+'</text>' : '';
+  // Le score au centre de l'anneau est une DONNÉE CHIFFRÉE : il suit donc la règle du 2026-08-21
+  // (IBM Plex Mono pour les chiffres, cf. divergence 5 de design-system/readme.md), comme le grand
+  // score de préparation de l'Accueil. Il était en Raleway 800, une voix de titre — les héros
+  // Objectifs et Plan annonçaient donc le même indicateur que l'Accueil dans une autre typographie.
+  // Poids 600 : IBM Plex Mono est chargée en 500/600, au-delà le navigateur synthétiserait la graisse.
+  const text = centerText ? '<text x="'+c+'" y="'+(c + size*0.09)+'" text-anchor="middle" font-family="var(--font-mono)" font-weight="600" font-size="'+(size*0.24).toFixed(1)+'" fill="var(--text)">'+escapeHtml(centerText)+'</text>' : '';
   return '<svg class="kpi-ring" viewBox="0 0 '+size+' '+size+'">' +
     '<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="rgba(244,247,245,.09)" stroke-width="'+stroke+'"/>' +
     // L'anneau de progression garde le vert de marque : le §3 réserve explicitement le vert vif
@@ -3895,6 +3900,13 @@ function initChartTooltips(container) {
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('themeToggle');
   if (btn) btn.addEventListener('click', toggleTheme);
+  // applyTheme() ci-dessus s'exécute au chargement du script, donc depuis le <head> : le bouton
+  // n'existe pas encore et la branche qui pose l'icône, l'aria-label et le title était toujours
+  // sautée. Résultat mesuré : aria-label absent sur les 9 pages (bouton sans nom accessible), et
+  // libellé figé sur le texte écrit en dur dans le HTML — « ☀ Clair » sur 8 pages, qui débordait
+  // du bouton rond de 34px et continuait d'annoncer « clair » alors que le thème clair était déjà
+  // actif. On rejoue donc l'application du thème une fois le DOM prêt.
+  applyTheme(getTheme());
   if (!storageAvailable()) {
     document.querySelectorAll('.storage-warning-target').forEach(el => {
       el.innerHTML = '<div class="msg err">Le stockage local du navigateur n\'est pas disponible (navigation privée ?) — les données ne seront pas conservées après fermeture de la page.</div>';
