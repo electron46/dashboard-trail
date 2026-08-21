@@ -272,7 +272,10 @@ function equipRowHtml(item) {
     '<span class="equip-km">' + kmHtml + '</span>' +
     '<span class="equip-state"><span class="badge ' + STATUS_BADGE_CLASS[u.status] + '">' + STATUS_LABELS[u.status] + '</span></span>' +
     '<span class="equip-date">' + (u.lastUsedDate ? fmtDate(u.lastUsedDate) : '—') + '</span>' +
-    '<span class="equip-chevron">›</span>' +
+    // Marqueur purement decoratif : il double une ligne deja cliquable. Sans aria-hidden, un
+    // lecteur d'ecran annonce un chevron a chaque ligne, et sa teinte --muted-2 (decorative,
+    // 2.96:1) serait a tort soumise au seuil de contraste des textes.
+    '<span class="equip-chevron" aria-hidden="true">›</span>' +
   '</button>';
 }
 const STATUS_ORDER = { remplacer:0, surveiller:1, bon:2, archive:3 };

@@ -1,0 +1,205 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Fixtures ELEV</title>
+<script src="assets/app.js"></script>
+<style>body{font-family:system-ui;background:#0B0F0E;color:#F0F3F0;padding:24px;line-height:1.6}
+button{padding:10px 16px;margin:4px;font-size:15px;cursor:pointer}pre{white-space:pre-wrap}</style>
+</head><body>
+<h1>Jeu de test ELEV</h1>
+<p>Outil de developpement local, non destine au produit. Ecrit dans le localStorage de cette origine.</p>
+<button onclick="seed('normal')">normal</button>
+<button onclick="seed('vide')">vide</button>
+<button onclick="seed('partiel')">partiel</button>
+<button onclick="seed('volume')">gros volume</button>
+<pre id="out"></pre>
+<script>
+const TODAY = new Date();
+function iso(d){ return d.toISOString().slice(0,10); }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+
+// Generateur pseudo-aleatoire a graine fixe : le jeu de test doit etre reproductible d'une
+// session a l'autre, sinon une mesure n'est pas comparable a la precedente.
+let _s = 20260821;
+function rnd(){ _s = (_s * 1103515245 + 12345) & 0x7fffffff; return _s / 0x7fffffff; }
+
+// Serie temporelle plausible : altitude en bosses, FC correlee a la pente, allure bruitee,
+// coordonnees GPS autour de Cilaos. Meme forme que la sortie de buildDetailSeries.
+function makeSeries(distKm, ascent, durS, n){
+  const pts=[]; const baseAlt = 400 + rnd()*600;
+  const humps = Math.max(1, Math.round(distKm/12));
+  for(let i=0;i<n;i++){
+    const f = i/(n-1);
+    let alt = baseAlt;
+    for(let h=0;h<humps;h++){
+      alt += (ascent/humps) * Math.max(0, Math.sin(Math.PI*(f*humps - h)));
+    }
+    alt += (rnd()-0.5)*4;
+    const grade = i ? (alt - pts[i-1].alt) : 0;
+    const pace = Math.max(240, 330 + grade*40 + (rnd()-0.5)*40);
+    pts.push({
+      t: Math.round(f*durS),
+      distKm: +(f*distKm).toFixed(3),
+      paceSecKm: Math.round(pace),
+      hr: Math.round(128 + grade*8 + f*12 + (rnd()-0.5)*8),
+      alt: Math.round(alt*10)/10,
+      cadenceSpm: Math.round(160 + (rnd()-0.5)*12),
+      power: null,
+      lat: -21.13 + f*0.05 + (rnd()-0.5)*0.004,
+      lon: 55.47 + Math.sin(f*6)*0.02 + (rnd()-0.5)*0.004
+    });
+  }
+  return pts;
+}
+
+function makeSession(date, kind, gearId){
+  const K = {
+    longue:  { km:[18,28], vam:[70,95], sport:'Trail' },
+    moyenne: { km:[10,15], vam:[45,70], sport:'Trail' },
+    seuil:   { km:[8,12],  vam:[15,30], sport:'Course a pied' },
+    facile:  { km:[6,9],   vam:[20,45], sport:'Course a pied' }
+  }[kind];
+  const km = +(K.km[0] + rnd()*(K.km[1]-K.km[0])).toFixed(2);
+  const ascent = Math.round(km * (K.vam[0] + rnd()*(K.vam[1]-K.vam[0])));
+  const paceAvg = Math.round(330 + ascent/km*1.4 + (rnd()-0.5)*30);
+  const durS = Math.round(km*paceAvg);
+  const n = 150;
+  const series = makeSeries(km, ascent, durS, n);
+  const laps=[];
+  for(let i=1;i<=Math.floor(km);i++) laps.push({
+    index:i, distanceKm:1, durationS:Math.round(paceAvg+(rnd()-0.5)*60),
+    avgPaceSecPerKm:Math.round(paceAvg+(rnd()-0.5)*60),
+    avgHr:Math.round(142+(rnd()-0.5)*16),
+    ascent:Math.round(ascent/km), descent:Math.round(ascent/km)
+  });
+  const id = date + '_' + K.sport.replace(/\s+/g,'-') + '_' + Math.round(km*1000);
+  return {
+    id: id, date: date, dateApprox:false, sport:K.sport,
+    distanceKm:km, durationS:durS, ascent:ascent, descent:Math.round(ascent*0.98),
+    avgHr:Math.round(140+(rnd()-0.5)*14), maxHr:Math.round(172+(rnd()-0.5)*10),
+    cadenceSpm:Math.round(162+(rnd()-0.5)*8), avgPaceSecPerKm:paceAvg,
+    avgPower:null, maxPower:null, avgTemp:Math.round(18+rnd()*10),
+    calories:Math.round(km*72), series:series, laps:laps, events:[],
+    devices:[{manufacturer:1,product:4341,productName:'Forerunner 965',serialNumber:null,softwareVersion:null,batteryStatus:null}],
+    raw:{ messageInventory:{record:n,lap:laps.length,session:1}, developerFields:[] },
+    fileName:'ACTIVITE_'+date.replace(/-/g,'')+'.fit',
+    importedAt:new Date(date+'T20:00:00Z').toISOString(),
+    gearId: gearId || null,
+    contexte: rnd()>0.75 ? 'Jambes lourdes, nuit courte.' : ''
+  };
+}
+
+const GEAR = [
+  { id:'g-speedgoat', nom:'Hoka Speedgoat 5', category:'chaussures', marque:'Hoka', modele:'Speedgoat 5',
+    kmInitial:120, seuilKm:700, actif:true, typeUsage:'Trail technique', notes:'' },
+  { id:'g-rider', nom:'Mizuno Wave Rider 27', category:'chaussures', marque:'Mizuno', modele:'Wave Rider 27',
+    kmInitial:410, seuilKm:600, actif:true, typeUsage:'Route et seuil', notes:'' },
+  { id:'g-montre', nom:'Garmin Forerunner 965', category:'montre', marque:'Garmin', modele:'Forerunner 965',
+    actif:true, manualStatus:'bon', typeUsage:'Quotidien', notes:'' },
+  { id:'g-vieilles', nom:'Salomon Sense Ride 4', category:'chaussures', marque:'Salomon', modele:'Sense Ride 4',
+    kmInitial:640, seuilKm:700, actif:false, typeUsage:'Archivee', notes:'' }
+];
+
+const PROFILE = {
+  nom:'Nicolas', naissance:'1985-04-12', apropos:'Traileur solo, prepare le Mafate Trail Tour.',
+  createdAt:'2026-05-02T09:00:00Z', hrZoneMode:'karvonen', customHrZones:null,
+  poids:72, fcMax:188, fcRepos:48, vma:16.5, allureSeuil:'4:35',
+  sante:'Tendinite achilleenne gauche en 2025, resolue. Vigilance sur les descentes longues.',
+  histVolumeKm:45, histVolumeDplus:1600, histVolumeJours:4,
+  geoBase:'Saint-Denis, La Reunion',
+  records:[{ distance:'10 km', temps:'0:44:30', date:'2026-06-14' },
+           { distance:'Semi', temps:'1:39:12', date:'2026-04-05' }],
+  objectifsAutres:'', dispoDureeMax:240
+};
+
+// Profil GPX simplifie de l'objectif principal, meme forme que la sortie de parseGpxText.
+function makeGpx(){
+  const pts=[]; const n=300, km=53.2, dplus=3500;
+  for(let i=0;i<n;i++){
+    const f=i/(n-1);
+    const alt = 380 + dplus*0.55*(0.5-0.5*Math.cos(f*Math.PI*6)) + 700*Math.sin(f*Math.PI);
+    pts.push({ distKm:+(f*km).toFixed(3), alt:Math.round(alt), lat:-21.06+f*0.06, lon:55.4+Math.sin(f*8)*0.05 });
+  }
+  return pts;
+}
+
+// Garde-fou : cette page EFFACE toutes les donnees locales avant d'ecrire son jeu de test.
+// Le depot est publie sur GitHub Pages, donc ce fichier y est accessible par URL. Il refuse
+// de s'executer ailleurs qu'en local, ou seul un jeu de test peut se trouver.
+function estLocal(){
+  return ['localhost','127.0.0.1','::1',''].indexOf(location.hostname) >= 0;
+}
+
+function seed(state){
+  if (!estLocal()){
+    document.getElementById('out').textContent =
+      'Refus : outil de developpement, utilisable uniquement en local (hote actuel : '
+      + location.hostname + '). Aucune donnee n a ete touchee.';
+    return;
+  }
+  Object.keys(localStorage).filter(function(k){return k.indexOf('trail:')===0;})
+    .forEach(function(k){ localStorage.removeItem(k); });
+  const log=[];
+  const out=document.getElementById('out');
+
+  if (state==='vide'){
+    localStorage.setItem('trail:onboardingDone','1');
+    localStorage.setItem('trail:races', JSON.stringify([]));
+    out.textContent='Etat VIDE : aucune seance, aucun plan, aucune course, aucun equipement.';
+    return;
+  }
+
+  localStorage.setItem('trail:onboardingDone','1');
+  localStorage.setItem('trail:profile', JSON.stringify(PROFILE));
+
+  const races = [
+    { id:'mafate-trail-tour', name:'Mafate Trail Tour', date:'2026-11-28', distanceKm:55, denivele:3500,
+      statut:'principal', technicite:'tres technique', chaleur:'chaude', createdAt:'2026-05-02T09:00:00Z',
+      gpxProfile: makeGpx(),
+      gpxSummary:{ distanceKm:53.2, ascent:3500, descent:3495, pointCount:300, sourcePointCount:1762,
+                   importedAt:'2026-06-01T10:00:00Z' } },
+    { id:'trail-des-cascades', name:'Trail des Cascades', date:'2026-09-12', distanceKm:31, denivele:1700,
+      statut:'secondaire', createdAt:'2026-05-02T09:00:00Z' },
+    { id:'course-archivee', name:'Trail de Bourbon 2025', date:'2025-10-18', distanceKm:24, denivele:1200,
+      statut:'secondaire', archived:true }
+  ];
+  localStorage.setItem('trail:races', JSON.stringify(races));
+
+  if (state!=='partiel') localStorage.setItem('trail:gear', JSON.stringify(GEAR));
+
+  const weeks = state==='volume' ? 70 : (state==='partiel' ? 2 : 15);
+  const perWeek = state==='partiel' ? 1 : 4;
+  const ids=[];
+  const monday = addDays(TODAY, -((TODAY.getDay()+6)%7));
+  for (let w=weeks-1; w>=0; w--){
+    const wkStart = addDays(monday, -7*w);
+    const kinds = ['facile','seuil','moyenne','longue'].slice(0, perWeek);
+    const days = [1,3,5,6].slice(0, perWeek);
+    for (let i=0;i<kinds.length;i++){
+      const d = addDays(wkStart, days[i]);
+      if (d > TODAY) continue;
+      const gearId = kinds[i]==='seuil' ? 'g-rider' : 'g-speedgoat';
+      const s = makeSession(iso(d), kinds[i], state==='partiel'?null:gearId);
+      if (ids.indexOf(s.id)>=0) continue;
+      try { localStorage.setItem('trail:seance:'+s.id, JSON.stringify(s)); ids.push(s.id); }
+      catch(e){ if(!log.length) log.push('QUOTA localStorage atteint a '+ids.length+' seances'); }
+    }
+  }
+  localStorage.setItem('trail:index', JSON.stringify(ids));
+
+  if (state==='partiel'){
+    out.textContent='Etat PARTIEL : '+ids.length+' seances sur 2 semaines, aucun plan, aucun equipement.';
+    return;
+  }
+
+  localStorage.setItem('trail:planYear','2026');
+  localStorage.setItem('trail:planNotes','Semaine allegee prevue apres le Trail des Cascades.');
+  fetch('plan-trail-nico.csv').then(function(r){return r.text();}).then(function(txt){
+    const plan = parsePlanCsv(txt);
+    localStorage.setItem('trail:plan', JSON.stringify(plan));
+    let bytes=0;
+    Object.keys(localStorage).filter(function(k){return k.indexOf('trail:')===0;})
+      .forEach(function(k){ bytes += k.length + localStorage.getItem(k).length; });
+    out.textContent='Etat '+state.toUpperCase()+' : '+ids.length+' seances, plan de '+plan.length
+      +' seances, '+races.length+' courses, 4 equipements.\n'
+      +'Poids localStorage : '+(bytes/1024/1024).toFixed(2)+' Mo\n'+log.join('\n');
+  });
+}
+</script></body></html>

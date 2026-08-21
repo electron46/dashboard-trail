@@ -247,7 +247,7 @@ function renderPlanInsightCompact() {
   const bullets = getPlanInsights(plan, sessions);
   if (!bullets.length) { box.innerHTML = ''; return; }
   box.innerHTML = '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">' +
-    '<p class="insight-compact-eyebrow"><img src="'+ICON_P('zap')+'" alt="">Insight ELEV</p>' +
+    '<h3 class="insight-compact-eyebrow"><img src="'+ICON_P('zap')+'" alt="">Insight ELEV</h3>' +
     bullets.map(b => '<div class="insight-compact-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
   '</div>';
 }

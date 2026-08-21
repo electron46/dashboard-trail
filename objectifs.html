@@ -441,8 +441,8 @@ function renderGoalInsight() {
   const bullets = generateGoalInsight(readiness, race);
   if (!bullets.length) { row.innerHTML = ''; return; }
   row.innerHTML = '<div class="insight-card">' +
-    '<p class="insight-eyebrow"><img src="'+ICON_G('zap')+'" alt="">Insight ELEV</p>' +
-    bullets.map(b => '<div class="insight-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+    '<h2 class="insight-eyebrow"><img src="'+ICON_G('zap')+'" alt="">Insight ELEV</h2>' +
+    bullets.map(b => '<div class="insight-item"><h3>'+escapeHtml(b.title)+'</h3><p>'+escapeHtml(b.text)+'</p></div>').join('') +
   '</div>';
 }
 const ICON_G = n => lucideIconUrl(n);
@@ -602,7 +602,7 @@ function renderApercu() {
   // Détail activité) : le nombre de colonnes suit le nombre réel de recommandations, jamais de
   // colonnes vides pour "remplir" la ligne (2 recommandations → 2 colonnes, pas 4).
   else recBox.innerHTML = '<div class="goal-rec-grid">' + recs.map(r =>
-    '<div class="coach-card"><h4>' + escapeHtml(r.title) + '</h4><p>' + escapeHtml(r.text) + '</p><ul><li>' + escapeHtml(r.detail) + '</li></ul></div>'
+    '<div class="coach-card"><h3>' + escapeHtml(r.title) + '</h3><p>' + escapeHtml(r.text) + '</p><ul><li>' + escapeHtml(r.detail) + '</li></ul></div>'
   ).join('') + '</div>';
 }
 // ZONE_DONUT_COLORS est déjà défini dans assets/app.js (partagé avec activite.html), réutilisé tel quel.

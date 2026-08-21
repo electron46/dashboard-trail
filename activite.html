@@ -384,7 +384,7 @@ function renderResumeTab(s) {
   if (s.avgPower != null) mouvement.push(['Puissance moy.', s.avgPower + ' W']);
   if (s.avgTemp != null) mouvement.push(['Température moy.', s.avgTemp + ' °C']);
 
-  const group = (title, items) => '<h4 class="resume-group-title">' + title + '</h4><div class="metrics-grid">' +
+  const group = (title, items) => '<h3 class="resume-group-title">' + title + '</h3><div class="metrics-grid">' +
     items.map(([lbl, val]) => '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>').join('') + '</div>';
 
   let html = group('Effort', effort) + group('Relief', relief) + group('Mouvement', mouvement);
@@ -396,7 +396,7 @@ function renderResumeTab(s) {
       ['walk', 'Marche', runWalk.walk],
       ['stop', 'Arrêt', runWalk.stop],
     ].filter(([, , v]) => v.pct > 0);
-    html += '<h4 class="resume-group-title">Répartition locomotion <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0;">(estimation ELEV à partir de la cadence)</span></h4>' +
+    html += '<h3 class="resume-group-title">Répartition locomotion <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0;">(estimation ELEV à partir de la cadence)</span></h3>' +
       '<div class="locomotion-bar">' + segs.map(([key, , v]) => '<span class="loco-seg loco-' + key + '" style="width:' + v.pct + '%"></span>').join('') + '</div>' +
       '<div class="locomotion-legend">' + segs.map(([key, label, v]) =>
         '<div class="loco-item"><span class="loco-dot loco-' + key + '"></span><strong>' + label + '</strong><span>' + v.pct + '%</span><span class="hint">' + fmtDuration(v.sec) + '</span></div>'
@@ -416,7 +416,7 @@ function renderComparison(s, allSessions) {
     ['D+', fmtPctDelta(cmp.ascentDeltaPct)],
     ['Allure', cmp.paceDeltaPct != null ? (cmp.paceDeltaPct > 0 ? '+' : '') + cmp.paceDeltaPct + '% (' + (cmp.paceDeltaPct < 0 ? 'plus rapide' : 'plus lent') + ')' : 'Non disponible'],
   ];
-  box.innerHTML = '<h4 class="resume-group-title">Comparaison aux ' + cmp.n + ' dernières sorties du même type</h4><div class="metrics-grid">' +
+  box.innerHTML = '<h3 class="resume-group-title">Comparaison aux ' + cmp.n + ' dernières sorties du même type</h3><div class="metrics-grid">' +
     rows.map(([lbl, val]) => '<div class="metric"><div class="lbl">' + lbl + '</div><div class="val' + (val === 'Non disponible' ? ' na' : '') + '">' + val + '</div></div>').join('') + '</div>';
 }
 
@@ -589,11 +589,11 @@ function renderInsight(s, zoneDist, climbs) {
   const box = document.getElementById('sessionInsightBox');
   const bullets = generateSessionInsight(s, zoneDist, climbs);
   if (!bullets.length) {
-    box.innerHTML = '<p class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</p><p>Pas assez de données sur cette activité pour dégager une observation fiable.</p>';
+    box.innerHTML = '<h2 class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</h2><p>Pas assez de données sur cette activité pour dégager une observation fiable.</p>';
     return;
   }
-  box.innerHTML = '<p class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</p>' +
-    bullets.map(b => '<div class="insight-item"><h4>' + escapeHtml(b.title) + '</h4><p>' + escapeHtml(b.text) + '</p></div>').join('');
+  box.innerHTML = '<h2 class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</h2>' +
+    bullets.map(b => '<div class="insight-item"><h3>' + escapeHtml(b.title) + '</h3><p>' + escapeHtml(b.text) + '</p></div>').join('');
 }
 
 /* --------------------------- ONGLETS --------------------------- */
@@ -622,7 +622,13 @@ function renderPlanVsActual(s, planned) {
   if (planned.descenteM != null && s.descent != null) rows.push(['D-', planned.descenteM + ' m', fmtNum(s.descent, ' m', 0), pctDelta(s.descent, planned.descenteM)]);
 
   let html = rows.length ? '<div class="plan-actual-grid">' + rows.map(([label, before, after, pct]) =>
-    '<div class="plan-actual-card"><div class="pa-label">' + label + '</div><div class="pa-values"><span>' + before + '</span><span class="pa-arrow">→</span><span class="pa-after">' + after + '</span></div>' +
+    // La flèche est décorative (teinte --muted-2, réservée au décor) : elle est masquée aux
+    // lecteurs d'écran, à qui elle ne disait de toute façon pas laquelle des deux valeurs est
+    // la prévue. Les deux mentions ci-dessous le disent, elles, et ne s'affichent pas à l'écran.
+    '<div class="plan-actual-card"><div class="pa-label">' + label + '</div><div class="pa-values">' +
+    '<span><span class="visually-hidden">Prévu : </span>' + before + '</span>' +
+    '<span class="pa-arrow" aria-hidden="true">→</span>' +
+    '<span class="pa-after"><span class="visually-hidden">Réalisé : </span>' + after + '</span></div>' +
     (pct != null ? '<div class="pa-delta ' + (pct >= 0 ? 'pos' : 'neg') + '">' + (pct > 0 ? '+' : '') + pct + '%</div>' : '') + '</div>'
   ).join('') + '</div>' : '<div class="empty">Pas assez de valeurs chiffrées dans le plan pour cette séance pour comparer.</div>';
 
@@ -680,7 +686,7 @@ function renderCoachCards(text) {
   ];
   const cardsHtml = '<div class="coach-cards-grid">' + cards.map(([title, txt]) => {
     const { lead, bullets } = splitLeadAndBullets(txt);
-    return '<div class="coach-card"><h4>' + title + '</h4>' +
+    return '<div class="coach-card"><h3>' + title + '</h3>' +
       (lead ? '<p>' + escapeHtml(lead) + '</p>' : '') +
       (bullets.length ? '<ul>' + bullets.map(b => '<li>' + escapeHtml(b) + '</li>').join('') + '</ul>' : '') +
       (!lead && !bullets.length ? '<p>Non communiqué.</p>' : '') +
