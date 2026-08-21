@@ -39,49 +39,74 @@
 
 <main>
 
-  <div class="tabs" id="paramTabs">
-    <button type="button" data-tab="general" class="active">Général</button>
-    <button type="button" data-tab="plan">Plan d'entraînement</button>
+  <!-- ================================================================================
+       Navigation interne unique (Sprint 7, plan d'action §10). La page mélangeait DEUX
+       paradigmes : une barre de 2 onglets (Général / Plan) et, à l'intérieur du premier,
+       6 accordéons. Le plan d'entraînement était donc un onglet alors que tout le reste
+       était un accordéon, sans raison lisible — et les 6 sections s'empilaient sur une
+       seule page qu'il fallait parcourir en entier.
+       Sept sections de même nature désormais, en navigation secondaire à gauche sur
+       desktop. L'ancre #plan est conservée : la page Plan pointe dessus.
+       ================================================================================ -->
+  <div class="settings-layout">
+    <nav class="settings-nav" id="paramTabs" aria-label="Sections des paramètres">
+      <button type="button" data-tab="general" class="active">Compte &amp; profil</button>
+      <button type="button" data-tab="prefs">Préférences</button>
+      <button type="button" data-tab="connect">Connectivité</button>
+      <button type="button" data-tab="donnees">Données</button>
+      <button type="button" data-tab="sauvegarde">Sauvegarde</button>
+      <button type="button" data-tab="plan">Plan d'entraînement</button>
+      <button type="button" data-tab="apropos">À propos</button>
+    </nav>
+
+    <div class="settings-panels">
+
+  <div class="tab-panel active" data-panel="general">
+    <section class="card">
+      <h2>Compte &amp; profil <small>Email, mot de passe, langue, fuseau horaire</small></h2>
+      <div id="cardCompte"></div>
+    </section>
   </div>
 
-  <!-- ============ GÉNÉRAL : 6 cartes ============ -->
-  <div class="tab-panel active" data-panel="general">
+  <div class="tab-panel" data-panel="prefs">
+    <section class="card">
+      <h2>Préférences d'application <small>Thème, unités, semaine</small></h2>
+      <div id="cardPrefs"></div>
+    </section>
+  </div>
 
-    <div class="profile-card-grid">
-      <details class="profile-accordion" open>
-        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/user.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Compte &amp; profil<span class="acc-sub">Email, mot de passe, langue, fuseau horaire</span></span></summary>
-        <div class="accordion-body" id="cardCompte"></div>
-      </details>
+  <div class="tab-panel" data-panel="apropos">
+    <section class="card">
+      <h2>À propos d'ELEV <small>Version, outils de développement</small></h2>
+      <div id="cardAbout"></div>
+    </section>
+  </div>
 
-      <details class="profile-accordion" open>
-        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/sliders-horizontal.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Préférences d'application<span class="acc-sub">Thème, unités, semaine</span></span></summary>
-        <div class="accordion-body" id="cardPrefs"></div>
-      </details>
+  <div class="tab-panel" data-panel="sauvegarde">
+    <section class="card">
+      <h2>Sauvegarde &amp; intégrité <small>Synchro cloud, cache, vérification</small></h2>
+      <div id="cardBackup"></div>
+    </section>
+  </div>
 
-      <details class="profile-accordion" open>
-        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/link.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Connectivité &amp; appareils<span class="acc-sub">Synchro, import, appareils, API</span></span></summary>
-        <div class="accordion-body" id="cardConnect"></div>
-      </details>
-
-      <details class="profile-accordion" open>
-        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/lock.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Données &amp; confidentialité<span class="acc-sub">Exporter, confidentialité, compte</span></span></summary>
-        <div class="accordion-body" id="cardData"></div>
-      </details>
-
-      <details class="profile-accordion" open>
-        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/shield-check.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">Sauvegarde &amp; intégrité<span class="acc-sub">Synchro cloud, cache, vérification</span></span></summary>
-        <div class="accordion-body" id="cardBackup"></div>
-      </details>
-
-      <details class="profile-accordion" open>
-        <summary><span><img src="https://unpkg.com/lucide-static@latest/icons/info.svg" alt="" style="width:16px;vertical-align:-3px;margin-right:6px;">À propos d'ELEV<span class="acc-sub">Version, outils de développement</span></span></summary>
-        <div class="accordion-body" id="cardAbout"></div>
-      </details>
-    </div>
+  <div class="tab-panel" data-panel="donnees">
+    <section class="card">
+      <h2>Données &amp; confidentialité <small>Exporter, confidentialité, compte</small></h2>
+      <div id="cardData"></div>
+    </section>
 
     <div class="settings-banner">
-      <span><strong>Vos données restent votre propriété.</strong> ELEV utilise vos données uniquement pour fournir les fonctionnalités du service.</span>
+      <span><strong>Tes données restent ta propriété.</strong> ELEV les utilise uniquement pour fournir les fonctionnalités du service.</span>
     </div>
+  </div>
+
+  <!-- La configuration Supabase rejoint « Connectivité », dont elle relève : elle etait
+       auparavant posée sous « Données », a la suite de l'export et de la confidentialité. -->
+  <div class="tab-panel" data-panel="connect">
+    <section class="card">
+      <h2>Connectivité &amp; appareils <small>Synchro, import, appareils, API</small></h2>
+      <div id="cardConnect"></div>
+    </section>
 
     <!-- Configuration détaillée de la synchro Supabase (formulaire multi-champs, pas adapté à une simple ligne) -->
     <section class="card" style="margin-top:14px;" id="supaConfigSection">
@@ -161,6 +186,9 @@
     </section>
   </div>
 
+    </div><!-- /.settings-panels -->
+  </div><!-- /.settings-layout -->
+
 </main>
 
 <footer class="app">Dashboard local — aucune donnée envoyée ailleurs que l'API Anthropic (si clé renseignée ci-dessus).</footer>
@@ -200,10 +228,14 @@ document.querySelectorAll('#paramTabs button').forEach(btn => btn.addEventListen
   activateTab(btn.dataset.tab);
   history.replaceState(null, '', '#' + btn.dataset.tab);
 }));
-(function initTab() {
+function activateFromHash() {
   const fromHash = location.hash.replace('#', '');
   if (fromHash && document.querySelector('[data-panel="' + fromHash + '"]')) activateTab(fromHash);
-})();
+}
+activateFromHash();
+// Un lien vers #plan depuis une page DEJA sur Paramètres ne rechargeait pas le document : le hash
+// changeait sans que la section bascule. Cas de bord préexistant, corrigé ici.
+window.addEventListener('hashchange', activateFromHash);
 
 /* --------------------------- COMPTE & PROFIL --------------------------- */
 async function renderCardCompte() {
@@ -574,23 +606,9 @@ document.getElementById('supaPullBtn').addEventListener('click', async () => {
   else showMsg('supaSyncMsg', 'Erreur : ' + res.reason, 'err');
 });
 
-/* --------------------------- ACCORDÉONS : repliés par défaut sur mobile --------------------------- */
-// Desktop : les 6 sections restent ouvertes en même temps (vue d'ensemble). Mobile : repliées par
-// défaut (moins de défilement à l'arrivée) et une seule ouverte à la fois (évite d'empiler 6 sections
-// dépliées d'affilée). Seuil aligné sur celui déjà utilisé par .profile-card-grid (passage à 1 colonne).
-function initSettingsAccordions() {
-  const accordions = Array.from(document.querySelectorAll('.profile-card-grid > .profile-accordion'));
-  const isMobile = window.matchMedia('(max-width:760px)').matches;
-  accordions.forEach(acc => { acc.open = !isMobile; });
-  if (isMobile) {
-    accordions.forEach(acc => {
-      acc.addEventListener('toggle', () => {
-        if (acc.open) accordions.forEach(other => { if (other !== acc) other.open = false; });
-      });
-    });
-  }
-}
-initSettingsAccordions();
+/* initSettingsAccordions() a été SUPPRIMÉE avec les accordéons qu'elle pilotait : les 6 sections
+   sont désormais des panneaux de la navigation interne, dont un seul est visible à la fois. Sa
+   raison d'être — éviter d'empiler 6 sections dépliées sur mobile — n'existe plus. */
 
 /* --------------------------- INIT --------------------------- */
 renderCardPrefs();
