@@ -186,26 +186,9 @@ function renderHistory() {
   const list = document.getElementById('historyList');
   document.getElementById('historyEmpty').style.display = filtered.length ? 'none' : 'block';
   document.getElementById('historyEnd').style.display = filtered.length ? 'block' : 'none';
-  list.innerHTML = filtered.map(s => {
-    const visual = sessionPreviewSvg(s);
-    const [, mo, da] = s.date.split('-');
-    const dateStack = '<span class="cell-day">' + parseInt(da,10) + '</span><span class="cell-month">' + FR_MONTHS_SHORT[parseInt(mo,10)-1].replace('.','').toUpperCase() + '</span><span class="cell-year">' + s.date.slice(0,4) + '</span>';
-    return '<a class="activity-row" href="activite.html?id=' + encodeURIComponent(s.id) + '">' +
-      '<span class="cell cell-date">' + dateStack + (s.dateApprox ? ' *' : '') + '</span>' +
-      '<span class="cell cell-activity"><span class="row-title">' + escapeHtml(s.sport || 'Séance') + '</span>' + (s.fileName ? '<span class="row-sub">' + escapeHtml(fmtDayMonth(s.date)) + '</span>' : '') + '</span>' +
-      // data-l : libellé de la mesure. Il n'est affiché que hors disposition en tableau (sous
-      // 1100px), où la ligne d'en-tête disparaît et où cinq nombres nus se suivaient sans qu'on
-      // sache lequel est le D+ et lequel l'allure. Reprend le couple « valeur + micro-libellé en
-      // capitales » utilisé partout sur l'Accueil. En tableau, l'en-tête reste la seule source.
-      '<span class="cell cell-stat" data-l="Distance">' + fmtNum(s.distanceKm, ' km', 1) + '</span>' +
-      '<span class="cell cell-stat" data-l="D+">' + fmtNum(s.ascent, ' m', 0) + '</span>' +
-      '<span class="cell cell-stat" data-l="Durée">' + fmtDuration(s.durationS) + '</span>' +
-      '<span class="cell cell-stat" data-l="Allure">' + (s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') + '</span>' +
-      '<span class="cell cell-stat" data-l="FC moy.">' + (s.avgHr != null ? s.avgHr + ' bpm' : '—') + '</span>' +
-      '<span class="cell cell-visual">' + (visual || '') + '</span>' +
-      '<span class="cell cell-arrow link-arrow">Voir l\'analyse →</span>' +
-    '</a>';
-  }).join('');
+  // Constructeur partage (assets/app.js) : cette page et Analyse en avaient chacune une copie,
+  // qui avaient deja diverge sur les libelles de mesure.
+  list.innerHTML = filtered.map(s => activityRowHtml(s, { showSub: true })).join('');
 }
 
 // Graphiques de progression (allure/FC dans le temps, volume hebdo réalisé vs planifié) retirés

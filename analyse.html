@@ -62,47 +62,97 @@
        donnees, alors qu'il s'agissait d'une panne. -->
   <div id="syncState"></div>
 
+  <!-- ============================================================================
+       Ordre de lecture (Sprint 2, plan d'action §4) : resume -> SENS -> detail.
+       L'Insight etait auparavant en 6e position, apres les 7 graphiques : le seul
+       bloc qui INTERPRETE les donnees arrivait une fois que l'utilisateur avait
+       deja du les dechiffrer seul. Il precede desormais les courbes.
+       ============================================================================ -->
+
+  <!-- 1. RESUME de la periode -->
   <section class="kpi-grid" aria-label="Indicateurs principaux" id="kpiGrid"></section>
 
-  <div class="card-row-3 card-row-3--charts">
+  <!-- 2. SENS : ce que ces chiffres disent, avant tout graphique -->
+  <div id="insightRow"></div>
+
+  <!-- 3. PROGRESSION — hierarchie L1/L2 : le volume est LE graphique principal de la page
+          (pleine largeur, plus haut) ; denivele et VAM le completent sur une rangee moitie
+          moins large. Les trois avaient auparavant exactement le meme poids visuel. -->
+  <div class="section-head">
+    <div>
+      <h2>Progression</h2>
+      <p class="section-sub">Évolution semaine par semaine sur la période sélectionnée.</p>
+    </div>
+    <span class="section-meta" id="progressionMeta"></span>
+  </div>
+
+  <section class="card chart-l1">
+    <h2>Volume hebdomadaire <small>(distance et durée)</small></h2>
+    <div id="volumeChartBox"></div>
+  </section>
+
+  <div class="card-row-2">
     <section class="card">
-      <h2>Évolution du volume</h2>
-      <div id="volumeChartBox"></div>
-    </section>
-    <section class="card">
-      <h2>Évolution du dénivelé</h2>
+      <h2>Dénivelé hebdomadaire <small>(D+ et D−, en mètres)</small></h2>
       <div id="dplusChartBox"></div>
     </section>
     <section class="card">
-      <h2>VAM moyenne par semaine</h2>
+      <h2>VAM moyenne <small>(mètres/heure, par semaine)</small></h2>
       <div id="vamChartBox"></div>
       <p class="provenance-tag">Calcul ELEV — moyenne pondérée des montées détectées, jamais sur la sortie entière.</p>
     </section>
   </div>
 
-  <div class="analysis-secondary-row">
+  <!-- 4. SPECIFICITE TRAIL — ce qui distingue ELEV d'un suivi de course a pied generique. -->
+  <div class="section-head">
+    <div>
+      <h2>Spécificité trail</h2>
+      <p class="section-sub">Comment le relief se traduit dans ta façon de te déplacer.</p>
+    </div>
+  </div>
+
+  <div class="card-row-3">
     <section class="card card-compact">
-      <h2>Répartition locomotion</h2>
+      <h2>Répartition locomotion <small>(% du temps)</small></h2>
       <div id="locomotionBox"></div>
-    </section>
-    <section class="card card-compact">
-      <h2>Temps passé par zone FC</h2>
-      <div id="zonesBox"></div>
     </section>
     <section class="card card-compact">
       <h2>Répartition par pente <small>(% du temps en mouvement)</small></h2>
       <div id="gradeBucketsBox"></div>
     </section>
     <section class="card card-compact">
-      <h2>Run / walk par pente</h2>
+      <h2>Course / marche par pente</h2>
       <div id="runWalkGradeBox"></div>
     </section>
   </div>
 
-  <div id="insightRow"></div>
+  <!-- 5. INTENSITE — separee de la specificite trail : elle repond a « a quelle intensite »,
+          pas a « sur quel terrain ». Seule de sa rangee, donc plus lisible qu'entassee a 4. -->
+  <div class="section-head">
+    <div>
+      <h2>Intensité</h2>
+      <p class="section-sub">Temps passé dans chaque zone de fréquence cardiaque.</p>
+    </div>
+  </div>
+
+  <section class="card card-compact">
+    <h2>Temps par zone FC <small>(zones issues de ton profil)</small></h2>
+    <div id="zonesBox"></div>
+  </section>
+
+  <!-- 6. DETAIL — les séances elles-mêmes, en fin de parcours de lecture. -->
+  <div class="section-head">
+    <div>
+      <h2>Détail</h2>
+      <p class="section-sub">Les dernières sorties de la période et ses repères chiffrés.</p>
+    </div>
+  </div>
 
   <div class="analysis-bottom-row">
-    <section class="card">
+    <!-- .activities-list-card : declare cette carte comme conteneur de reference, pour que la
+         liste choisisse sa disposition d'apres SA largeur reelle (ici ~520px, donc en cartes)
+         et non d'apres celle de la fenetre. -->
+    <section class="card activities-list-card">
       <h2>Dernières activités</h2>
       <div class="activities-table-head">
         <span>Date</span><span>Activité</span><span>Distance</span><span>D+</span>
@@ -221,7 +271,9 @@ function renderVolumeChart(weeks) {
     box.innerHTML = trendFallbackHtml(msg, stats);
     return;
   }
-  box.innerHTML = volumeChartSvg(weeks, { hideTitle: true });
+  // Graphique de niveau 1 de la page : plus haut que les graphiques de comparaison qui suivent
+  // (voir .chart-l1). La hiérarchie vient de la surface occupée, pas d'un habillage en plus.
+  box.innerHTML = volumeChartSvg(weeks, { hideTitle: true, height: 320 });
   initChartTooltips(box);
 }
 function renderDplusChart(weeks) {
@@ -336,22 +388,7 @@ function renderRecentActivities(sessions) {
   const box = document.getElementById('recentActivitiesBox');
   const list = [...sessions].sort((a,b) => b.date.localeCompare(a.date)).slice(0,5);
   if (!list.length) { box.innerHTML = '<div class="empty">Aucune activité sur cette période.</div>'; return; }
-  box.innerHTML = list.map(s => {
-    const visual = sessionPreviewSvg(s);
-    const [, mo, da] = s.date.split('-');
-    const dateStack = '<span class="cell-day">' + parseInt(da,10) + '</span><span class="cell-month">' + FR_MONTHS_SHORT[parseInt(mo,10)-1].replace('.','').toUpperCase() + '</span><span class="cell-year">' + s.date.slice(0,4) + '</span>';
-    return '<a class="activity-row" href="activite.html?id=' + encodeURIComponent(s.id) + '">' +
-      '<span class="cell cell-date">' + dateStack + '</span>' +
-      '<span class="cell cell-activity"><span class="row-title">' + escapeHtml(s.sport || 'Séance') + '</span></span>' +
-      '<span class="cell cell-stat">' + fmtNum(s.distanceKm, ' km', 1) + '</span>' +
-      '<span class="cell cell-stat">' + fmtNum(s.ascent, ' m', 0) + '</span>' +
-      '<span class="cell cell-stat">' + fmtDuration(s.durationS) + '</span>' +
-      '<span class="cell cell-stat">' + (s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') + '</span>' +
-      '<span class="cell cell-stat">' + (s.avgHr != null ? s.avgHr + ' bpm' : '—') + '</span>' +
-      '<span class="cell cell-visual">' + (visual || '') + '</span>' +
-      '<span class="cell cell-arrow link-arrow">Voir →</span>' +
-    '</a>';
-  }).join('');
+  box.innerHTML = list.map(s => activityRowHtml(s, { arrowLabel: 'Voir' })).join('');
 }
 
 function renderBests(sessions) {
@@ -385,6 +422,14 @@ function renderAnalysis() {
   // avant la toute première séance) : une période "hors historique" reste absente, pas un 0 fabriqué.
   const flooredFrom = floorToKnownHistory(fromISO, sessions);
   const weeks = groupByWeek(current, flooredFrom, toISO);
+  // Repère de la section Progression : sur COMBIEN de semaines portent les courbes qui suivent.
+  // Le nombre de semaines réellement renseignées (et non la largeur nominale de la période) est
+  // ce qui conditionne la lisibilité d'une tendance — c'est déjà la règle appliquée aux états de
+  // repli, elle devient visible plutôt qu'implicite.
+  const weeksWithData = weeks.filter(w => w.count > 0).length;
+  document.getElementById('progressionMeta').textContent = weeksWithData
+    ? (weeksWithData + ' semaine' + (weeksWithData > 1 ? 's' : '') + ' renseignée' + (weeksWithData > 1 ? 's' : ''))
+    : '';
   renderVolumeChart(weeks);
   renderDplusChart(weeks);
   renderVamChart(weeks, curAgg ? curAgg.vamAvg : null);

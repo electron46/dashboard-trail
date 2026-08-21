@@ -1885,6 +1885,35 @@ function partialNoteHtml(text) {
   return '<p class="partial-note">' + escapeHtml(text) + '</p>';
 }
 
+/* Ligne d'activité — constructeur PARTAGÉ (Sprint 2). Les pages Activités et Analyse en avaient
+   chacune leur copie, et elles avaient déjà divergé : celle d'Analyse ne posait pas les attributs
+   `data-l`, donc les cinq mesures s'y affichaient sans libellé dès que la disposition passait en
+   cartes — cinq nombres nus dont on ne savait plus lequel était le D+ et lequel l'allure.
+   `opts.arrowLabel` et `opts.showSub` couvrent les seules différences réelles entre les deux
+   usages ; tout le reste est commun. */
+function activityRowHtml(s, opts) {
+  opts = opts || {};
+  const visual = sessionPreviewSvg(s);
+  const [, mo, da] = s.date.split('-');
+  const dateStack = '<span class="cell-day">' + parseInt(da, 10) + '</span>' +
+    '<span class="cell-month">' + FR_MONTHS_SHORT[parseInt(mo, 10) - 1].replace('.', '').toUpperCase() + '</span>' +
+    '<span class="cell-year">' + s.date.slice(0, 4) + '</span>';
+  const stat = (label, value) => '<span class="cell cell-stat" data-l="' + label + '">' + value + '</span>';
+  return '<a class="activity-row" href="activite.html?id=' + encodeURIComponent(s.id) + '">' +
+    '<span class="cell cell-date">' + dateStack + (s.dateApprox ? ' *' : '') + '</span>' +
+    '<span class="cell cell-activity"><span class="row-title">' + escapeHtml(s.sport || 'Séance') + '</span>' +
+      (opts.showSub && s.fileName ? '<span class="row-sub">' + escapeHtml(fmtDayMonth(s.date)) + '</span>' : '') +
+    '</span>' +
+    stat('Distance', fmtNum(s.distanceKm, ' km', 1)) +
+    stat('D+', fmtNum(s.ascent, ' m', 0)) +
+    stat('Durée', fmtDuration(s.durationS)) +
+    stat('Allure', s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') +
+    stat('FC moy.', s.avgHr != null ? s.avgHr + ' bpm' : '—') +
+    '<span class="cell cell-visual">' + (visual || '') + '</span>' +
+    '<span class="cell cell-arrow link-arrow">' + escapeHtml(opts.arrowLabel || 'Voir l\'analyse') + ' →</span>' +
+  '</a>';
+}
+
 function showMsg(elId, text, kind) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -2791,7 +2820,10 @@ function volumeChartSvg(weeks, opts) {
   opts = opts || {};
   const titleHtml = opts.hideTitle ? '' : '<h3>Évolution du volume</h3>';
   if (weeks.length < 2) return '<div class="chart-box">' + titleHtml + '<div class="empty">Pas encore assez de séances pour ce graphique (2 semaines minimum).</div></div>';
-  const w = chartViewboxWidth(opts), h = 260, padL = 40, padR = 10, padT = 18, padB = 30;
+  // `opts.height` (défaut 260, comportement inchangé partout où l'option n'est pas passée) :
+  // permet à une page de traiter ce graphique comme son graphique PRINCIPAL en lui donnant plus
+  // de hauteur, sans dupliquer la fonction. Utilisé par la hiérarchie L1/L2 de la page Analyse.
+  const w = chartViewboxWidth(opts), h = opts.height || 260, padL = 40, padR = 10, padT = 18, padB = 30;
   const maxKm = Math.max(1, ...weeks.map(x => x.km));
   const maxDurH = Math.max(1, ...weeks.map(x => x.durationS / 3600));
   const groupW = (w - padL - padR) / weeks.length;
