@@ -426,7 +426,11 @@ document.getElementById('savePlanBtn').addEventListener('click', () => {
   if (!text.trim()) { showMsg('planMsg', 'Collez ou importez un CSV avant d\'enregistrer.', 'err'); return; }
   try {
     const parsed = parsePlanCsv(text);
-    if (!parsed.length) { showMsg('planMsg', 'Aucune ligne exploitable trouvée dans ce CSV (colonnes attendues : Jour, Type de séance, Distance, D+...).', 'err'); return; }
+    // Message d'échec : il citait « Jour, Type de séance, Distance, D+ » alors que la seule
+    // condition réellement bloquante est la DATE — une ligne sans date exploitable est ignorée.
+    // Sur un fichier dont toutes ces colonnes étaient présentes, le message envoyait donc chercher
+    // le problème au mauvais endroit.
+    if (!parsed.length) { showMsg('planMsg', 'Aucune ligne exploitable dans ce CSV. Chaque ligne doit porter une date : soit une colonne « Date » au format JJ/MM/AAAA, soit une colonne « Jour » contenant JJ/MM.', 'err'); return; }
     savePlan(parsed);
     showMsg('planMsg', parsed.length + ' séances planifiées enregistrées (année utilisée : ' + getPlanYear() + ').', 'ok');
     renderPlanView();
