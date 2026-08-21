@@ -39,24 +39,34 @@
 
 <main>
 
-  <!-- ============ IDENTITÉ + À PROPOS ============ -->
-  <div class="profile-hero">
-    <section class="card" id="identityCard"></section>
+  <!-- ================================================================================
+       Trois groupes explicites (Sprint 6, plan d'action §8) : qui je suis / mes reperes
+       sportifs / mes reglages.
+       Les donnees sportives etaient jusqu'ici EPARPILLEES : frequence cardiaque et zones
+       RPE sur la 2e rangee avec les informations personnelles, seuils sport sur la 3e
+       avec les preferences et la connectivite. Aucune rangee ne portait d'intitule, donc
+       rien n'indiquait ce qui allait avec quoi.
+       ================================================================================ -->
+
+  <!-- 1. QUI JE SUIS — les trois cartes sur une meme rangee : seules, elles occupaient un tiers
+          de la largeur en laissant les deux autres vides. -->
+  <div class="profile-card-grid">
+    <section class="card profile-hero-card" id="identityCard"></section>
     <section class="card" id="aboutCard"></section>
+    <section class="card" id="persoCard"></section>
   </div>
 
-  <!-- ============ INFOS PERSO / FC / RPE ============ -->
-  <div class="profile-card-grid" style="margin-top:14px;">
-    <section class="card" id="persoCard"></section>
+  <!-- 2. MES REPERES SPORTIFS — regroupes, y compris le radar qui en fait partie. -->
+  <div class="section-head">
+    <div>
+      <h2>Profil trail</h2>
+      <p class="section-sub">Tes repères physiologiques et ce que ton historique en dit.</p>
+    </div>
+  </div>
+  <div class="profile-card-grid">
     <section class="card" id="fcCard"></section>
     <section class="card" id="rpeCard"></section>
-  </div>
-
-  <!-- ============ PRÉFÉRENCES / SEUILS / CONNECTIVITÉ ============ -->
-  <div class="profile-card-grid" style="margin-top:14px;">
-    <section class="card" id="prefsCard"></section>
     <section class="card" id="seuilsCard"></section>
-    <section class="card" id="connectCard"></section>
   </div>
 
   <!-- ============ PROFIL SPORTIF ELEV (radar) ============ -->
@@ -67,8 +77,26 @@
     <div id="radarNotes" class="hint"></div>
   </section>
 
+  <!-- 3. MES REGLAGES — separes des reperes sportifs : ce sont des choix d'application,
+          pas des donnees de coureur. -->
+  <div class="section-head">
+    <div>
+      <h2>Préférences</h2>
+      <p class="section-sub">Réglages de l'application et état de tes connexions.</p>
+    </div>
+  </div>
+  <div class="profile-card-grid">
+    <section class="card" id="prefsCard"></section>
+    <section class="card" id="connectCard"></section>
+  </div>
+
   <!-- ============ CONTEXTE D'ENTRAÎNEMENT (4 accordéons) ============ -->
-  <h2 style="margin:22px 0 10px;">Contexte d'entraînement</h2>
+  <div class="section-head">
+    <div>
+      <h2>Contexte d'entraînement</h2>
+      <p class="section-sub">Santé, historique, disponibilités et nutrition — repliés par défaut.</p>
+    </div>
+  </div>
   <div id="contextAccordions"></div>
 
 </main>

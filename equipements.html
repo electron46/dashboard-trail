@@ -60,8 +60,18 @@
           <button type="button" data-tab="accessoire">Accessoires</button>
           <button type="button" data-tab="autre">Autres</button>
         </div>
+        <!-- Filtre actif/archive : l'archivage existait (case a cocher a l'edition, bouton
+             « Archiver » au detail) mais les equipements archives restaient MELANGES aux actifs
+             dans la liste, sans moyen de les separer. Le plan d'action le demande explicitement. -->
+        <label class="field" style="flex:0 0 auto;min-width:150px;">
+          <select id="equipStatusFilter" aria-label="Filtrer par état de service">
+            <option value="actifs">En service</option>
+            <option value="archives">Archivés</option>
+            <option value="tous">Tous</option>
+          </select>
+        </label>
         <label class="field" style="flex:0 0 auto;min-width:170px;">
-          <select id="equipSort">
+          <select id="equipSort" aria-label="Trier les équipements">
             <option value="utilises">Trier par : Plus utilisés</option>
             <option value="recents">Plus récents</option>
             <option value="km">Kilométrage</option>
@@ -247,8 +257,12 @@ function equipRowHtml(item) {
   const cat = item.category || 'chaussures';
   const fillCls = u.status === 'remplacer' ? 'danger' : (u.status === 'surveiller' ? 'warn' : '');
   const kmHtml = u.isDistanceTracked
+    // Le nombre d'activités n'était affiché QUE pour les équipements hors chaussures. Le plan
+    // d'action demande « dernière utilisation ET nombre d'activités » sans distinction — c'est
+    // aussi ce qui permet de juger si un kilométrage est représentatif.
     ? '<div class="equip-km-val">' + Math.round(u.km) + ' / ' + (item.seuilKm||700) + ' km' + (u.pct!=null ? '<span class="equip-km-pct">'+u.pct+'%</span>' : '') + '</div>' +
-      '<div class="progress-track" style="margin-top:4px;max-width:140px;"><div class="progress-fill ' + fillCls + '" style="width:' + Math.min(100,u.pct||0) + '%"></div></div>'
+      '<div class="progress-track" style="margin-top:4px;max-width:140px;"><div class="progress-fill ' + fillCls + '" style="width:' + Math.min(100,u.pct||0) + '%"></div></div>' +
+      '<div class="equip-sub">' + u.sessionsCount + ' activité' + (u.sessionsCount>1?'s':'') + '</div>'
     : '<span class="hint">— · ' + u.sessionsCount + ' activité' + (u.sessionsCount>1?'s':'') + '</span>';
   const sub = [item.typeUsage, item.dateAchat ? ('Achetée le '+fmtDate(item.dateAchat)) : null].filter(Boolean).join(' · ');
   return '<button type="button" class="equip-row" data-id="' + item.id + '">' +
@@ -262,9 +276,15 @@ function equipRowHtml(item) {
   '</button>';
 }
 const STATUS_ORDER = { remplacer:0, surveiller:1, bon:2, archive:3 };
+// En service par défaut : un équipement archivé ne doit pas se mélanger aux actifs, pas plus dans
+// cette liste que dans les sélecteurs (règle déjà appliquée au choix de chaussure d'une séance).
+let currentStatusFilter = 'actifs';
 function renderList() {
   const box = document.getElementById('equipList');
-  let list = getGear().filter(g => currentTab === 'tous' || (g.category || 'chaussures') === currentTab);
+  let list = getGear()
+    .filter(g => currentTab === 'tous' || (g.category || 'chaussures') === currentTab)
+    .filter(g => currentStatusFilter === 'tous'
+      || (currentStatusFilter === 'archives' ? g.actif === false : g.actif !== false));
   const withUsage = list.map(g => ({ g, u: getEquipmentUsage(g) }));
   withUsage.sort((a,b) => {
     if (currentSort === 'utilises') return b.u.sessionsCount - a.u.sessionsCount;
@@ -274,8 +294,13 @@ function renderList() {
     return (a.g.nom||'').localeCompare(b.g.nom||'');
   });
   if (!withUsage.length) {
-    box.innerHTML = '<div class="empty">Aucun équipement dans cette catégorie.<br><button class="btn small" id="emptyAddGearBtn" type="button" style="margin-top:8px;">+ Ajouter un équipement</button></div>';
-    document.getElementById('emptyAddGearBtn').addEventListener('click', () => openGearModal(null));
+    // Un filtre « Archivés » sans résultat n'est pas la même situation qu'une catégorie vide :
+    // proposer « Ajouter un équipement » n'y aurait aucun sens.
+    box.innerHTML = currentStatusFilter === 'archives'
+      ? '<div class="empty">Aucun équipement archivé dans cette catégorie.</div>'
+      : '<div class="empty">Aucun équipement dans cette catégorie.<br><button class="btn small" id="emptyAddGearBtn" type="button" style="margin-top:8px;">+ Ajouter un équipement</button></div>';
+    const add = document.getElementById('emptyAddGearBtn');
+    if (add) add.addEventListener('click', () => openGearModal(null));
     return;
   }
   box.innerHTML = withUsage.map(x => equipRowHtml(x.g)).join('');
@@ -324,6 +349,7 @@ document.querySelectorAll('#equipTabs button').forEach(btn => btn.addEventListen
   renderList();
 }));
 document.getElementById('equipSort').addEventListener('change', e => { currentSort = e.target.value; renderList(); });
+document.getElementById('equipStatusFilter').addEventListener('change', e => { currentStatusFilter = e.target.value; renderList(); });
 
 /* --------------------------- MODALE AJOUT / ÉDITION --------------------------- */
 let editingGearId = null;
