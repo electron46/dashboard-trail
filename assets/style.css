@@ -12,11 +12,47 @@
      Intelligence" : fond quasi noir, surfaces qui se détachent par paliers plus marqués que
      par bordure (la profondeur vient du contraste de surface, pas du contour), vert de
      marque ELEV conservé comme accent unique et rare. */
-  --bg:#0B0F0E; --panel:#141B18; --panel-raised:#1C2420; --border:rgba(244,247,245,.07); --text:#F4F7F5; --muted:#8E9B95; --muted-2:#54615B;
-  --accent:#6B8E4E; --accent-hover:#7FA05E; --accent-light:#A8C47F; --accent-text:#FFFFFF; --accent-soft:rgba(107,142,78,.14); --secondary:#B8C0CC;
+  /* ---- Couche neutre (§3 à §6 du brief de finition : 80% neutre / 15% sauge / 5% vert signal).
+     Le canvas et les surfaces perdent leur voile vert au profit d'un charbon neutre, et les
+     surfaces s'éclaircissent pour se détacher réellement du fond (§6). Les noms historiques
+     (--bg/--panel/--panel-raised) restent la source de vérité utilisée par tout le CSS déjà
+     écrit : on corrige les VALEURS, on ne disperse pas de nouvelles couleurs composant par
+     composant. Les alias sémantiques du brief sont définis juste en dessous. */
+  --bg:#0C0F0E; --panel:#181D1B; --panel-raised:#202622; --border:#29312D; --text:#F0F3F0; --muted:#A9B1AC; --muted-2:#5F6863;
+  /* --accent-text passait de #FFFFFF (3.75:1 sur le vert de marque, ÉCHEC WCAG AA sur tous les
+     boutons principaux, badges et pastilles actives du site) au canvas : 5.14:1, conforme. */
+  --accent:#6B8E4E; --accent-hover:#7FA05E; --accent-light:#A8C47F; --accent-text:#0C0F0E; --accent-soft:rgba(107,142,78,.14); --secondary:#B8C0CC;
   --success:#7FB86B; --success-soft:rgba(127,184,107,.16); --danger:#E2836C; --danger-soft:rgba(226,131,108,.16);
   --warn:#D9B85B; --warn-soft:rgba(217,184,91,.14); --shadow:0 2px 10px rgba(0,0,0,.28);
-  --chart-fill-top:rgba(168,196,127,.32); --chart-fill-bottom:rgba(168,196,127,0);
+  /* §15 : les graphiques secondaires passent au sauge désaturé et leur remplissage devient très
+     discret, pour que le profil GPX du hero reste l'élément le plus vert de la page (§8). */
+  --chart-fill-top:rgba(155,189,126,.20); --chart-fill-bottom:rgba(155,189,126,0);
+  --chart-line:#9BBD7E; --chart-grid:#29312D;
+
+  /* ---- Tokens sémantiques de la passe de finition (§4). Trois familles seulement, pour éviter
+     la prolifération de couleurs interdite par le brief.
+     1. TEXTE — contrastes mesurés sur la surface la plus claire (#242B27), seuil §21 = 4.5:1 :
+        primary 12.96 · secondary 6.60 · muted 4.68. --text-disabled (2.52) est SOUS le seuil et
+        reste donc réservé aux contrôles désactivés, que WCAG exempte : ne jamais l'utiliser pour
+        du texte informatif.
+     2. VERTS — trois intensités au lieu d'un vert unique employé partout. Le vert vif reste
+        réservé au profil GPX, au focus et à l'état actif (§3) ; le sauge porte les graphiques
+        secondaires (§15) ; le muted porte bordures et états discrets.
+     3. DATA — couleurs volontairement NON vertes pour les séries secondaires (§18, §19), afin
+        que la couleur cesse d'être le seul véhicule de sens. */
+  --canvas:var(--bg);
+  --surface-1:var(--panel);
+  --surface-2:var(--panel-raised);
+  --surface-elevated:#242B27;
+  --border-subtle:#29312D; --border-default:#343E38; --border-strong:#465249;
+  --text-primary:var(--text); --text-secondary:var(--muted); --text-muted:#8B958E; --text-disabled:#5F6863;
+  --elev-green:#62F58C; --elev-green-soft:#9BBD7E; --elev-green-muted:#6F8B65;
+  --data-cool:#91A5B2; --data-mineral:#B5AB93; --data-neutral:#B7C0C5;
+  --warning-soft:#D2A85A; --danger-soft:#D8796F;
+  /* Charge d'entraînement (§18) : sauge vs gris bleuté. Leur contraste mutuel n'est que de
+     1.43:1, donc la couleur NE PEUT PAS être le seul discriminant — le graphique conserve
+     obligatoirement sa légende textuelle et un tireté différencié (§26). */
+  --acute-load:#829F68; --chronic-load:#AAB6C1;
   --radius-sm:6px; --radius-md:9px; --radius-lg:16px; --radius-xl:22px; --radius-pill:999px;
   --font-display:'Raleway',sans-serif;
   --font-sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
@@ -401,6 +437,13 @@ input[type=file]{display:none;}
 .btn.primary,.btn.accent{background:var(--accent);border-color:var(--accent);color:var(--accent-text);}
 .btn.primary:hover,.btn.accent:hover{background:var(--accent-hover);border-color:var(--accent-hover);box-shadow:0 4px 16px rgba(107,142,78,.35);}
 @media (prefers-reduced-motion:reduce){ .btn{transition:none;} }
+/* §20 — bouton SECONDAIRE : surface neutre + bordure + texte clair, l'accent vert n'apparaît
+   qu'au survol et au focus. Utilisé pour « voir l'analyse », « voir le plan », « voir
+   l'objectif » : des consultations, pas l'action principale de la page. Le fond vert plein reste
+   réservé au niveau 1 (imports). Le focus reste vert vif : le §3 l'autorise nommément. */
+.btn.secondary{background:var(--surface-elevated);border-color:var(--border-default);color:var(--text-primary);}
+.btn.secondary:hover{background:var(--panel-raised);border-color:var(--accent);color:var(--accent-light);}
+.btn.secondary:focus-visible{border-color:var(--elev-green);outline:2px solid var(--elev-green);outline-offset:2px;}
 .btn.ghost{background:transparent;border-color:transparent;}
 .btn.ghost:hover{background:var(--bg);}
 .btn.danger{background:var(--panel);border-color:var(--danger);color:var(--danger);}
@@ -1218,8 +1261,11 @@ main.activities-main{max-width:1600px;}
 .zdl-pct{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;text-align:right;}
 .zdl-time{color:var(--muted);font-size:.74rem;font-variant-numeric:tabular-nums;text-align:right;min-width:44px;}
 .zone-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;}
-.zone-dot.z1{background:var(--muted-2);} .zone-dot.z2{background:var(--accent-light);} .zone-dot.z3{background:var(--accent);}
-.zone-dot.z4{background:var(--warn);} .zone-dot.z5{background:var(--danger);}
+/* §19 : progression neutre et mesurée, ni arc-en-ciel ni cinq verts indiscernables.
+   Gris bleuté -> sauge -> vert modéré -> ambre minéral -> accent chaud. Les intitulés et les
+   pourcentages restent affichés : la couleur n'est jamais le seul véhicule du sens (§26). */
+.zone-dot.z1{background:var(--data-cool);} .zone-dot.z2{background:var(--elev-green-soft);} .zone-dot.z3{background:var(--accent);}
+.zone-dot.z4{background:var(--warning-soft);} .zone-dot.z5{background:var(--danger-soft);}
 
 /* Aperçu "Montées principales" (colonne d'analyse) — mini-tableau, détail complet dans l'onglet Montées */
 /* Pleine largeur (section dédiée, plus confinée à la colonne d'analyse) : 7 colonnes lisibles
