@@ -35,4 +35,25 @@
   --color-success:#7FB86B;
   --color-danger:#D8796F;
   --color-warning:#D2A85A;
+
+  /* ---- Correspondances de l'ancien vocabulaire ----------------------------------------------
+     Les 20 fiches specimen et le kit UI de ce dossier ont ete ecrits pour la charte d'origine
+     (theme clair, deux tons). Elles emploient encore ses noms. Reecrire la palette sans ces
+     correspondances les laissait sans couleur : c'est ce qui s'est produit, et c'est corrige ici.
+     Chaque ancien nom pointe vers son equivalent REEL dans le produit, pas vers une valeur
+     inventee — l'ancien « anthracite » etait la couleur du TEXTE sur fond clair, il devient donc
+     le texte principal du theme sombre, et non un gris fonce devenu illisible.
+     Ces alias sont transitoires : ils disparaitront quand les fiches auront ete reecrites dans le
+     vocabulaire du produit. */
+  --color-anthracite:var(--text-primary);
+  --color-offwhite:var(--canvas);
+  --color-white:var(--surface-1);
+  --color-border:var(--border-subtle);
+  --color-muted:var(--text-secondary);
+  --color-muted-2:var(--text-muted);
+  --surface-page:var(--canvas);
+  --surface-card:var(--surface-1);
+  --color-success-soft:rgba(127,184,107,.14);
+  --color-danger-soft:rgba(216,121,111,.14);
+  --color-warning-soft:rgba(210,168,90,.14);
 }
