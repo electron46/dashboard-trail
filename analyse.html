@@ -39,7 +39,9 @@
 
 <main class="analysis-main">
 
-  <section class="card">
+  <!-- Le selecteur de periode vit DANS le contenu : sans aucune activite importee, offrir de
+       choisir une periode a analyser n'a pas de sens. -->
+  <section class="card" id="analysisPeriodCard">
     <div class="analysis-period-row">
       <div class="period-select" id="periodSelect">
         <button type="button" data-period="4w">4 sem.</button>
@@ -61,6 +63,12 @@
        muette : l'utilisateur voyait une analyse vide et en concluait qu'il n'avait pas de
        donnees, alors qu'il s'agissait d'une panne. -->
   <div id="syncState"></div>
+
+  <!-- Etat vide de la page entiere (aucune activite importee) : remplace la charpente complete,
+       qui n'aurait affiche que des messages « aucune donnee » sans action. -->
+  <div id="analysisEmpty" style="display:none;"></div>
+
+  <div id="analysisContent">
 
   <!-- ============================================================================
        Ordre de lecture (Sprint 2, plan d'action §4) : resume -> SENS -> detail.
@@ -166,6 +174,8 @@
       <div id="bestsBox"></div>
     </section>
   </div>
+
+  </div><!-- /#analysisContent -->
 
 </main>
 
@@ -418,6 +428,30 @@ function renderBests(sessions) {
 /* --------------------------- ORCHESTRATION --------------------------- */
 function renderAnalysis() {
   const sessions = loadAllSessions();
+
+  /* Compte sans AUCUNE activité importée : la page affichait sa charpente entière — sélecteur de
+     période, six sections, huit messages « aucune donnée » dispersés — et ne proposait nulle part
+     l'action qui débloque tout. Un état vide doit porter l'étape suivante (phase 14 du plan).
+     À distinguer d'une PÉRIODE vide alors qu'un historique existe : là, les messages par carte
+     sont la bonne réponse, puisqu'il suffit d'élargir la période. */
+  const vide = document.getElementById('analysisEmpty');
+  const contenu = document.getElementById('analysisContent');
+  const periodCard = document.getElementById('analysisPeriodCard');
+  if (!sessions.length) {
+    contenu.style.display = 'none';
+    periodCard.style.display = 'none';
+    vide.style.display = '';
+    vide.innerHTML = '<div class="empty-state"><div class="empty-title">Rien à analyser pour l\'instant</div>' +
+      '<p>Importe tes premières sorties : cette page montrera alors ton volume, ton dénivelé, ta VAM et la répartition de tes intensités.</p>' +
+      '<a class="btn small accent" href="historique.html">Importer une activité</a></div>';
+    document.getElementById('periodLabel').textContent = 'Synthèse de tes performances et de ta progression.';
+    return;
+  }
+  vide.style.display = 'none';
+  vide.innerHTML = '';
+  contenu.style.display = '';
+  periodCard.style.display = '';
+
   const { fromISO, toISO } = resolveAnalysisRange(periodKey, customFrom, customTo, sessions);
   const current = filterSessionsByRange(sessions, fromISO, toISO);
   const { fromISO: pFrom, toISO: pTo } = previousAnalysisRange(fromISO, toISO);

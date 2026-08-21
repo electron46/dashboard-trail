@@ -539,7 +539,25 @@ function storageAvailable() { try { const k='__test__'; localStorage.setItem(k,'
 function loadIndex() { try { return JSON.parse(localStorage.getItem(IDX_KEY) || '[]'); } catch (e) { console.error('Index illisible', e); return []; } }
 function saveIndex(ids) { try { localStorage.setItem(IDX_KEY, JSON.stringify(ids)); scheduleSync(); return true; } catch (e) { console.error(e); return false; } }
 function loadSession(id) { try { const raw = localStorage.getItem(STORAGE_PREFIX + 'seance:' + id); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
-function saveSession(id, data) { try { localStorage.setItem(STORAGE_PREFIX + 'seance:' + id, JSON.stringify(data)); scheduleSync(); return true; } catch (e) { console.error(e); return false; } }
+// Une écriture qui échoue est presque toujours un dépassement du quota du navigateur (5 à 10 Mo
+// selon les navigateurs). Mesuré en QA : 280 séances occupent ~12 Mo, soit la limite atteinte
+// vers 120 à 200 séances — deux à trois saisons. L'échec était signalé comme un « échec » sans
+// cause, ce qui ne dit pas à l'utilisateur quoi faire. `lastStorageError` porte la raison
+// jusqu'au message d'import.
+let lastStorageError = null;
+function isQuotaError(e) {
+  return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22);
+}
+function saveSession(id, data) {
+  try { localStorage.setItem(STORAGE_PREFIX + 'seance:' + id, JSON.stringify(data)); scheduleSync(); lastStorageError = null; return true; }
+  catch (e) {
+    console.error(e);
+    lastStorageError = isQuotaError(e)
+      ? 'Le stockage de ce navigateur est plein. Exporte tes données puis supprime les séances les plus anciennes (Paramètres → Données), ou active la synchronisation pour les conserver dans le cloud.'
+      : ('Écriture impossible : ' + e.message);
+    return false;
+  }
+}
 function deleteSession(id) { try { localStorage.removeItem(STORAGE_PREFIX + 'seance:' + id); scheduleSync(); } catch (e) {} }
 function loadAllSessions() { return loadIndex().map(loadSession).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date)); }
 // Dernier appareil ayant enregistré une séance importée (page Profil, carte Connectivité) — lecture
@@ -2243,8 +2261,21 @@ function computeRaceReadiness(race) {
   }
 
   // Régularité : proportion des 12 dernières semaines avec au moins une séance enregistrée.
+  // Ce sous-score était le SEUL à produire une valeur quand aucune donnée n'existe : tous les
+  // autres retournent null, lui retournait 0. Sur un compte sans aucune activité importée, il
+  // devenait donc l'unique sous-score « valide », et l'indice de préparation entier tombait à
+  // 0 % avec la mention « À renforcer » — une absence de données présentée comme un échec mesuré,
+  // ce que le produit s'interdit partout ailleurs.
+  // La distinction qui compte : « aucune séance n'a jamais été importée » (rien à dire) n'est pas
+  // « des séances existent mais aucune sur la fenêtre » (0 % est alors une vraie information).
   const weeksWithSession = new Set(recent.map(s => isoWeek(s.date))).size;
-  subs.push({ key:'regularite', label:'Régularité', score: clampScore(weeksWithSession / READINESS_WEEKS * 100), detail: weeksWithSession + '/' + READINESS_WEEKS + ' semaines avec au moins une séance' });
+  subs.push({
+    key: 'regularite', label: 'Régularité',
+    score: sessions.length ? clampScore(weeksWithSession / READINESS_WEEKS * 100) : null,
+    detail: sessions.length
+      ? (weeksWithSession + '/' + READINESS_WEEKS + ' semaines avec au moins une séance')
+      : 'Aucune séance importée',
+  });
 
   const valid = subs.filter(s => s.score != null);
   const overall = valid.length ? Math.round(valid.reduce((a,s) => a+s.score, 0) / valid.length) : null;
