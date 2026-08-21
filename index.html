@@ -336,13 +336,28 @@ function renderTrajectory() {
   const insight = generateElevInsight();
   const trend = getTrainingTrend();
   if (insight) {
-    const deltaPct = trend && trend.chronic > 0 ? Math.round(((trend.acute - trend.chronic) / trend.chronic) * 100) : null;
+    /* §14 du brief : ne jamais présenter une période incomplète comme une conclusion ferme.
+       Deux garde-fous ici.
+       1) `getTrainingTrend()` raisonne en fenêtre GLISSANTE de 7 jours, alors que la carte voisine
+          parle de la SEMAINE CALENDAIRE en cours. Afficher « vs moyenne 4 sem. » sans dire de quelle
+          fenêtre il s'agit laissait lire le chiffre comme un bilan de la semaine partielle. La
+          fenêtre est donc nommée explicitement.
+       2) Une fenêtre à zéro produit mécaniquement « -100 % », qui se lit comme un verdict définitif
+          alors que c'est une absence de donnée. Dans ce cas on n'affiche aucun pourcentage : le
+          constat factuel (nombre de jours écoulés) remplace la conclusion. */
+    const noRecentVolume = trend && trend.acute === 0;
+    const deltaPct = (trend && trend.chronic > 0 && !noRecentVolume)
+      ? Math.round(((trend.acute - trend.chronic) / trend.chronic) * 100) : null;
+    const factual = noRecentVolume
+      ? ' <strong class="delta">(aucune activité sur les 7 derniers jours' +
+        (stats.isPartialWeek ? ', ' + stats.daysElapsed + (stats.daysElapsed > 1 ? ' jours écoulés' : ' jour écoulé') + ' sur la semaine en cours' : '') + ')</strong>'
+      : '';
     insightHtml = '<div class="landscape-callout status-' + insight.level + '">' +
       '<span class="dot" aria-hidden="true"></span>' +
       '<div class="body">' +
         '<span class="elev-signal"><img src="' + ICON('zap') + '" alt="">Insight ELEV</span>' +
         '<strong>' + escapeHtml(insight.title) + '</strong>' +
-        '<p>' + escapeHtml(insight.text) + (deltaPct != null ? ' <strong class="delta">(' + (deltaPct >= 0 ? '+' : '') + deltaPct + '% vs moyenne 4 sem.)</strong>' : '') + '</p>' +
+        '<p>' + escapeHtml(insight.text) + (deltaPct != null ? ' <strong class="delta">(' + (deltaPct >= 0 ? '+' : '') + deltaPct + '% sur 7 jours glissants, vs moyenne 4 sem.)</strong>' : factual) + '</p>' +
       '</div>' +
     '</div>';
   }
@@ -493,7 +508,7 @@ function renderLastRide() {
       '<div class="lastride-profile">' + terrainHtml + '</div>' +
       '<div class="lastride-aside">' +
         (trace ? '<a class="lastride-trace" href="' + href + '" aria-label="Voir l\'analyse complète de la sortie">' + trace + '</a>' : '') +
-        '<a class="btn small accent" href="' + href + '">Voir l\'analyse complète →</a>' +
+        '<a class="btn small secondary" href="' + href + '">Voir l\'analyse complète →</a>' +
       '</div>' +
     '</div>';
   initTerrainProfiles(box);
@@ -509,8 +524,11 @@ function renderLoadChart() {
     w.chronic = +(windowVals.reduce((a,b)=>a+b,0) / windowVals.length).toFixed(1);
   });
   const series = [
-    { name: 'Aiguë (semaine)', color: 'var(--accent)', values: weeks.map(w => +w.km.toFixed(1)) },
-    { name: 'Chronique (moy. 4 sem.)', color: 'var(--secondary)', values: weeks.map(w => w.chronic) },
+    // §18 : deux familles chromatiques distinctes (sauge vs gris bleuté), jamais deux verts
+    // voisins. Leur contraste mutuel n'étant que de 1.43:1, la légende textuelle portée par
+    // `groupedBarChartSvg` reste le discriminant principal — la couleur ne fait que l'appuyer.
+    { name: 'Aiguë (semaine)', color: 'var(--acute-load)', values: weeks.map(w => +w.km.toFixed(1)) },
+    { name: 'Chronique (moy. 4 sem.)', color: 'var(--chronic-load)', values: weeks.map(w => w.chronic) },
   ];
   box.innerHTML = groupedBarChartSvg('', weeks, series, { height: 170, hideTitle: true });
   initChartTooltips(box);

@@ -2498,6 +2498,8 @@ function ringSvg(pct, size, centerText) {
   const text = centerText ? '<text x="'+c+'" y="'+(c + size*0.09)+'" text-anchor="middle" font-family="var(--font-display)" font-weight="800" font-size="'+(size*0.24).toFixed(1)+'" fill="var(--text)">'+escapeHtml(centerText)+'</text>' : '';
   return '<svg class="kpi-ring" viewBox="0 0 '+size+' '+size+'">' +
     '<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="rgba(244,247,245,.09)" stroke-width="'+stroke+'"/>' +
+    // L'anneau de progression garde le vert de marque : le §3 réserve explicitement le vert vif
+    // à « la progression positive », c'est un signal, pas un graphique secondaire.
     '<circle cx="'+c+'" cy="'+c+'" r="'+r+'" fill="none" stroke="var(--accent)" stroke-width="'+stroke+'" stroke-linecap="round" ' +
       'stroke-dasharray="'+circumference.toFixed(1)+'" stroke-dashoffset="'+offset.toFixed(1)+'" transform="rotate(-90 '+c+' '+c+')"/>' +
     text +
@@ -2662,7 +2664,7 @@ function sessionPreviewSvg(session, opts) {
     ]);
     const pointsAttr = pts.map(p => p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
     return '<svg class="activity-trace" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet">' +
-      '<polyline points="'+pointsAttr+'" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<polyline points="'+pointsAttr+'" fill="none" stroke="var(--chart-line)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<circle cx="'+pts[pts.length-1][0].toFixed(1)+'" cy="'+pts[pts.length-1][1].toFixed(1)+'" r="3" fill="var(--accent)"/>' +
     '</svg>';
   }
@@ -2676,7 +2678,7 @@ function sessionPreviewSvg(session, opts) {
     const area = path + ' L'+w+','+h+' L0,'+h+' Z';
     return '<svg class="activity-trace" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">' +
       '<path d="'+area+'" fill="var(--chart-fill-top)" stroke="none"/>' +
-      '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' +
+      '<path d="'+path+'" fill="none" stroke="var(--chart-line)" stroke-width="2"/>' +
     '</svg>';
   }
   return '';
@@ -2727,6 +2729,16 @@ function _smoothAltitudes(values, windowSize) {
      - amplitude d'altitude d'au moins 5 m (un tapis de course / une piste plate n'a pas de
        profil à montrer — l'étirer donnerait un faux relief).
    Les doublons de distance (points à l'arrêt) sont ignorés, pas rejetés. */
+/* Lecture stricte d'une valeur numérique de série. Retourne un nombre fini, ou `null` pour toute
+   valeur non exploitable. Ne JAMAIS remplacer par `Number(x)` : `Number(null)`, `Number('')`,
+   `Number('  ')`, `Number(true)` et `Number([])` renvoient tous un nombre fini alors qu'aucune de
+   ces valeurs ne décrit une altitude ou une distance mesurée. */
+function _terrainNum(x) {
+  if (x == null || typeof x === 'boolean') return null;
+  if (typeof x === 'string' && x.trim() === '') return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
 const TERRAIN_MIN_POINTS = 4;
 const TERRAIN_MIN_TOTAL_KM = 0.2;
 const TERRAIN_MIN_ALT_RANGE_M = 5;
@@ -2736,8 +2748,13 @@ function validateTerrainSeries(rawPoints) {
   let lastD = -Infinity;
   for (const p of rawPoints) {
     if (!p) continue;
-    const d = Number(p.distKm), a = Number(p.alt);
-    if (!Number.isFinite(d) || !Number.isFinite(a)) continue;
+    const d = _terrainNum(p.distKm), a = _terrainNum(p.alt);
+    // null / undefined / '' / NaN / booléen : le point est IGNORÉ (exigence §10 du brief). Il ne
+    // devient jamais 0 — `Number(null)` et `Number('')` valent 0 et `Number.isFinite(0)` est vrai,
+    // ce qui faisait entrer des altitudes fantômes à 0 m (écrasant minAlt, donc toute l'échelle
+    // verticale du tracé) et des distances fantômes à 0 km (interprétées comme un recul, ce qui
+    // rejetait la série entière). Bug réel, reproduit par les cas 5/8/9/10/11 du jeu de test.
+    if (d == null || a == null) continue;
     if (d < 0 || a < -500 || a > 9000) return null;      // donnée aberrante : on ne devine pas
     if (d < lastD) return null;                          // distance qui recule : série non fiable
     if (d === lastD) continue;                           // point à l'arrêt : ignoré, pas rejeté
@@ -2896,15 +2913,28 @@ const TERRAIN_LABEL_KINDS = {
    checkpoint/ravitaillement n'est inventé — ces types existent dans TERRAIN_LABEL_KINDS mais ne
    sont affichés que si un appelant fournit de vrais points nommés (aucune donnée de ce type
    aujourd'hui : les GPX testés ne contiennent pas de <wpt> exploitables). */
+/* Deux repères occupent-ils « le même endroit » du point de vue du lecteur ? Vrai si les valeurs
+   affichées seraient indiscernables : moins de 1,5 % de la distance totale d'écart (plancher 80 m,
+   pour qu'une sortie très courte ne masque pas tout) ET moins de 3 m d'altitude d'écart. Les deux
+   conditions sont requises : un vrai sommet situé près de l'arrivée mais nettement plus haut reste
+   un repère légitime et continue d'être affiché. */
+function _terrainSamePlace(a, b, v) {
+  const distTol = Math.max(0.4, (v.totalKm || 0) * 0.05);
+  return Math.abs(a.alt - b.alt) < 3 && Math.abs(a.distKm - b.distKm) < distTol;
+}
 function terrainDefaultLabels(v) {
   const first = v.points[0], last = v.points[v.points.length - 1], peak = v.points[v.peakIdx];
   const labels = [
     { idx: 0, kind: 'depart', title: 'Départ', alt: first.alt, distKm: first.distKm },
     { idx: v.points.length - 1, kind: 'arrivee', title: 'Arrivée', alt: last.alt, distKm: last.distKm },
   ];
-  // Le point culminant n'est un repère distinct que s'il ne se confond pas avec le départ ou
-  // l'arrivée (sinon on afficherait deux fois la même information au même endroit).
-  const nearStart = v.peakIdx <= 1, nearEnd = v.peakIdx >= v.points.length - 2;
+  /* Le point culminant n'est un repère distinct que s'il ne se confond pas avec le départ ou
+     l'arrivée. La proximité se mesure en DISTANCE RÉELLE et en ALTITUDE, jamais en écart d'index :
+     une série FIT est échantillonnée dans le temps, donc « 2 points avant la fin » peut représenter
+     quelques secondes et quelques mètres. C'est ce qui produisait deux labels aux valeurs
+     stricement identiques (« 103 m · km 7,9 » en Point culminant ET en Arrivée), symptôme décrit
+     au §10 du brief. Le point SVG réel n'est jamais déplacé : seul l'affichage du label est en jeu. */
+  const nearStart = _terrainSamePlace(peak, first, v), nearEnd = _terrainSamePlace(peak, last, v);
   if (!nearStart && !nearEnd) {
     labels.push({ idx: v.peakIdx, kind: 'culminant', title: 'Point culminant', alt: peak.alt, distKm: peak.distKm });
   }
@@ -3520,7 +3550,7 @@ function elevChartSvg(points, opts) {
       '<text x="4" y="' + (h - padB + 2) + '" font-size="13" fill="var(--muted)">' + yBottomLabel + '</text>' +
       '<text x="' + padL + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + minX.toFixed(1) + ' km</text>' +
       '<text x="' + (w - padR - 50) + '" y="' + (h - 8) + '" font-size="12" fill="var(--muted)">' + maxX.toFixed(1) + ' km</text>' +
-      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' +
+      '<path d="' + path + '" fill="none" stroke="var(--chart-line)" stroke-width="2.5"/>' +
       peakSvg +
       '<line class="sync-cursor" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (h - padB) + '" stroke="var(--text)" stroke-dasharray="3,3" opacity="0"/>' +
       '<circle class="sync-dot" r="5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>' +
@@ -3655,7 +3685,7 @@ function lineChartSvg(title, points, opts) {
     '<text x="4" y="'+(h-padB+2)+'" font-size="13" fill="var(--muted)">'+(opts.yMinLabel ?? minY.toFixed(opts.decimals??0))+'</text>' +
     '<text x="'+padL+'" y="'+(h-8)+'" font-size="12" fill="var(--muted)">'+firstLabel+'</text>' +
     '<text x="'+(w-padR-50)+'" y="'+(h-8)+'" font-size="12" fill="var(--muted)">'+lastLabel+'</text>' +
-    '<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' + dots +
+    '<path d="'+path+'" fill="none" stroke="var(--chart-line)" stroke-width="2.5"/>' + dots +
   '</svg></div>';
 }
 function groupedBarChartSvg(title, weeks, series, opts) {
@@ -3730,7 +3760,7 @@ function radarChartSvg(axes, scores) {
     '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<defs><radialGradient id="'+id+'Fill" cx="50%" cy="50%" r="65%"><stop offset="0%" stop-color="var(--accent-light)" stop-opacity="0.38"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0.08"/></radialGradient></defs>' +
     rings + spokes +
-    '<polygon points="'+dataPoly+'" fill="url(#'+id+'Fill)" stroke="var(--accent)" stroke-width="2.5"/>' +
+    '<polygon points="'+dataPoly+'" fill="url(#'+id+'Fill)" stroke="var(--chart-line)" stroke-width="2.5"/>' +
     dots + labels +
     '</svg></div>';
 }
