@@ -2637,7 +2637,16 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
   legend += '</div>';
   return '<div class="chart-box">' + titleHtml + legend + '<svg viewBox="0 0 ' + w + ' ' + h + '">' +
     '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)"/>' +
+    // Quatre graduations + lignes de grille au lieu d'une seule valeur maximale : sans elles, la
+    // seule facon de lire une valeur etait le tooltip, ce que le skill dataviz interdit
+    // (« un tooltip n'est jamais le seul moyen de lire une valeur »).
+    [0.25, 0.5, 0.75].map(function (frac) {
+      const gy = (h - padB) - frac * (h - padT - padB);
+      return '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (w - padR) + '" y2="' + gy.toFixed(1) + '" stroke="var(--chart-grid)" stroke-width="1"/>' +
+        '<text x="2" y="' + (gy + 4).toFixed(1) + '" font-size="12" fill="var(--muted)">' + fmt(maxV * frac) + '</text>';
+    }).join('') +
     '<text x="2" y="' + (padT + 6) + '" font-size="12" fill="var(--muted)">' + fmt(maxV) + '</text>' +
+    '<text x="2" y="' + (h - padB + 4) + '" font-size="12" fill="var(--muted)">0</text>' +
     bars + planLine +
   '</svg></div>';
 }
@@ -3677,7 +3686,9 @@ function lineChartSvg(title, points, opts) {
     '</linearGradient></defs>' +
     backgroundPath +
     '<path d="'+areaPath+'" fill="url(#'+gradId+')" stroke="none"/>' +
-    '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
+    // Grille en trait PLEIN : un tireté sur une ligne de grille se lit comme un seuil ou une
+    // projection alors que ce n'est qu'un repère (anti-pattern documenté du skill dataviz).
+    '<line x1="'+padL+'" y1="'+sy(midY).toFixed(1)+'" x2="'+(w-padR)+'" y2="'+sy(midY).toFixed(1)+'" stroke="var(--chart-grid)" stroke-width="1"/>' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
     '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+(opts.yMaxLabel ?? maxY.toFixed(opts.decimals??0))+'</text>' +
@@ -3713,7 +3724,16 @@ function groupedBarChartSvg(title, weeks, series, opts) {
   const legend = '<div class="chart-legend">' + series.map(s => '<span><span class="dot" style="background:'+s.color+'"></span>'+s.name+'</span>').join('') + '</div>';
   return '<div class="chart-box' + (opts.hideTitle ? ' no-title' : '') + '">' + (opts.hideTitle ? '' : '<h3>' + title + '</h3>') + legend + '<svg viewBox="0 0 '+w+' '+h+'">' +
     '<line x1="'+padL+'" y1="'+(h-padB)+'" x2="'+(w-padR)+'" y2="'+(h-padB)+'" stroke="var(--border)"/>' +
+    // Graduations intermediaires + lignes de grille. Avant : une seule valeur (le maximum), donc
+    // aucune valeur lisible sans survoler une barre — ce que le skill dataviz interdit
+    // explicitement (« un tooltip n'est jamais le seul moyen de lire une valeur »).
+    [0.25,0.5,0.75].map(function(frac){
+      const gy=(h-padB)-frac*(h-padT-padB);
+      return '<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+gy.toFixed(1)+'" stroke="var(--chart-grid)" stroke-width="1"/>' +
+        '<text x="4" y="'+(gy+4).toFixed(1)+'" font-size="13" fill="var(--muted)">'+(maxV*frac).toFixed(0)+'</text>';
+    }).join('') +
     '<text x="4" y="'+(padT+6)+'" font-size="13" fill="var(--muted)">'+maxV.toFixed(0)+'</text>' +
+    '<text x="4" y="'+(h-padB+4)+'" font-size="13" fill="var(--muted)">0</text>' +
     bars +
   '</svg></div>';
 }

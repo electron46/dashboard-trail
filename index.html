@@ -339,7 +339,11 @@ function renderTrajectory() {
     }));
     // Hauteur volontairement contenue : un graphique de 12 points n'a pas besoin d'occuper la
     // moitié de l'écran. L'espace récupéré sert à l'Insight et aux repères chiffrés à droite.
-    chartHtml = lineChartSvg('', points, { decimals: dec, height: 280, hideTitle: true });
+    // yMin:0 — sans baseline a zero l'axe demarrait a la plus petite valeur observee (mesure :
+    // 21 a 36 km), ce qui faisait lire une variation de 30 % comme une montagne russe. Le zero
+    // n'est impose QUE sur le volume/D+ : une courbe d'allure ou de FC partant de zero n'aurait
+    // aucun sens, et lineChartSvg reste partage avec les autres pages.
+    chartHtml = lineChartSvg('', points, { decimals: dec, height: 280, hideTitle: true, yMin: 0 });
   }
 
   const insight = generateElevInsight();

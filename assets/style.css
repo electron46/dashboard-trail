@@ -54,10 +54,13 @@
   --elev-green:#62F58C; --elev-green-soft:#9BBD7E; --elev-green-muted:#6F8B65;
   --data-cool:#91A5B2; --data-mineral:#B5AB93; --data-neutral:#B7C0C5;
   --warning-soft:#D2A85A; --danger-soft:#D8796F;
-  /* Charge d'entraînement (§18) : sauge vs gris bleuté. Leur contraste mutuel n'est que de
-     1.43:1, donc la couleur NE PEUT PAS être le seul discriminant — le graphique conserve
-     obligatoirement sa légende textuelle et un tireté différencié (§26). */
-  --acute-load:#829F68; --chronic-load:#AAB6C1;
+  /* Charge d'entraînement — validé par scripts/validate_palette.js du skill dataviz
+     (mode dark, surface #181D1B) : ALL CHECKS PASS. Les valeurs précédentes (#829F68/#AAB6C1)
+     échouaient sur trois critères, dont le plancher de vision NORMALE (ΔE 14.1, sous 15) : elles
+     avaient été choisies pour la déficience de perception des couleurs, qu'elles passaient, mais
+     se ressemblaient trop pour tout le monde. Vert et bleu-ardoise sont deux familles franchement
+     distinctes. La légende textuelle reste obligatoire malgré tout. */
+  --acute-load:#3D9E4F; --chronic-load:#6F8FD8;
   --radius-sm:6px; --radius-md:9px; --radius-lg:16px; --radius-xl:22px; --radius-pill:999px;
   --font-display:'Raleway',sans-serif;
   --font-sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
@@ -681,7 +684,7 @@ html[data-theme="light"] .kpi-card::after{display:none;}
 .kpi-card .kpi-status-dot.status-warn{background:var(--warn);box-shadow:0 0 6px 1px var(--warn-soft);}
 .kpi-card .kpi-status-dot.status-danger{background:var(--danger);box-shadow:0 0 6px 1px var(--danger-soft);}
 .kpi-card .kpi-value-row{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;}
-.kpi-card .kpi-value{font-family:var(--font-display);font-size:2.1rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-.015em;}
+.kpi-card .kpi-value{font-family:var(--font-display);font-size:2.1rem;font-weight:800;font-variant-numeric:proportional-nums;line-height:1;letter-spacing:-.015em;}
 .kpi-card .kpi-value.na{font-family:var(--font-sans);font-size:1rem;font-weight:600;color:var(--muted);}
 .kpi-card .kpi-spark{width:60px;height:26px;color:var(--accent);flex-shrink:0;opacity:.85;}
 .kpi-card .kpi-spark.status-warn{color:var(--warn);}
@@ -910,7 +913,11 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .objective-name{margin:0;font-family:var(--font-display);font-size:clamp(1.9rem,4vw,3rem);font-weight:800;letter-spacing:-.02em;line-height:1.04;}
 /* La readiness est LA valeur dominante du hero — l'objectif se lit d'un coup d'œil. */
 .objective-readiness{margin-top:10px;}
-.objective-readiness .v{display:block;font-family:var(--font-display);font-size:clamp(3.2rem,8vw,4.4rem);font-weight:800;letter-spacing:-.025em;line-height:.92;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+/* Pas de tabular-nums au-dessus de ~1,5rem : les chiffres a chasse fixe reservent au 1 la
+   largeur du 8, ce qui creuse des vides dans un nombre isole compose en grand. Leur role
+   est d'aligner des COLONNES (listes, axes, tableaux), pas de composer un chiffre heros.
+   Anti-pattern documente du skill dataviz. */
+.objective-readiness .v{display:block;font-family:var(--font-display);font-size:clamp(3.2rem,8vw,4.4rem);font-weight:800;letter-spacing:-.025em;line-height:.92;font-variant-numeric:proportional-nums;background:linear-gradient(180deg,var(--text),var(--accent-light) 170%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
 .objective-readiness .v small{font-size:.4em;font-weight:700;-webkit-text-fill-color:var(--accent-light);}
 .objective-readiness .l{display:block;margin-top:6px;font-size:.9rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
 /* Métriques de la COURSE (J-XX, distance, D+) — jamais des agrégats d'entraînement. */
@@ -1272,11 +1279,16 @@ main.activities-main{max-width:1600px;}
 .zdl-pct{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;text-align:right;}
 .zdl-time{color:var(--muted);font-size:.74rem;font-variant-numeric:tabular-nums;text-align:right;min-width:44px;}
 .zone-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;}
-/* §19 : progression neutre et mesurée, ni arc-en-ciel ni cinq verts indiscernables.
-   Gris bleuté -> sauge -> vert modéré -> ambre minéral -> accent chaud. Les intitulés et les
-   pourcentages restent affichés : la couleur n'est jamais le seul véhicule du sens (§26). */
-.zone-dot.z1{background:var(--data-cool);} .zone-dot.z2{background:var(--elev-green-soft);} .zone-dot.z3{background:var(--accent);}
-.zone-dot.z4{background:var(--warning-soft);} .zone-dot.z5{background:var(--danger-soft);}
+/* Zones FC — rampe ORDINALE à teinte unique, validée par validate_palette.js --ordinal
+   (ALL CHECKS PASS : luminosité monotone, écarts de pas visibles, teinte unique, extrémité claire
+   au-dessus de la surface). Les zones sont des catégories ORDONNÉES (Z1 < Z2 < ... < Z5), pas des
+   identités indépendantes : la forme correcte est une rampe, pas cinq teintes distinctes.
+   Une rampe de chaleur à 5 pas (bleu -> vert -> jaune -> orange -> rouge) a été essayée et
+   échoue : les paires chaudes voisines tombent à ΔE 2.2, indiscernables même en vision normale.
+   Écart assumé avec la convention Garmin/Strava, où Z5 est rouge. Réversible en changeant ces
+   cinq valeurs. Intitulés et pourcentages restent affichés, donc la couleur n'est jamais seule. */
+.zone-dot.z1{background:#2F5D3A;} .zone-dot.z2{background:#3D7A48;} .zone-dot.z3{background:#4F9857;}
+.zone-dot.z4{background:#66B76A;} .zone-dot.z5{background:#8AD489;}
 
 /* Aperçu "Montées principales" (colonne d'analyse) — mini-tableau, détail complet dans l'onglet Montées */
 /* Pleine largeur (section dédiée, plus confinée à la colonne d'analyse) : 7 colonnes lisibles
