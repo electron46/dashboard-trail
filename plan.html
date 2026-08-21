@@ -32,11 +32,11 @@
 <header class="app-topbar">
   <div>
     <h1>Mon plan</h1>
-    <p class="hint" style="margin-top:2px;">Votre plan actuel et vos prochaines semaines d'entraînement.</p>
+    <p class="page-sub">Ton plan en cours et tes prochaines semaines d'entraînement.</p>
   </div>
   <div class="app-topbar-actions">
     <a class="btn primary" href="parametres.html#plan">Importer / mettre à jour le plan →</a>
-    <button id="themeToggle" type="button">☀ Clair</button>
+    <button id="themeToggle" type="button">☀</button>
   </div>
 </header>
 
@@ -62,12 +62,12 @@
   </div>
 
   <div class="tab-panel active" data-panel="apercu" id="panelApercu">
-    <div class="analysis-charts-row plan-top-row">
+    <div class="card-row-3 plan-top-row">
       <section class="card"><h2>Semaine en cours</h2><div id="planWeekBox"></div></section>
       <section class="card"><h2>Aperçu de la semaine</h2><div id="planWeekSessionsBox"></div></section>
       <section class="card"><h2>Prochaine séance</h2><div id="planNextSessionBox"></div></section>
     </div>
-    <div class="analysis-charts-row" style="margin-top:14px;">
+    <div class="card-row-3" style="margin-top:14px;">
       <section class="card"><h2>Évolution du volume</h2><div id="planVolumeChartBox"></div></section>
       <section class="card"><h2>Évolution du D+</h2><div id="planDplusChartBox"></div></section>
       <section class="card card-compact">
@@ -90,7 +90,7 @@
       <h2>Volume &amp; charge de la préparation</h2>
       <div class="metrics-grid" id="planChargeKpiBox"></div>
     </section>
-    <div class="analysis-charts-row" style="margin-top:14px;">
+    <div class="card-row-3" style="margin-top:14px;">
       <section class="card"><h2>Volume — réalisé vs planifié</h2><div id="planVolumeChart2Box"></div></section>
       <section class="card"><h2>Durée totale</h2><div id="planDurationBox"></div></section>
       <section class="card"><h2>Charge (aiguë vs chronique)</h2><div id="planChargeChart2Box"></div></section>

@@ -32,11 +32,11 @@
 <header class="app-topbar">
   <div>
     <h1>Activités</h1>
-    <div class="hint">Retrouve et analyse toutes tes sorties.</div>
+    <p class="page-sub">Retrouve et analyse toutes tes sorties.</p>
   </div>
   <div class="app-topbar-actions">
     <button class="btn primary" id="importCta" type="button">+ Importer une activité</button>
-    <button id="themeToggle" type="button">☀ Clair</button>
+    <button id="themeToggle" type="button">☀</button>
     <input type="file" id="fileInput" accept=".fit" multiple style="display:none;">
   </div>
 </header>
@@ -193,11 +193,15 @@ function renderHistory() {
     return '<a class="activity-row" href="activite.html?id=' + encodeURIComponent(s.id) + '">' +
       '<span class="cell cell-date">' + dateStack + (s.dateApprox ? ' *' : '') + '</span>' +
       '<span class="cell cell-activity"><span class="row-title">' + escapeHtml(s.sport || 'Séance') + '</span>' + (s.fileName ? '<span class="row-sub">' + escapeHtml(fmtDayMonth(s.date)) + '</span>' : '') + '</span>' +
-      '<span class="cell cell-stat">' + fmtNum(s.distanceKm, ' km', 1) + '</span>' +
-      '<span class="cell cell-stat">' + fmtNum(s.ascent, ' m', 0) + '</span>' +
-      '<span class="cell cell-stat">' + fmtDuration(s.durationS) + '</span>' +
-      '<span class="cell cell-stat">' + (s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') + '</span>' +
-      '<span class="cell cell-stat">' + (s.avgHr != null ? s.avgHr + ' bpm' : '—') + '</span>' +
+      // data-l : libellé de la mesure. Il n'est affiché que hors disposition en tableau (sous
+      // 1100px), où la ligne d'en-tête disparaît et où cinq nombres nus se suivaient sans qu'on
+      // sache lequel est le D+ et lequel l'allure. Reprend le couple « valeur + micro-libellé en
+      // capitales » utilisé partout sur l'Accueil. En tableau, l'en-tête reste la seule source.
+      '<span class="cell cell-stat" data-l="Distance">' + fmtNum(s.distanceKm, ' km', 1) + '</span>' +
+      '<span class="cell cell-stat" data-l="D+">' + fmtNum(s.ascent, ' m', 0) + '</span>' +
+      '<span class="cell cell-stat" data-l="Durée">' + fmtDuration(s.durationS) + '</span>' +
+      '<span class="cell cell-stat" data-l="Allure">' + (s.avgPaceSecPerKm != null ? fmtPace(s.avgPaceSecPerKm) : '—') + '</span>' +
+      '<span class="cell cell-stat" data-l="FC moy.">' + (s.avgHr != null ? s.avgHr + ' bpm' : '—') + '</span>' +
       '<span class="cell cell-visual">' + (visual || '') + '</span>' +
       '<span class="cell cell-arrow link-arrow">Voir l\'analyse →</span>' +
     '</a>';
