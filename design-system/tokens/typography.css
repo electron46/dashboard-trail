@@ -1,0 +1,24 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --font-sans:'IBM Plex Sans',-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-mono:'IBM Plex Mono','JetBrains Mono',ui-monospace,Consolas,monospace;
+
+  --text-xs:12px;
+  --text-sm:13.5px;
+  --text-base:15px;
+  --text-md:17px;
+  --text-lg:20px;
+  --text-xl:26px;
+  --text-2xl:34px;
+  --text-3xl:48px;
+
+  --weight-regular:400;
+  --weight-medium:500;
+  --weight-semibold:600;
+  --weight-bold:700;
+
+  --leading-tight:1.15;
+  --leading-normal:1.5;
+  --tracking-wide:.06em;
+  --tracking-wider:.12em;
+}

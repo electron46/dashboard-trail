@@ -1,0 +1,33 @@
+:root{
+  /* base */
+  --color-anthracite:#2B2B2B;
+  --color-anthracite-700:#454340;
+  --color-offwhite:#F2F1EE;
+  --color-white:#FFFFFF;
+  --color-border:#DCD9D2;
+  --color-border-strong:#B9B5AC;
+  --color-muted:#8A8680;
+  --color-muted-2:#BDBAB4;
+
+  /* accent — brand decision: no vivid accent color. The mono data typeface
+     itself is the signature; "accent" resolves to the same anthracite so
+     emphasis comes from font-family + weight, never from color. */
+  --color-accent:#2B2B2B;
+
+  /* functional feedback (not brand accent — kept muted/desaturated) */
+  --color-success:#2F7A3D;
+  --color-success-soft:#E7F0E5;
+  --color-danger:#B3402C;
+  --color-danger-soft:#FBEAE5;
+  --color-warning:#8A6D1B;
+  --color-warning-soft:#F3EEDD;
+
+  /* semantic aliases */
+  --surface-page:var(--color-offwhite);
+  --surface-card:var(--color-white);
+  --surface-inverse:var(--color-anthracite);
+  --text-primary:var(--color-anthracite);
+  --text-inverse:var(--color-offwhite);
+  --text-muted:var(--color-muted);
+  --border-default:var(--color-border);
+}
