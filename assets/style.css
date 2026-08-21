@@ -330,6 +330,10 @@ section.card.card-compact h2::before{display:none;}
 .card-compact{padding:16px 18px;box-shadow:none;background:var(--panel);}
 .card-compact h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:12px;font-weight:700;}
 .card-compact .chart-box{border:none;padding:0;}
+/* Periode d'une carte — metadonnee, pas titre. Elle etait ecrite dans le <h2> (« Charge
+   d'entrainement (12 sem.) »), ce qui melait le sujet et son cadrage temporel. */
+.card-period{margin:-8px 0 12px;font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.card-compact .card-period{margin:-6px 0 10px;}
 
 /* Carte "prochaine séance" — le nom domine, les détails restent discrets */
 .next-session-title{display:flex;align-items:center;gap:9px;margin:0 0 11px;}
