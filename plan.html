@@ -22,7 +22,7 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <img class="brand-mark" id="brandMark" alt="" width="30" height="30">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
@@ -180,7 +180,7 @@
 <nav class="mobile-nav" id="mobileNav"></nav>
 
 <script>
-const ICON_P = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+const ICON_P = n => lucideIconUrl(n);
 const FR_MONTHS_SHORT_P = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
 
 /* --------------------------- HERO : plan actif --------------------------- */

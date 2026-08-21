@@ -22,7 +22,7 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <img class="brand-mark" id="brandMark" alt="" width="30" height="30">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
@@ -199,7 +199,7 @@ document.querySelectorAll('#periodSelect [data-period]').forEach(btn => btn.addE
 }));
 
 /* --------------------------- KPI --------------------------- */
-const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+const ICON = n => lucideIconUrl(n);
 function fmtPctDelta(pct) { return pct == null ? '—' : ((pct >= 0 ? '+' : '') + pct + '%'); }
 function arrowFor(pct) { return pct == null ? '' : '<span class="arrow">' + (pct >= 0 ? '▲' : '▼') + '</span>'; }
 

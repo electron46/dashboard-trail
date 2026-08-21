@@ -1771,12 +1771,69 @@ const NAV_ITEMS = [
   { href: 'equipements.html', icon: 'footprints', label: 'Équipements', mobile: false },
   { href: 'parametres.html', icon: 'settings', label: 'Paramètres', mobile: false },
 ];
-function navIconUrl(name) { return 'https://unpkg.com/lucide-static@latest/icons/' + name + '.svg'; }
+/* ============================================================================================
+   ICÔNES — servies EN LOCAL (phase 17 du plan d'action).
+   Elles étaient toutes chargées depuis un CDN tiers, une requête par icône : 15 allers-retours
+   vers unpkg.com sur un chargement d'Accueil, mesurés — soit la majorité des requêtes de la page.
+   Trois problèmes, dont deux qui dépassent la performance :
+     1. ELEV est une PWA installable. Hors ligne, TOUTES les icônes disparaissaient — y compris
+        celles de la barre de navigation, qui devenait une rangée de libellés sans repère.
+     2. L'URL pointait sur `lucide-static@latest` : le contenu pouvait changer, ou disparaître,
+        au gré d'un tiers et sans prévenir.
+     3. 15 requêtes réseau, avec négociation DNS et TLS, avant le premier rendu complet.
+   Les tracés ci-dessous sont les sources RÉELLES de Lucide (licence ISC), récupérées telles
+   quelles, jamais redessinées de mémoire. Poids total ~4 ko, dans un fichier déjà chargé.
+   `lucideIconUrl` retombe sur le CDN pour tout nom absent de cette table : ajouter une icône
+   ailleurs dans l'application ne peut donc rien casser, elle sera simplement distante.
+   ============================================================================================ */
+const LUCIDE_PATHS = {
+  'alert-triangle': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  'backpack': '<path d="M4 10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 10h8"/><path d="M8 18h8"/><path d="M8 22v-6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>',
+  'calendar': '<path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>',
+  'chevron-right': '<path d="m9 18 6-6-6-6"/>',
+  'clock': '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  'flag': '<path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/>',
+  'footprints': '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
+  'gauge': '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  'heart-pulse': '<path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/><path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+  'home': '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  'more-horizontal': '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  'mountain-snow': '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/>',
+  'package': '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/>',
+  'refresh-cw': '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  'watch': '<path d="M12 10v2.2l1.6 1"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/><circle cx="12" cy="12" r="6"/>',
+  'route': '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+  'settings': '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
+  'target': '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  'trending-up': '<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
+  'user': '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  'zap': '<path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/>',
+};
+const _lucideCache = {};
+function lucideIconUrl(name) {
+  if (!LUCIDE_PATHS[name]) return 'https://unpkg.com/lucide-static@latest/icons/' + name + '.svg';
+  if (!_lucideCache[name]) {
+    // Attributs identiques a ceux des fichiers Lucide d'origine : le rendu ne change pas, et les
+    // filtres CSS de colorisation deja en place continuent de s'appliquer (ce sont des <img>).
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"' +
+      ' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"' +
+      ' stroke-linejoin="round">' + LUCIDE_PATHS[name] + '</svg>';
+    _lucideCache[name] = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+  return _lucideCache[name];
+}
+function navIconUrl(name) { return lucideIconUrl(name); }
 
 // activeHref : à passer explicitement par les pages qui ne correspondent à aucune entrée du menu
 // telles quelles (ex. activite.html?id=... doit surligner "Activités", pas rester sans repère).
 function renderAppNav(activeHref) {
   const current = activeHref || (location.pathname.split('/').pop() || 'index.html');
+
+  // Le sommet de la sidebar : son `src` n'est plus ecrit en dur dans les 9 pages, il vient de la
+  // meme source locale que le reste des icones. `width`/`height` restent dans le HTML pour que la
+  // place soit reservee avant meme l'execution du script.
+  const brand = document.getElementById('brandMark');
+  if (brand && !brand.getAttribute('src')) brand.src = lucideIconUrl('mountain-snow');
 
   const sidebarEl = document.getElementById('sidebarNav');
   if (sidebarEl) {

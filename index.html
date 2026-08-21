@@ -34,7 +34,7 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <img class="brand-mark" id="brandMark" alt="" width="30" height="30">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
@@ -190,7 +190,7 @@ function mainObjectiveRace() {
   const principal = upcoming.find(r => r.statut === 'principal');
   return principal || upcoming[0];
 }
-const ICON = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+const ICON = n => lucideIconUrl(n);
 
 /* --------------------------- 1. OBJECTIF PRINCIPAL (hero) ---------------------------
    SOURCE DE DONNÉES UNIQUE : la course objectif (getRaces/mainObjectiveRace), son fichier GPX
