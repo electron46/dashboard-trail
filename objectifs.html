@@ -22,7 +22,7 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <img class="brand-mark" id="brandMark" alt="" width="30" height="30">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
@@ -445,7 +445,7 @@ function renderGoalInsight() {
     bullets.map(b => '<div class="insight-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
   '</div>';
 }
-const ICON_G = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+const ICON_G = n => lucideIconUrl(n);
 
 /* --------------------------- AUTRES OBJECTIFS --------------------------- */
 function renderGoalSecondary() {

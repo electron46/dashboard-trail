@@ -22,7 +22,7 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <img class="brand-mark" id="brandMark" alt="" width="30" height="30">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
@@ -217,7 +217,7 @@ function settingsRow(label, sub, valueHtml, opts) {
     '<span class="settings-row-value">' + (valueHtml||'') + (opts.onClick ? '<img class="chev" src="'+ICON_S('chevron-right')+'" alt="">' : '') + '</span>' +
   '</' + closeTag + '>';
 }
-const ICON_S = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+const ICON_S = n => lucideIconUrl(n);
 
 /* --------------------------- ONGLETS (Général / Plan) --------------------------- */
 function activateTab(tab) {

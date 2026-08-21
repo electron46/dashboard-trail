@@ -22,7 +22,7 @@
 <div class="app-shell">
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img class="brand-mark" src="https://unpkg.com/lucide-static@latest/icons/mountain-snow.svg" alt="">
+    <img class="brand-mark" id="brandMark" alt="" width="30" height="30">
     <div class="brand-word"><strong>ELEV</strong><span>Trail Intelligence</span></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav"></nav>
@@ -210,7 +210,7 @@ const CATEGORY_ICONS = { chaussures:'footprints', montre:'watch', accessoire:'ba
 const CATEGORY_COLORS = { chaussures:'var(--accent)', montre:'var(--accent-light)', accessoire:'var(--warn)', autre:'var(--muted-2)' };
 const STATUS_LABELS = { bon:'Bon', surveiller:'À surveiller', remplacer:'À remplacer', archive:'Archivé' };
 const STATUS_BADGE_CLASS = { bon:'ok-badge', surveiller:'warn-badge', remplacer:'danger-badge', archive:'na' };
-const ICON_E = n => 'https://unpkg.com/lucide-static@latest/icons/' + n + '.svg';
+const ICON_E = n => lucideIconUrl(n);
 
 let currentTab = 'tous';
 let currentSort = 'utilises';
