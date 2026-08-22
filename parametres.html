@@ -14,7 +14,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="assets/style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Version FIGEE (audit PERF-001) : `@2` laissait jsDelivr servir n'importe quelle version
+     corrective de la branche 2.x, donc un comportement pouvant changer sans aucune modification du
+     depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
+     une empreinte non verifiee ici serait une fausse garantie. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -303,28 +307,54 @@ async function renderCardConnect() {
   }
   if (pushFailed) { syncLine = "Erreur d'envoi"; syncDot = ''; }
   const detected = getDetectedDevices(5);
-  const apiKey = getApiKey();
+  /* La clé Anthropic était saisie ici puis conservée en clair dans le navigateur, et envoyée
+     directement à l'API depuis la page (audit RISK-002). Le champ a été RETIRÉ : il n'existe plus
+     d'endroit où déposer un secret côté client. Les appels IA passent par une fonction serveur
+     authentifiée dont le secret vit dans la configuration du projet Supabase — le navigateur ne le
+     reçoit jamais. Voir supabase/functions/README.md pour le déploiement. */
+  const ia = aiAvailability();
+  const iaEtat = ia.ok ? 'Prête (via ton projet Supabase)' : 'Indisponible';
   box.innerHTML =
     settingsRow('Synchronisation ELEV', syncSub, syncDot + syncLine, { id:'goSupaConfig', onClick:true }) +
     settingsRow('Import de séances', 'Fichiers .fit (manuel)', '', { id:'goImport', onClick:true }) +
     settingsRow('Appareils détectés', 'Derniers appareils via fichiers FIT', detected.length ? (detected.length + ' appareil' + (detected.length>1?'s':'')) : 'Aucun', { id:'goDevices', onClick:true }) +
-    settingsRow('API IA', 'Utilisée uniquement pour le retour Coach ELEV nécessitant l\'API', apiKey ? ('Configurée (••••' + escapeHtml(apiKey.slice(-4)) + ')') : 'Non configurée') +
-    '<div class="row" style="margin-top:8px;">' +
-      '<label class="field" style="flex:1 1 220px;">Clé API Claude (sk-ant-...)<input type="password" id="apiKeyInput" placeholder="sk-ant-..."></label>' +
-      '<button class="btn small primary" id="saveKeyBtn" type="button" style="align-self:flex-end;">Enregistrer</button>' +
-      '<button class="btn small danger" id="forgetKeyBtn" type="button" style="align-self:flex-end;">Oublier</button>' +
-    '</div>' +
+    settingsRow('Fonctions IA', 'Coach ELEV et estimation de temps de course', iaEtat) +
+    // « Prête » ne signifiait que « Supabase est configuré sur cet appareil » : ni que la fonction
+    // serveur est déployée, ni que la clé Anthropic est présente et valide. Ce bouton fait un vrai
+    // appel minimal et rend un verdict sur toute la chaîne.
+    settingsRow('Tester les fonctions IA', 'Appel réel de quelques jetons, pour vérifier toute la chaîne', '', { id:'testAiBtn', onClick:true }) +
+    '<p class="hint" style="margin-top:8px;">Aucune clé API n\'est stockée dans ce navigateur. Les appels passent par la fonction <code>ai-proxy</code> de ton projet Supabase, qui détient seule le secret et n\'accepte que ton compte connecté.' +
+    (legacyApiKeyWasPurged() ? ' La clé enregistrée par une version précédente a été effacée de cet appareil.' : '') +
+    '</p>' +
+    '<div id="aiTestMsg"></div>' +
     '<div id="keyMsg"></div>';
   document.getElementById('goSupaConfig').addEventListener('click', () => document.getElementById('supaConfigSection').scrollIntoView({behavior:'smooth'}));
   document.getElementById('goImport').addEventListener('click', () => location.href = 'historique.html');
   document.getElementById('goDevices').addEventListener('click', () => location.href = 'equipements.html');
-  document.getElementById('saveKeyBtn').addEventListener('click', () => {
-    const val = document.getElementById('apiKeyInput').value.trim();
-    if (!val) { showMsg('keyMsg', 'Entrez une clé avant d\'enregistrer.', 'err'); return; }
-    try { localStorage.setItem(KEY_KEY, val); showMsg('keyMsg', 'Clé enregistrée localement.', 'ok'); renderCardConnect(); }
-    catch (e) { showMsg('keyMsg', 'Erreur de stockage : ' + e.message, 'err'); }
+  /* Le bouton reste actif même quand `aiAvailability()` dit non : c'est justement le cas où
+     l'utilisateur a besoin de savoir CE qui manque. `callElevAi` ne lève jamais d'exception, le
+     bouton est donc toujours rendu, y compris sur un échec réseau. */
+  const testBtn = document.getElementById('testAiBtn');
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true;
+    showMsg('aiTestMsg', 'Test en cours…', 'info');
+    try {
+      const res = await testElevAi();
+      if (res.ok) {
+        const jetons = res.usage && res.usage.sortie != null
+          ? ' — ' + ((res.usage.entree || 0) + (res.usage.sortie || 0)) + ' jetons consommés'
+          : '';
+        showMsg('aiTestMsg',
+          'Chaîne complète fonctionnelle : fonction serveur joignable, compte authentifié, clé Anthropic valide. Réponse de ' +
+          (res.model || 'le modèle configuré') + ' en ' + (res.dureeMs / 1000).toFixed(1) + ' s' + jetons + '.', 'ok');
+      } else {
+        // Le motif technique reste affiché à côté du message d'action : c'est lui qui permet de
+        // retrouver la ligne correspondante dans supabase/functions/README.md.
+        showMsg('aiTestMsg', res.message + ' [' + res.reason + ']', 'err');
+      }
+    } finally { testBtn.disabled = false; }
   });
-  document.getElementById('forgetKeyBtn').addEventListener('click', () => { localStorage.removeItem(KEY_KEY); showMsg('keyMsg', 'Clé oubliée.', 'ok'); renderCardConnect(); });
+  if (!ia.ok) showMsg('keyMsg', ia.message, 'info');
 }
 
 /* --------------------------- DONNÉES & CONFIDENTIALITÉ --------------------------- */
@@ -356,7 +386,7 @@ function renderCardData() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'export-dashboard-trail-' + new Date().toISOString().slice(0,10) + '.json';
+    a.href = url; a.download = 'export-dashboard-trail-' + todayISO() + '.json';
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   });
@@ -367,28 +397,28 @@ function renderCardData() {
     if (!file) return;
     try {
       const data = JSON.parse(await file.text());
-      const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-      let added = 0, updated = 0;
-      if (sessions.length) {
-        const idx = loadIndex();
-        sessions.forEach(s => {
-          if (!s || !s.id) return;
-          const isNew = !idx.includes(s.id);
-          if (isNew) idx.push(s.id);
-          saveSession(s.id, s);
-          if (isNew) added++; else updated++;
-        });
-        saveIndex(idx);
-      }
-      if (data.plan) savePlan(data.plan);
-      if (Array.isArray(data.races) && data.races.length) saveRaces(data.races);
-      if (data.profile) saveProfile(data.profile);
-      if (Array.isArray(data.gear)) saveGear(data.gear);
-      if (!sessions.length && !data.plan && !data.races && !data.profile && !data.gear) {
-        showMsg('importJsonMsg', 'Fichier JSON vide ou format non reconnu (attendu : un export généré par ce dashboard).', 'err');
-        return;
-      }
-      showMsg('importJsonMsg', added + ' séance(s) ajoutée(s), ' + updated + ' mise(s) à jour, plus le reste des données importées si présentes dans le fichier.', 'ok');
+      /* Restauration par la fonction PARTAGÉE avec la synchronisation cloud (audit TECH-001).
+         Cet import avait sa propre logique, plus ancienne : il ne restaurait ni la note ni l'année
+         du plan (BUG-006) et refusait de vider une liste de courses parce qu'il testait
+         `data.races.length` (BUG-007) — un export réimporté ne redonnait donc pas l'état exporté.
+         Les règles de présence (clé absente / présente et vide / présente et remplie) sont
+         désormais les mêmes des deux côtés. */
+      const res = restoreBackupPayload(data, { sessionsMode: 'merge' });
+      if (!res.ok) { showMsg('importJsonMsg', res.reason || 'Fichier non exploitable.', 'err'); return; }
+      const parts = [];
+      if (res.added) parts.push(res.added + ' séance(s) ajoutée(s)');
+      if (res.updated) parts.push(res.updated + ' mise(s) à jour');
+      const restant = res.applied.filter(k => k !== 'sessions');
+      if (restant.length) parts.push('données restaurées : ' + restant.join(', '));
+      if (res.schemaVersion === 0) parts.push('sauvegarde antérieure au versionnement du schéma');
+      let msg = (parts.length ? parts.join(', ') : 'Aucune donnée à restaurer') + '.';
+      if (res.failed) msg += ' ' + res.failed + ' échec(s).';
+      if (res.errors.length) msg += ' ' + res.errors.slice(0, 4).join(' | ');
+      showMsg('importJsonMsg', msg, (res.failed || res.errors.length) ? 'err' : 'ok');
+      // Les cartes lisant des données restaurées sont redessinées : sans cela, la page continuait
+      // d'afficher l'état d'avant l'import jusqu'au prochain rechargement.
+      renderCardBackup();
+      renderPlanView();
     } catch (err) { showMsg('importJsonMsg', 'Erreur lors de la lecture du fichier : ' + err.message, 'err'); }
   });
   document.getElementById('resetBtn').addEventListener('click', () => {
@@ -398,16 +428,20 @@ function renderCardData() {
       ? 'Supprimer toutes les données LOCALES de cet appareil (séances, plan, courses, profil, équipements, clé API) ? Tes données synchronisées resteront disponibles dans le cloud (récupérables via "Récupérer depuis le cloud").'
       : 'Supprimer TOUTES les données (séances, plan, courses, profil, équipements, clé API) enregistrées dans ce navigateur ? Aucune synchronisation cloud n\'est active : cette action est IRRÉVERSIBLE. Pense à exporter tes données avant si besoin.';
     if (!confirm(warn)) return;
-    // Les suppressions ci-dessous appellent scheduleSync() : sans cette annulation, un envoi
-    // differe (1,5 s) pouvait partir APRES le vidage et pousser un etat vide vers Supabase,
-    // detruisant precisement la copie cloud que le message ci-dessus promet de conserver.
-    cancelPendingSync();
-    const idx = loadIndex();
-    idx.forEach(deleteSession);
-    localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(KEY_KEY);
-    localStorage.removeItem(RACES_KEY); localStorage.removeItem(PROFILE_KEY); localStorage.removeItem(GEAR_KEY);
-    localStorage.removeItem(SUPA_META_KEY);
-    showMsg('importJsonMsg', 'Données locales réinitialisées.', 'ok');
+    /* `cancelPendingSync()` seul ne suffisait pas : il annule l'envoi déjà programmé, mais la
+       suppression SUIVANTE en reprogramme un aussitôt (chaque écriture locale appelle
+       scheduleSync). La minuterie était donc réarmée, et un envoi différé de 1,5 s pouvait partir
+       APRÈS le vidage, poussant un état vide vers Supabase — exactement la copie cloud que le
+       message ci-dessus promet de conserver (audit BUG-002).
+       `suspendSync()` verrouille pour toute la durée de l'opération. Il n'est volontairement PAS
+       levé ici : après une réinitialisation, aucun envoi ne doit partir, et le rechargement
+       ci-dessous remet le verrou à zéro. */
+    suspendSync();
+    // Liste centralisée des clés (voir localDataKeys dans app.js) : `trail:planNotes` et
+    // `trail:planYear` étaient oubliés, et l'ancien contexte du plan réapparaissait après un
+    // « effacer toutes les données » (audit BUG-009).
+    const bilan = resetLocalData();
+    showMsg('importJsonMsg', 'Données locales réinitialisées (' + bilan.seancesSupprimees + ' séance(s) et ' + bilan.clesSupprimees + ' clés effacées).', 'ok');
     setTimeout(() => location.reload(), 900);
   });
 }
@@ -421,28 +455,63 @@ function renderCardBackup() {
     settingsRow('Vérifier l\'intégrité', 'Recherche les séances liées à un équipement supprimé', '', { id:'checkIntegrityBtn', onClick:true }) +
     settingsRow('Vider le cache local', canClearCache ? 'Resynchronise depuis le cloud' : 'Disponible une fois la synchronisation cloud active', '', { id:'clearCacheBtn', onClick: canClearCache, unavailable: !canClearCache }) +
     '<div id="backupMsg"></div>';
+  /* Le contrôle ne cherchait que les références d'équipement orphelines. Il ne voyait ni les
+     identifiants d'index sans séance (activité fantôme), ni les séances stockées hors index
+     (invisibles partout), ni deux séances partageant la même identité de contenu, ni une version
+     de schéma non reconnue. Rien n'est jamais supprimé pour « réparer » : ce qui se récupère sans
+     perte est proposé à la réintégration, le reste est signalé. */
   document.getElementById('checkIntegrityBtn').addEventListener('click', () => {
     const r = checkDataIntegrity();
-    showMsg('backupMsg', r.ok ? 'Aucun problème détecté.' : (r.orphanGearRefs + ' séance(s) référencent un équipement qui n\'existe plus.'), r.ok ? 'ok' : 'info');
+    if (r.ok) { showMsg('backupMsg', 'Aucun problème détecté.', 'ok'); return; }
+    const constats = [];
+    if (r.seanceHorsIndex.length) constats.push(r.seanceHorsIndex.length + ' séance(s) stockée(s) mais absente(s) de la liste (invisibles dans l\'application)');
+    if (r.indexSansSeance.length) constats.push(r.indexSansSeance.length + ' entrée(s) de liste sans séance correspondante');
+    if (r.indexDoublons.length) constats.push(r.indexDoublons.length + ' doublon(s) dans la liste');
+    if (r.collisionsIdentite.length) constats.push(r.collisionsIdentite.length + ' groupe(s) de séances partageant la même identité');
+    if (r.orphanGearRefs) constats.push(r.orphanGearRefs + ' séance(s) référencent un équipement qui n\'existe plus');
+    if (r.schemaInconnu.length) constats.push('version de schéma non reconnue : ' + r.schemaInconnu.join(', '));
+    showMsg('backupMsg', constats.join(' · ') + '.', 'info');
+    if (r.reparable) {
+      const zone = document.getElementById('backupMsg');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn small';
+      btn.style.marginTop = '8px';
+      btn.textContent = 'Réintégrer les séances récupérables';
+      btn.addEventListener('click', () => {
+        const rep = repairDataIntegrity();
+        showMsg('backupMsg', rep.ok
+          ? (rep.reintegrees + ' séance(s) réintégrée(s), ' + rep.fantomesRetires + ' entrée(s) vide(s) retirée(s), ' + rep.doublonsRetires + ' doublon(s) de liste retiré(s). Aucune donnée supprimée.')
+          : 'Réparation impossible : le stockage a refusé l\'écriture.', rep.ok ? 'ok' : 'err');
+      });
+      zone.appendChild(btn);
+    }
   });
   const clearCacheBtn = document.getElementById('clearCacheBtn');
   if (clearCacheBtn && canClearCache) clearCacheBtn.addEventListener('click', async () => {
     if (!confirm('Vider le cache local et resynchroniser depuis le cloud ?')) return;
-    // Meme raison que pour la reinitialisation : ne pas laisser un envoi differe pousser le cache
-    // vide vers le cloud, en particulier si le syncPull() ci-dessous echoue.
-    cancelPendingSync();
-    const idx = loadIndex();
-    idx.forEach(deleteSession);
-    localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(RACES_KEY); localStorage.removeItem(PROFILE_KEY); localStorage.removeItem(GEAR_KEY);
-    // Deux récupérations, car il y a désormais deux stockages cloud distincts : le blob
-    // (plan, courses, profil, équipements, réglages) et la table `activities` (les séances).
-    // Ne rappeler que syncPull() laisserait l'appareil sans aucune séance.
-    const res = await syncPull();
-    const resAct = await syncActivitiesWithSupabase();
-    const ok = res.ok && resAct.ok;
+    /* Le verrou couvre TOUTE l'opération — suppressions ET récupérations — et non seulement
+       l'instant de l'annulation. `cancelPendingSync()` seul laissait la première suppression
+       réarmer la minuterie : si la récupération ci-dessous dépassait 1,5 s (réseau lent) ou
+       échouait, le cache vidé partait vers Supabase (audit BUG-002). Le try/finally garantit que
+       le verrou est levé même si une récupération lève une exception, sans quoi la
+       synchronisation resterait muette jusqu'au rechargement. */
+    const bilan = await withSyncSuspended(async () => {
+      const idx = loadIndex();
+      idx.forEach(deleteSession);
+      localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(RACES_KEY); localStorage.removeItem(PROFILE_KEY); localStorage.removeItem(GEAR_KEY);
+      localStorage.removeItem(SYNCED_IDS_KEY);
+      // Deux récupérations, car il y a désormais deux stockages cloud distincts : le blob
+      // (plan, courses, profil, équipements, réglages) et la table `activities` (les séances).
+      // Ne rappeler que syncPull() laisserait l'appareil sans aucune séance.
+      const res = await syncPull();
+      const resAct = await syncActivitiesWithSupabase();
+      return { res, resAct };
+    });
+    const ok = bilan.res.ok && bilan.resAct.ok;
     showMsg('backupMsg', ok
-      ? ('Cache vidé et données récupérées depuis le cloud (' + (resAct.count || 0) + ' séance(s)).')
-      : ('Cache vidé — erreur de récupération : ' + (res.ok ? resAct.reason : res.reason)), ok ? 'ok' : 'err');
+      ? ('Cache vidé et données récupérées depuis le cloud (' + (bilan.resAct.count || 0) + ' séance(s)).')
+      : ('Cache vidé — erreur de récupération : ' + (bilan.res.ok ? bilan.resAct.reason : bilan.res.reason)), ok ? 'ok' : 'err');
     setTimeout(() => location.reload(), 900);
   });
 }
@@ -503,7 +572,7 @@ function renderPlanView() {
   if (!plan || !plan.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
   document.getElementById('planViewCount').textContent = '(' + plan.length + ' séances)';
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const sorted = plan.slice().sort((a,b) => a.date.localeCompare(b.date));
   const groups = [];
   let current = null;

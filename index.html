@@ -14,7 +14,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="assets/style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Version FIGEE (audit PERF-001) : `@2` laissait jsDelivr servir n'importe quelle version
+     corrective de la branche 2.x, donc un comportement pouvant changer sans aucune modification du
+     depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
+     une empreinte non verifiee ici serait une fausse garantie. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -195,7 +199,7 @@ function renderGreeting() {
 // N'affiche que des indicateurs réellement calculables à partir des données de l'app (pas de score
 // "état de forme" ou "récupération" — ces données ne sont pas suivies aujourd'hui, voir README).
 function mainObjectiveRace() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const upcoming = getRaces().filter(r => r.date >= today).sort((a,b) => a.date.localeCompare(b.date));
   if (!upcoming.length) return null;
   const principal = upcoming.find(r => r.statut === 'principal');
@@ -225,7 +229,7 @@ function renderObjective() {
       '<a class="btn small accent" href="objectifs.html">Ajouter un objectif</a></div>';
     return;
   }
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
   const readiness = computeRaceReadiness(r);
   const hasReadiness = readiness && readiness.overall != null;
@@ -511,7 +515,7 @@ function renderTrajectory() {
 function renderCheckpoint() {
   const box = document.getElementById('checkpointStrip');
   box.classList.add('scene');
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const plan = getPlan();
   const nextPlanned = plan ? plan.filter(p => p.date >= today).sort((a,b) => a.date.localeCompare(b.date))[0] : null;
   if (!nextPlanned) {
@@ -647,9 +651,10 @@ function renderFcSummary() {
     box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>';
     return;
   }
-  const today = new Date().toISOString().slice(0,10);
-  const d30 = new Date(); d30.setDate(d30.getDate() - 30);
-  const c30 = d30.toISOString().slice(0,10);
+  const today = todayISO();
+  // Arithmétique de dates CIVILES : décaler un instant en heure locale puis le relire en UTC
+  // mélangeait deux conventions et pouvait décaler la fenêtre d'un jour (audit BUG-005).
+  const c30 = addDaysIso(today, -30);
   const sessions = loadAllSessions().filter(s => s.date >= c30 && s.date <= today && Array.isArray(s.series) && s.series.length >= 2);
   const zoneSeconds = zones.map(() => 0);
   let totalSeconds = 0;

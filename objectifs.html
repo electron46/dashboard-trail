@@ -14,7 +14,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="assets/style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Version FIGEE (audit PERF-001) : `@2` laissait jsDelivr servir n'importe quelle version
+     corrective de la branche 2.x, donc un comportement pouvant changer sans aucune modification du
+     depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
+     une empreinte non verifiee ici serait une fausse garantie. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -267,7 +271,7 @@ function selectableRaces() { return getRaces().filter(r => showArchived || !r.ar
 // Objectif par défaut : le principal le plus proche à venir, sinon la prochaine course à venir,
 // sinon la plus récente (course déjà passée) — jamais un choix arbitraire dans une liste vide.
 function defaultRaceId() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const races = getRaces().filter(r => !r.archived);
   if (!races.length) return null;
   const upcoming = races.filter(r => r.date >= today).sort((a,b) => a.date.localeCompare(b.date));
@@ -311,7 +315,7 @@ function renderGoalSelector() {
    de l'historique connu) — même philosophie que la page Analyse (floorToKnownHistory, app.js),
    volontairement partagée pour ne jamais diverger entre les deux pages (voir CLAUDE.md). */
 function goalWindow() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const windowStart = new Date(new Date(today).getTime() - READINESS_WEEKS * 7 * 86400000).toISOString().slice(0,10);
   const sessions = loadAllSessions();
   const flooredFrom = floorToKnownHistory(windowStart, sessions);
@@ -329,9 +333,9 @@ function goalWindowLabel(win) {
     : '(12 dernières semaines)';
 }
 function goalCountdown(dateISO) {
-  const todayISO = new Date().toISOString().slice(0,10);
-  if (dateISO < todayISO) return { main: 'Course terminée', sub: fmtDate(dateISO) };
-  const days = Math.ceil((new Date(dateISO) - new Date(todayISO)) / 86400000);
+  const aujourdhui = todayISO();
+  if (dateISO < aujourdhui) return { main: 'Course terminée', sub: fmtDate(dateISO) };
+  const days = Math.ceil((new Date(dateISO) - new Date(aujourdhui)) / 86400000);
   if (days === 0) return { main: "Aujourd'hui", sub: fmtDate(dateISO) };
   const weeks = Math.round(days / 7);
   const mainTxt = weeks >= 2 ? (weeks + ' semaines restantes') : ('J-' + days);
@@ -339,8 +343,8 @@ function goalCountdown(dateISO) {
 }
 function weeklyMaxDistance(sessions, nWeeks) {
   return getRecentWeeklyVolumes(nWeeks).map(w => {
-    const weEnd = new Date(w.startISO); weEnd.setDate(weEnd.getDate() + 6);
-    const inWeek = sessions.filter(s => s.date >= w.startISO && s.date <= weEnd.toISOString().slice(0,10));
+    const weEnd = addDaysIso(w.startISO, 6);
+    const inWeek = sessions.filter(s => s.date >= w.startISO && s.date <= weEnd);
     return inWeek.length ? Math.max(...inWeek.map(s => s.distanceKm || 0)) : 0;
   });
 }
@@ -370,16 +374,18 @@ function renderGoalHero() {
   // Moyenne "sur historique disponible" (win.weeksCovered) plutôt que /READINESS_WEEKS fixe : sinon
   // un utilisateur avec 2 semaines de données voit sa moyenne artificiellement écrasée par 10
   // semaines "sans historique" traitées à tort comme des semaines à zéro (voir CLAUDE.md).
-  const today = new Date().toISOString().slice(0,10);
-  const c4From = new Date(); c4From.setDate(c4From.getDate() - 28);
-  const p4From = new Date(); p4From.setDate(p4From.getDate() - 56);
-  const p4To = new Date(); p4To.setDate(p4To.getDate() - 29);
+  const today = todayISO();
+  // Arithmétique de dates CIVILES (addDaysIso) et non décalage d'un instant local relu en UTC :
+  // les deux conventions se mélangeaient et pouvaient décaler la fenêtre d'un jour (audit BUG-005).
+  const c4From = addDaysIso(today, -28);
+  const p4From = addDaysIso(today, -56);
+  const p4To = addDaysIso(today, -29);
   const sessions = loadAllSessions();
-  const last4 = filterSessionsByRange(sessions, c4From.toISOString().slice(0,10), today);
-  const prev4 = filterSessionsByRange(sessions, p4From.toISOString().slice(0,10), p4To.toISOString().slice(0,10));
+  const last4 = filterSessionsByRange(sessions, c4From, today);
+  const prev4 = filterSessionsByRange(sessions, p4From, p4To);
   // La comparaison n'a de sens que si la période précédente de 4 semaines est ENTIÈREMENT couverte
   // par l'historique connu — sinon "comparer" reviendrait à comparer à un historique partiel tronqué.
-  const prev4FullyCovered = sessions.length > 0 && sessions[0].date <= p4From.toISOString().slice(0,10);
+  const prev4FullyCovered = sessions.length > 0 && sessions[0].date <= p4From;
   const cmp4 = prev4FullyCovered ? comparePeriods(aggregatePeriod(last4), aggregatePeriod(prev4)) : null;
   const win = goalWindow();
   const avgVolume = win.sessions.length ? (win.sessions.reduce((a,s)=>a+(s.distanceKm||0),0) / win.weeksCovered) : null;
@@ -453,7 +459,7 @@ function renderGoalSecondary() {
   const race = currentRace();
   const others = selectableRaces().filter(r => !race || r.id !== race.id).sort((a,b) => a.date.localeCompare(b.date));
   if (!others.length) { box.innerHTML = ''; return; }
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   box.innerHTML = '<div class="goal-secondary-title">Autres objectifs</div><div class="races">' +
     others.map(r => {
       const readiness = computeRaceReadiness(r);
@@ -569,10 +575,9 @@ function renderApercu() {
   // devient alors absurde (2000 % mesuré sur un plan démarrant le jour même). Plutôt que d'afficher
   // ce chiffre ou de le plafonner — ce qui masquerait le problème derrière une valeur trompeuse —
   // on dit explicitement que la comparaison n'a pas encore de sens.
-  const plan28 = (getPlan() || []).filter(p => {
-    const d0 = new Date(new Date().toISOString().slice(0,10)).getTime();
-    return p.date <= new Date(d0).toISOString().slice(0,10) && p.date >= new Date(d0 - 28*86400000).toISOString().slice(0,10);
-  }).length;
+  const finFenetre = todayISO();
+  const debutFenetre = addDaysIso(finFenetre, -28);
+  const plan28 = (getPlan() || []).filter(p => p.date <= finFenetre && p.date >= debutFenetre).length;
   const PLAN_MIN_SEANCES_FENETRE = 4;
   if (!prep) {
     confBox.innerHTML = '<div class="empty">Importe ton plan d\'entraînement pour comparer ce que tu as réalisé à ce qui était prévu. <a href="parametres.html#plan">Importer un plan →</a></div>';
@@ -737,7 +742,7 @@ function renderHistorique() {
   const box = document.getElementById('goalHistoryBox');
   const race = currentRace();
   if (!race) { box.innerHTML = ''; return; }
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const items = [
     ['Objectif créé', race.createdAt ? fmtDate(race.createdAt.slice(0,10)) : 'Date de création non connue (course existante avant cette fonctionnalité)'],
     ['Plan associé', getPlan() ? 'Un plan est actuellement importé (partagé entre tous les objectifs)' : 'Aucun plan associé'],
@@ -756,7 +761,7 @@ function renderDetails() {
   const race = currentRace();
   const archiveBtn = document.getElementById('goalArchiveBtn');
   if (!race) { box.innerHTML = ''; archiveBtn.style.display = 'none'; return; }
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const isPast = race.date < today;
   const rows = [
     ['Nom', race.name], ['Date', fmtDate(race.date)],
@@ -944,10 +949,8 @@ Répondez en 4 sections courtes, sans balises XML dans la réponse finale :
 
 function buildTrainingSummaryText(sessions) {
   if (!sessions.length) return 'Non communiqué (aucune séance enregistrée dans l\'historique).';
-  const today = new Date().toISOString().slice(0,10);
-  const d4 = new Date(); d4.setDate(d4.getDate() - 28);
-  const d8 = new Date(); d8.setDate(d8.getDate() - 56);
-  const c4 = d4.toISOString().slice(0,10), c8 = d8.toISOString().slice(0,10);
+  const today = todayISO();
+  const c4 = addDaysIso(today, -28), c8 = addDaysIso(today, -56);
   const last4 = sessions.filter(s => s.date >= c4 && s.date <= today);
   const last8 = sessions.filter(s => s.date >= c8 && s.date <= today);
   const sum = (arr, key) => arr.reduce((a,s) => a + (s[key] || 0), 0);
@@ -978,17 +981,26 @@ function buildProfileSummaryText(profile) {
   return lines.length ? lines.join('\n') : 'Non communiqué.';
 }
 
+/* Affiche une erreur IA en TEXTE, jamais en HTML : le message peut contenir un détail renvoyé par
+   le service (message d'erreur, corps de réponse), donc une source non maîtrisée. */
+function setRaceAiError(el, message) {
+  el.textContent = '';
+  const span = document.createElement('span');
+  span.style.color = 'var(--danger)';
+  span.textContent = message;
+  el.appendChild(span);
+}
+
 document.getElementById('raceAiBtn').addEventListener('click', async () => {
   if (!editingRaceId) return;
-  const apiKey = getApiKey();
   const statusEl = document.getElementById('raceAiStatus');
   const boxEl = document.getElementById('raceAiBox');
   const btn = document.getElementById('raceAiBtn');
 
-  if (!apiKey) {
-    statusEl.innerHTML = '<span style="color:var(--danger)">Aucune clé API enregistrée — renseignez-la dans la page Paramètres.</span>';
-    return;
-  }
+  // La clé API n'existe plus côté navigateur (audit RISK-002) : l'appel passe par une fonction
+  // serveur authentifiée. Ce qui manque éventuellement est dit AVANT de préparer le prompt.
+  const dispo = aiAvailability();
+  if (!dispo.ok) { setRaceAiError(statusEl, dispo.message); return; }
 
   const race = getRaces().find(r => r.id === editingRaceId);
   if (!race) return;
@@ -1012,29 +1024,22 @@ document.getElementById('raceAiBtn').addEventListener('click', async () => {
   userParts.push('\nHistorique d\'entraînement :');
   userParts.push(buildTrainingSummaryText(sessions));
 
+  /* `callElevAi` retourne toujours un objet et n'échoue jamais par exception : timeout, 401, 429,
+     5xx, réseau coupé et réponse vide sont tous des retours normaux. Le `finally` rend de toute
+     façon le bouton — l'ancien appel n'avait aucun délai maximal (audit RISK-003). */
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 1600,
-        thinking: { type: 'disabled' },
-        system: AI_RACE_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userParts.join('\n') }],
-      }),
+    const res = await callElevAi({
+      task: 'estimation-course',
+      system: AI_RACE_SYSTEM_PROMPT,
+      message: userParts.join('\n'),
+      maxTokens: 1600,
     });
-    if (!resp.ok) { const errBody = await resp.text(); throw new Error('HTTP ' + resp.status + ' — ' + errBody.slice(0,200)); }
-    const data = await resp.json();
-    const text = (data.content || []).map(c => c.text || '').join('\n').trim();
-    if (!text) throw new Error('Réponse vide de l\'API.');
-    upsertRace(Object.assign({}, race, { aiEstimation: text }));
-    boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>';
+    if (!res.ok) { setRaceAiError(statusEl, res.message); return; }
+    upsertRace(Object.assign({}, race, { aiEstimation: res.text }));
+    boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(res.text) + '</div>';
     statusEl.textContent = '';
     btn.textContent = 'Regénérer l\'estimation';
     document.getElementById('raceAiUseRow').style.display = 'flex';
-  } catch (err) {
-    statusEl.innerHTML = '<span style="color:var(--danger)">Erreur lors de l\'appel à l\'API : ' + escapeHtml(err.message) + ' (vérifiez la clé API et votre connexion).</span>';
   } finally { btn.disabled = false; }
 });
 

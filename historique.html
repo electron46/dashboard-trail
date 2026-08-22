@@ -14,7 +14,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="assets/style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Version FIGEE (audit PERF-001) : `@2` laissait jsDelivr servir n'importe quelle version
+     corrective de la branche 2.x, donc un comportement pouvant changer sans aucune modification du
+     depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
+     une empreinte non verifiee ici serait une fausse garantie. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -82,6 +86,12 @@
     </div>
     <div class="activity-row-list" id="historyList"></div>
     <div id="historyEmpty" class="empty" style="display:none;">Aucune séance importée pour l'instant. Glisse un fichier .fit n'importe où sur cette page, ou utilise le bouton « Importer une activité ».</div>
+    <!-- Chargement progressif (audit PERF-002) : 222 activités produisaient 222 lignes d'un coup et
+         une page de 59 584 px. Un lot à la fois, avec un bouton réel — donc atteignable au clavier
+         et annoncé — plutôt qu'une virtualisation qui casserait la recherche du navigateur, la
+         lecture d'écran et le retour arrière. Le tri et les filtres portent toujours sur la
+         totalité des activités, jamais sur le seul lot affiché. -->
+    <div id="historyMore" class="activities-list-end" style="display:none;"></div>
     <div class="activities-list-end" id="historyEnd" style="display:none;">— Fin de la liste —</div>
   </section>
 
@@ -121,11 +131,26 @@ window.addEventListener('drop', e => {
   if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
 });
 
+/* Import d'un ou plusieurs fichiers .fit.
+   Trois corrections d'audit se rejoignent ici :
+   - BUG-003 : l'identifiant valait `date + sport + distance arrondie au mètre`, donc deux sorties
+     distinctes du même jour pouvaient s'écraser l'une l'autre. L'identité vient désormais du
+     contenu FIT (voir makeSessionId / findExistingSession dans app.js) et n'est jamais recalculée
+     pour une séance déjà enregistrée.
+   - UX-001 : réimporter un fichier déjà présent annonçait « 1 séance importée » alors qu'aucune
+     ligne n'était ajoutée. Les quatre issues sont désormais comptées séparément : ajoutée,
+     mise à jour, doublon, échec.
+   - BUG-008 : l'index était publié AVANT la séance ; un échec d'écriture (quota) laissait un
+     identifiant pointant vers rien. `persistSession` écrit la séance d'abord et annule si l'index
+     ne peut pas être publié.
+   - BUG-004 : le CRC de fin de fichier n'était vérifié que par l'inspecteur. `readFitFile` valide
+     signature, taille, troncature et CRC avant de parser ; un CRC faux est refusé, l'utilisateur
+     pouvant passer outre après une confirmation explicite qui nomme le risque. */
 async function handleFiles(fileList) {
   const files = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.fit'));
   if (!files.length) { showMsg('importMsg', 'Aucun fichier .fit valide sélectionné.', 'err'); return; }
-  let ok = 0, fail = 0;
-  const errors = [];
+  let ajoutees = 0, misesAJour = 0, doublons = 0, echecs = 0;
+  const details = [];
   // Etat « import en cours » : le parsing d'un .fit peut prendre plusieurs secondes sur un gros
   // fichier, et rien ne l'indiquait — la page semblait simplement figee. Le squelette reserve
   // aussi la place des lignes a venir, donc pas de saut de mise en page a l'arrivee.
@@ -133,41 +158,89 @@ async function handleFiles(fileList) {
   cta.disabled = true;
   showMsg('importMsg', 'Lecture de ' + files.length + ' fichier' + (files.length > 1 ? 's' : '') + '…', 'info');
   document.getElementById('historyList').innerHTML = skeletonHtml('row', Math.min(files.length, 5));
+  // Chargé une seule fois : un import multiple ne doit pas relire tout le stockage à chaque fichier.
+  // Mis à jour au fil de la boucle pour qu'un doublon présent DANS la même sélection soit reconnu.
+  let connues = loadAllSessions();
+
   for (const file of files) {
     try {
       const buffer = await file.arrayBuffer();
-      const messages = parseFit(buffer);
-      const summary = summarizeFit(messages, file);
-      const id = summary.date + '_' + (summary.sport || 'activite').replace(/\s+/g,'-') + '_' + Math.round((summary.distanceKm||0)*1000);
-      summary.id = id;
+      const fileHash = fitFileFingerprint(buffer);
+      const meta = { name: file.name, lastModified: file.lastModified, fileHash };
+      let lu;
+      try {
+        lu = readFitFile(buffer, meta);
+      } catch (err) {
+        const v = err.validation;
+        const crcSeul = v && v.signatureValid && !v.truncated && v.headerCrcValid !== false && v.fileCrcValid === false;
+        if (!crcSeul) throw err;
+        const forcer = confirm(file.name + '\n\n' + err.message + '\n\n' +
+          'Les statistiques calculées à partir de ce fichier peuvent être fausses (distance, dénivelé, fréquence cardiaque).\n\n' +
+          'Importer quand même ?');
+        if (!forcer) { echecs++; details.push(file.name + ' : import annulé (CRC invalide)'); continue; }
+        lu = readFitFile(buffer, meta, { allowCrcMismatch: true });
+      }
+      const summary = lu.summary;
       summary.fileName = file.name;
       summary.importedAt = new Date().toISOString();
-      const idx = loadIndex();
-      if (!idx.includes(id)) idx.push(id);
-      if (saveIndex(idx) && saveSession(id, summary)) {
-        ok++;
-        // Meilleur effort, non bloquant : si la synchro Supabase est configurée, on envoie aussi
-        // le fichier .fit original + une ligne détaillée dans la table `activities`. En son absence
-        // (pas de synchro activée), l'import local ci-dessus suffit et rien de plus ne se passe.
-        pushActivityRow(summary, buffer)
-          .then(res => { if (!res.ok) console.warn('Synchro activité (table `activities`) non effectuée :', res.reason); })
-          .catch(err => console.error('Synchro activité échouée :', err));
+      summary.fileHash = fileHash;
+
+      // La décision (nouvelle séance / doublon exact / mise à jour en place) vit dans app.js pour
+      // être vérifiable seule — voir prepareSessionForImport et la suite de non-régression.
+      const issue = prepareSessionForImport(summary, fileHash, connues);
+      // Doublon EXACT (mêmes octets) : rien n'est réécrit, la séance en base garde ses notes, son
+      // équipement et son retour Coach. C'est le cas que l'ancien import annonçait comme un ajout.
+      if (issue.action === 'duplicate') {
+        doublons++;
+        details.push(file.name + ' : déjà importé (séance du ' + fmtDate(issue.existing.date) + ')');
+        continue;
       }
+      const aEcrire = issue.session;
+      const ecriture = persistSession(aEcrire.id, aEcrire);
       // Une écriture refusée est presque toujours un quota de navigateur atteint. La raison est
       // reprise telle quelle plutôt qu'un « échec » sans cause, qui ne dit pas quoi faire.
-      else { fail++; if (lastStorageError) errors.push(file.name + ' : ' + lastStorageError); }
-    } catch (err) { fail++; errors.push(file.name + ' : ' + err.message); }
+      if (!ecriture.ok) { echecs++; details.push(file.name + ' : ' + ecriture.reason); continue; }
+      if (issue.action === 'update') misesAJour++; else ajoutees++;
+      connues = connues.filter(s => s.id !== aEcrire.id).concat([aEcrire]);
+
+      // Meilleur effort, non bloquant : si la synchro Supabase est configurée, on envoie aussi
+      // le fichier .fit original + une ligne détaillée dans la table `activities`. En son absence
+      // (pas de synchro activée), l'import local ci-dessus suffit et rien de plus ne se passe.
+      pushActivityRow(aEcrire, buffer)
+        .then(res => { if (!res.ok) console.warn('Synchro activité (table `activities`) non effectuée :', res.reason); })
+        .catch(err => console.error('Synchro activité échouée :', err));
+    } catch (err) { echecs++; details.push(file.name + ' : ' + err.message); }
   }
-  let msg = ok + ' séance(s) importée(s).';
-  if (fail) msg += ' ' + fail + ' échec(s) : ' + errors.join(' | ');
-  showMsg('importMsg', msg, fail ? 'err' : 'ok');
+
+  const pluriel = (n, mot, suffixe) => n + ' ' + mot + (n > 1 ? (suffixe || 's') : '');
+  const parts = [];
+  if (ajoutees) parts.push(pluriel(ajoutees, 'séance') + ' ' + (ajoutees > 1 ? 'importées' : 'importée'));
+  if (misesAJour) parts.push(pluriel(misesAJour, 'séance') + ' ' + (misesAJour > 1 ? 'mises' : 'mise') + ' à jour');
+  if (doublons) parts.push(pluriel(doublons, 'doublon') + ' ' + (doublons > 1 ? 'ignorés' : 'ignoré'));
+  if (echecs) parts.push(pluriel(echecs, 'échec'));
+  let msg;
+  if (!ajoutees && !misesAJour && doublons && !echecs) {
+    msg = doublons > 1
+      ? doublons + ' doublons détectés — aucune nouvelle séance ajoutée.'
+      : 'Doublon détecté — aucune nouvelle séance ajoutée.';
+  } else {
+    msg = (parts.length ? parts.join(', ') : 'Aucun fichier traité') + '.';
+  }
+  if (details.length) msg += ' ' + details.join(' | ');
+  showMsg('importMsg', msg, echecs ? 'err' : ((ajoutees || misesAJour) ? 'ok' : 'info'));
   cta.disabled = false;
   fileInput.value = '';
   refreshAll();
 }
 
 /* --------------------------- HISTORIQUE + FILTRES --------------------------- */
-document.getElementById('searchInput').addEventListener('input', renderHistory);
+// Chargement progressif : taille de lot et nombre de lignes actuellement affichées. Toute
+// modification de filtre, de tri ou de recherche repart du premier lot — sans quoi le nombre de
+// lignes visibles dépendrait de l'historique de navigation de l'utilisateur.
+const HISTORY_PAGE_SIZE = 50;
+let historyShown = HISTORY_PAGE_SIZE;
+function resetPagination() { historyShown = HISTORY_PAGE_SIZE; }
+document.getElementById('searchInput').addEventListener('input', () => { resetPagination(); renderHistory(); });
 
 // Filtre par type de sport — menu déroulant construit à partir des types réellement présents
 // dans l'historique importé (pas une liste figée, pour coller aux vraies données .fit).
@@ -179,7 +252,7 @@ function renderSportFilterChips() {
   select.innerHTML = '<option value="all">Tous sports</option>' + sports.map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>').join('');
   select.value = sportFilterVal;
 }
-document.getElementById('sportFilterSelect').addEventListener('change', (e) => { sportFilterVal = e.target.value; renderHistory(); });
+document.getElementById('sportFilterSelect').addEventListener('change', (e) => { sportFilterVal = e.target.value; resetPagination(); renderHistory(); });
 
 // Filtre par période — chips simples (Toutes / 30 jours / 3 mois / 1 an), pas de sélecteur de
 // dates libre : couvre les usages courants sans imposer un gros formulaire.
@@ -187,6 +260,7 @@ let periodFilterDays = null;
 document.querySelectorAll('#periodFilterRow [data-period]').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('#periodFilterRow [data-period]').forEach(b => b.classList.toggle('active', b === btn));
   periodFilterDays = btn.dataset.period === 'all' ? null : parseInt(btn.dataset.period, 10);
+  resetPagination();
   renderHistory();
 }));
 
@@ -200,13 +274,14 @@ const SORTS = {
   'duree-desc': (a,b) => (b.durationS ?? -1) - (a.durationS ?? -1),
 };
 let sortKey = 'date-desc';
-document.getElementById('sortSelect').addEventListener('change', e => { sortKey = e.target.value; renderHistory(); });
+document.getElementById('sortSelect').addEventListener('change', e => { sortKey = e.target.value; resetPagination(); renderHistory(); });
 
 function resetFilters() {
   document.getElementById('searchInput').value = '';
   sportFilterVal = 'all';
   periodFilterDays = null;
   sortKey = 'date-desc';
+  resetPagination();
   document.getElementById('sortSelect').value = 'date-desc';
   document.querySelectorAll('#periodFilterRow [data-period]').forEach(b => b.classList.toggle('active', b.dataset.period === 'all'));
   renderSportFilterChips();
@@ -216,7 +291,7 @@ function resetFilters() {
 function renderHistory() {
   const sessions = loadAllSessions();
   const search = document.getElementById('searchInput').value.trim().toLowerCase();
-  const fromDate = periodFilterDays != null ? (() => { const d = new Date(); d.setDate(d.getDate() - periodFilterDays); return d.toISOString().slice(0,10); })() : null;
+  const fromDate = periodFilterDays != null ? addDaysIso(todayISO(), -periodFilterDays) : null;
   const filtered = sessions.filter(s => {
     if (search && !((s.sport||'').toLowerCase().includes(search) || (s.fileName||'').toLowerCase().includes(search))) return false;
     if (fromDate && s.date < fromDate) return false;
@@ -264,10 +339,40 @@ function renderHistory() {
     const er = document.getElementById('emptyResetBtn'); if (er) er.addEventListener('click', resetFilters);
     const ei = document.getElementById('emptyImportBtn'); if (ei) ei.addEventListener('click', () => fileInput.click());
   }
-  document.getElementById('historyEnd').style.display = filtered.length ? 'block' : 'none';
+  // Chargement progressif (audit PERF-002). Le tri et les filtres restent appliqués à la TOTALITÉ
+  // des activités : seul l'affichage est découpé, jamais le calcul.
+  const visibles = filtered.slice(0, historyShown);
+  const reste = filtered.length - visibles.length;
+  document.getElementById('historyEnd').style.display = (filtered.length && !reste) ? 'block' : 'none';
   // Constructeur partage (assets/app.js) : cette page et Analyse en avaient chacune une copie,
   // qui avaient deja diverge sur les libelles de mesure.
-  list.innerHTML = filtered.map(s => activityRowHtml(s, { showSub: true })).join('');
+  list.innerHTML = visibles.map(s => activityRowHtml(s, { showSub: true })).join('');
+
+  const more = document.getElementById('historyMore');
+  if (reste > 0) {
+    more.style.display = 'block';
+    more.innerHTML = '<button type="button" class="btn small" id="historyMoreBtn">Afficher ' +
+      Math.min(HISTORY_PAGE_SIZE, reste) + ' activités de plus</button>' +
+      '<p class="hint" style="margin-top:8px;" role="status">' + visibles.length + ' activités affichées sur ' + filtered.length + '</p>';
+    document.getElementById('historyMoreBtn').addEventListener('click', () => {
+      const dejaAffichees = visibles.length;
+      historyShown += HISTORY_PAGE_SIZE;
+      renderHistory();
+      /* Le focus va sur la PREMIÈRE activité nouvellement affichée : c'est ce que l'utilisateur
+         vient de demander, et la navigation au clavier continue là où elle s'était arrêtée.
+         Sans cela le focus retombait sur `body` quand le bouton disparaît (dernier lot), et la
+         tabulation repartait du haut de la page. */
+      const nouvelles = document.querySelectorAll('#historyList .activity-row');
+      if (nouvelles[dejaAffichees]) nouvelles[dejaAffichees].focus();
+      else {
+        const suivant = document.getElementById('historyMoreBtn');
+        if (suivant) suivant.focus();
+      }
+    });
+  } else {
+    more.style.display = 'none';
+    more.innerHTML = '';
+  }
 }
 
 // Graphiques de progression (allure/FC dans le temps, volume hebdo réalisé vs planifié) retirés

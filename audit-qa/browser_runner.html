@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Runner audit ELEV</title>
+  <style>
+    body { margin: 0; padding: 16px; font: 14px/1.45 system-ui; background: #0b0f0e; color: #f0f3f0; }
+    label, button { margin-right: 12px; }
+    input, select, button { font: inherit; padding: 8px 10px; }
+    #auditFrame { position: absolute; left: -2000px; top: 0; width: 1800px; height: 1100px; border: 0; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <h1>Runner audit ELEV</h1>
+  <label>Largeur <input id="width" type="number" value="375" min="280" max="2000"></label>
+  <label>Thème
+    <select id="theme"><option value="dark">dark</option><option value="light">light</option></select>
+  </label>
+  <label>Mode
+    <select id="mode"><option value="full">complet</option><option value="health">santé seulement</option></select>
+  </label>
+  <button id="run">Exécuter l’audit complet</button>
+  <p id="status">Prêt.</p>
+  <pre id="out"></pre>
+  <iframe id="auditFrame" src="../_audit.html" title="Harnais d’audit"></iframe>
+  <script>
+    const frame = document.getElementById('auditFrame');
+    const status = document.getElementById('status');
+    const out = document.getElementById('out');
+    document.getElementById('run').addEventListener('click', async () => {
+      const width = Number(document.getElementById('width').value);
+      const theme = document.getElementById('theme').value;
+      const selectedMode = document.getElementById('mode').value;
+      const h = frame.contentWindow;
+      status.textContent = 'Audit en cours…';
+      out.textContent = '';
+      try {
+        const result = {};
+        const modes = selectedMode === 'health' ? ['health'] : ['health', 'headings', 'names', 'contrast'];
+        for (const mode of modes) {
+          status.textContent = 'Audit en cours : ' + mode + '…';
+          result[mode] = await h.run(mode, width, theme);
+        }
+        out.textContent = JSON.stringify({ width, theme, result }, null, 2);
+        status.textContent = 'Terminé.';
+      } catch (error) {
+        out.textContent = JSON.stringify({ error: error.message, stack: error.stack }, null, 2);
+        status.textContent = 'Échec.';
+      }
+    });
+  </script>
+</body>
+</html>

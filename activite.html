@@ -15,7 +15,11 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="assets/style.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Version FIGEE (audit PERF-001) : `@2` laissait jsDelivr servir n'importe quelle version
+     corrective de la branche 2.x, donc un comportement pouvant changer sans aucune modification du
+     depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
+     une empreinte non verifiee ici serait une fausse garantie. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="assets/app.js"></script>
 </head>
@@ -879,16 +883,26 @@ SUITE: une phrase clé actionnable, puis 2-4 lignes "- ".
 Aucun texte hors de ces 5 sections. Aucune balise XML, aucun markdown autre que les puces "- " (pas de **gras**, pas de titres, pas de tableau).
 </format_de_sortie>`;
 
+/* Affiche une erreur IA en TEXTE, jamais en HTML : le message peut contenir un détail renvoyé par
+   le service (message d'erreur, corps de réponse), donc une source non maîtrisée. */
+function setAiError(el, message) {
+  el.textContent = '';
+  const span = document.createElement('span');
+  span.style.color = 'var(--danger)';
+  span.textContent = message;
+  el.appendChild(span);
+}
+
 async function generateAiFeedback(id) {
-  const apiKey = getApiKey();
   const statusEl = document.getElementById('aiStatus');
   const boxEl = document.getElementById('aiFeedbackBox');
   const btn = document.getElementById('aiGenBtn');
 
-  if (!apiKey) {
-    statusEl.innerHTML = '<span style="color:var(--danger)">Aucune clé API enregistrée — renseignez-la dans la page Paramètres.</span>';
-    return;
-  }
+  // La clé API n'existe plus côté navigateur (audit RISK-002) : l'appel passe par une fonction
+  // serveur authentifiée. On vérifie AVANT de préparer le prompt ce qui manque éventuellement,
+  // pour dire quoi faire plutôt que d'échouer au moment de l'appel.
+  const dispo = aiAvailability();
+  if (!dispo.ok) { setAiError(statusEl, dispo.message); return; }
 
   const s = loadSession(id);
   const planned = findPlannedSession(s.date);
@@ -938,29 +952,23 @@ async function generateAiFeedback(id) {
 
   userParts.push('\nToute métrique indiquée "Non communiqué" ne doit pas être inventée : basez l\'analyse sur ce qui est disponible.');
 
+  /* `callElevAi` retourne toujours un objet et n'échoue jamais par exception : timeout, 401, 429,
+     5xx, réseau coupé et réponse vide sont tous des retours normaux. Le `finally` rend de toute
+     façon le bouton — l'ancien appel n'avait aucun délai maximal, et sur un réseau suspendu le
+     bouton et le spinner restaient bloqués indéfiniment (audit RISK-003). */
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 2000,
-        thinking: { type: 'disabled' },
-        system: AI_COACH_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userParts.join('\n') }],
-      }),
+    const res = await callElevAi({
+      task: 'coach-seance',
+      system: AI_COACH_SYSTEM_PROMPT,
+      message: userParts.join('\n'),
+      maxTokens: 2000,
     });
-    if (!resp.ok) { const errBody = await resp.text(); throw new Error('HTTP ' + resp.status + ' — ' + errBody.slice(0,200)); }
-    const data = await resp.json();
-    const text = (data.content || []).map(c => c.text || '').join('\n').trim();
-    if (!text) throw new Error('Réponse vide de l\'API.');
-    s.aiFeedback = text;
+    if (!res.ok) { setAiError(statusEl, res.message); return; }
+    s.aiFeedback = res.text;
     saveSession(s.id, s);
-    renderCoachCards(text);
+    renderCoachCards(res.text);
     statusEl.textContent = '';
     btn.textContent = 'Regénérer le retour Coach ELEV';
-  } catch (err) {
-    statusEl.innerHTML = '<span style="color:var(--danger)">Erreur lors de l\'appel à l\'API : ' + escapeHtml(err.message) + ' (vérifiez la clé API et votre connexion).</span>';
   } finally { btn.disabled = false; }
 }
 

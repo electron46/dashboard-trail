@@ -27,6 +27,50 @@ function toggleTheme() {
 }
 applyTheme(getTheme()); // appliqué dès le chargement du script (avant le rendu du contenu)
 
+/* --------------------------- 1 bis) DATES CIVILES ---------------------------
+   Trois notions étaient confondues dans tout le produit :
+   - l'INSTANT (un point dans le temps, ex. 2026-08-21T21:00:00Z) ;
+   - le FUSEAU (celui de l'activité, ou à défaut celui du navigateur) ;
+   - la DATE CIVILE (le jour tel que l'utilisateur l'a vécu, ex. 2026-08-22).
+   `todayISO()` renvoie la date civile **UTC**. À Maurice (UTC+4), entre
+   minuit et 04h00 locales, elle désigne donc la VEILLE : une séance de 01h00 était enregistrée au
+   jour précédent, et « aujourd'hui » l'était aussi — d'où des totaux hebdomadaires, un
+   rapprochement au plan et un compte à rebours faux, sans que rien ne le signale (audit BUG-005).
+   Les fonctions ci-dessous sont le seul point d'entrée autorisé pour obtenir une date civile.
+   À NE PAS confondre avec l'arithmétique de dates civiles déjà en place (`addDaysIso`, `isoWeek`,
+   `previousAnalysisRange`), qui manipule des chaînes « YYYY-MM-DD » via un Date en UTC : celle-là
+   est correcte, parce que l'entrée EST déjà une date civile et non un instant. */
+function elevTimeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; }
+}
+const _localDateFmtCache = {};
+// Date civile (YYYY-MM-DD) d'un instant, dans un fuseau donné (défaut : celui du navigateur).
+function localDateISO(date, timeZone) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (!d || isNaN(d.getTime())) return null;
+  const tz = timeZone || elevTimeZone();
+  try {
+    let fmt = _localDateFmtCache[tz];
+    if (!fmt) fmt = _localDateFmtCache[tz] = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit' });
+    const parts = {};
+    fmt.formatToParts(d).forEach(p => { parts[p.type] = p.value; });
+    if (parts.year && parts.month && parts.day) return parts.year + '-' + parts.month + '-' + parts.day;
+  } catch (e) { /* Intl indisponible ou fuseau inconnu — repli ci-dessous */ }
+  // Repli : décalage local réel du navigateur. Jamais la date UTC brute, qui est précisément le bug.
+  const shifted = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return shifted.toISOString().slice(0, 10);
+}
+// Date civile d'aujourd'hui. Remplace les ~40 `todayISO()` du produit.
+function todayISO(timeZone) { return localDateISO(new Date(), timeZone); }
+// Date civile d'un instant dont on connaît le décalage UTC en secondes (cas d'un fichier .fit qui
+// porte son `local_timestamp` : on connaît alors le fuseau de l'ACTIVITÉ, pas seulement celui de
+// l'appareil qui l'importe — une sortie faite en voyage reste datée du bon jour).
+function civilDateFromOffset(date, utcOffsetS) {
+  if (!date || isNaN(date.getTime())) return null;
+  if (!Number.isFinite(utcOffsetS)) return localDateISO(date);
+  return new Date(date.getTime() + utcOffsetS * 1000).toISOString().slice(0, 10);
+}
+
 /* --------------------------- 2) PARSING .FIT --------------------------- */
 const FIT_EPOCH_MS = Date.UTC(1989, 11, 31, 0, 0, 0);
 const GLOBAL_MESSAGES = { 0:'file_id', 18:'session', 19:'lap', 20:'record', 21:'event', 23:'device_info', 34:'activity', 206:'field_description', 207:'developer_data_id' };
@@ -87,9 +131,18 @@ const FIELD_DESCRIPTION_FIELDS = {
   3:['field_name',null,null], 6:['scale',null,null], 7:['offset',null,null], 8:['units',null,null],
 };
 const DEVELOPER_DATA_ID_FIELDS = { 3:['developer_data_index',null,null] };
+// Message `activity` (global 34). Il était bien collecté (GLOBAL_MESSAGES le connaît) mais sans
+// table de champs : ses valeurs finissaient en `field_5`, `field_253`… donc inexploitables.
+// `local_timestamp` est la SEULE source du fuseau de l'activité dans le format FIT : sa différence
+// avec `timestamp` (UTC) donne le décalage horaire du lieu où la séance a été enregistrée.
+const ACTIVITY_FIELDS = {
+  253:['timestamp',null,null], 0:['total_timer_time',1000,0], 1:['num_sessions',null,null],
+  2:['type',null,null], 3:['event',null,null], 4:['event_type',null,null], 5:['local_timestamp',null,null],
+};
 const FIELD_MAPS = {
   record:RECORD_FIELDS, session:SESSION_FIELDS, lap:LAP_FIELDS, event:EVENT_FIELDS,
   device_info:DEVICE_INFO_FIELDS, field_description:FIELD_DESCRIPTION_FIELDS, developer_data_id:DEVELOPER_DATA_ID_FIELDS,
+  activity:ACTIVITY_FIELDS,
 };
 const SPORT_LABELS = { 0:'Activité générique', 1:'Course à pied', 2:'Vélo', 4:'Renforcement / fitness', 5:'Natation', 11:'Randonnée', 254:'Activité' };
 
@@ -293,12 +346,30 @@ function buildDetailSeries(withTs, t0, targetPoints) {
 }
 
 function summarizeFit(messages, fileMeta) {
+  fileMeta = fileMeta || {};
   const session = (messages.session && messages.session[0]) || {};
   const records = messages.record || [];
+  // Horodatage FIT brut de départ (secondes depuis l'époque FIT). Conservé tel quel : c'est le
+  // composant le plus discriminant de l'identité d'une séance (voir fitIdentityKey).
+  let startTsRaw = session.start_time ?? session.timestamp ?? null;
   let startDate = fitTimestampToDate(session.start_time) || fitTimestampToDate(session.timestamp);
   let dateApprox = false;
-  if (!startDate && records.length) { const withTs = records.find(r => r.timestamp != null); if (withTs) startDate = fitTimestampToDate(withTs.timestamp); }
-  if (!startDate) { startDate = new Date(fileMeta.lastModified); dateApprox = true; }
+  if (!startDate && records.length) {
+    const withTs = records.find(r => r.timestamp != null);
+    if (withTs) { startDate = fitTimestampToDate(withTs.timestamp); startTsRaw = withTs.timestamp; }
+  }
+  if (!startDate) { startDate = new Date(fileMeta.lastModified || Date.now()); dateApprox = true; startTsRaw = null; }
+  // Fuseau de l'ACTIVITÉ, quand le fichier le porte : `local_timestamp` - `timestamp` du message
+  // `activity` donne le décalage UTC du lieu d'enregistrement. Sans lui, on retombe sur le fuseau
+  // du navigateur qui importe (voir civilDateFromOffset) — jamais sur la date UTC brute.
+  const activityMsg = (messages.activity && messages.activity[0]) || {};
+  let utcOffsetS = null;
+  if (activityMsg.local_timestamp != null && activityMsg.timestamp != null) {
+    const diff = activityMsg.local_timestamp - activityMsg.timestamp;
+    // Bornes réelles des fuseaux (-12h à +14h) et pas de 15 min : au-delà, la valeur est aberrante
+    // et on préfère ne pas s'en servir plutôt que de dater la séance sur une donnée fausse.
+    if (Number.isFinite(diff) && diff >= -12 * 3600 && diff <= 14 * 3600) utcOffsetS = Math.round(diff / 900) * 900;
+  }
   let distanceM = session.total_distance;
   let durationS = session.total_timer_time || session.total_elapsed_time;
   let ascent = session.total_ascent;
@@ -406,8 +477,15 @@ function summarizeFit(messages, fileMeta) {
   }));
 
   return {
-    date: startDate.toISOString().slice(0,10),
+    // Date CIVILE (le jour vécu par l'utilisateur), pas la date UTC — voir la section « DATES
+    // CIVILES » en tête de fichier et l'audit BUG-005.
+    date: civilDateFromOffset(startDate, utcOffsetS),
+    // L'instant et le décalage sont conservés à côté de la date civile : c'est ce qui permet de
+    // recalculer un jour, une semaine ou un rapprochement au plan sans jamais redevenir ambigu.
+    startedAt: startDate.toISOString(),
+    utcOffsetS: utcOffsetS,
     dateApprox,
+    identityKey: fitIdentityKey({ startTsRaw, session, records, devices, distanceM, durationS }, fileMeta),
     sport: SPORT_LABELS[session.sport] ?? (session.sport != null ? ('Sport #' + session.sport) : null),
     distanceKm: distanceM != null ? distanceM / 1000 : null,
     durationS: durationS != null ? Math.round(durationS) : null,
@@ -432,6 +510,140 @@ function summarizeFit(messages, fileMeta) {
   };
 }
 
+/* --------------------------- IDENTITÉ D'UNE SÉANCE ET DÉTECTION DE DOUBLON ---------------------------
+   L'identifiant valait `date + sport + distance arrondie au mètre`. Deux sorties du même jour, même
+   sport, dont les distances arrondissent au même mètre (5,0001 km et 5,0004 km) produisaient donc la
+   MÊME clé, et la seconde écrasait silencieusement la première — avec ses notes, son équipement et
+   son retour Coach (audit BUG-003). Le même identifiant servait aussi de détecteur de doublon, si
+   bien que réimporter un fichier déjà présent était annoncé « 1 séance importée » (audit UX-001).
+   Les deux rôles sont désormais séparés :
+   - IDENTITÉ persistante : dérivée du contenu FIT (instant de départ à la seconde, appareil,
+     distance au centimètre, durée à la milliseconde, nombre d'enregistrements) ;
+   - DOUBLON EXACT : empreinte des octets du fichier (`fileHash`), qui reconnaît un réimport à
+     l'identique même si l'identité venait à être recalculée autrement.
+   L'identifiant d'une séance déjà enregistrée n'est JAMAIS recalculé : les séances existantes
+   gardent le leur, leurs URL, leur ligne Supabase et leur fichier .fit en Storage. */
+
+// FNV-1a 64 bits (deux lanes 32 bits combinées). Déterministe, synchrone, sans dépendance et sans
+// exigence de contexte sécurisé — contrairement à crypto.subtle, indisponible en http:// et
+// file://, où le produit doit continuer de fonctionner. Ce n'est pas un usage cryptographique :
+// il sert à distinguer des activités, pas à authentifier quoi que ce soit.
+function _fnvHex(readByte, length, seedA, seedB) {
+  let h1 = seedA >>> 0, h2 = seedB >>> 0;
+  for (let i = 0; i < length; i++) {
+    const b = readByte(i) & 0xFF;
+    h1 ^= b; h1 = Math.imul(h1, 0x01000193) >>> 0;
+    h2 = (h2 ^ (b + i)) >>> 0; h2 = Math.imul(h2, 0x01000193) >>> 0;
+  }
+  return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
+}
+function elevHash(str) {
+  const s = String(str == null ? '' : str);
+  return _fnvHex(i => s.charCodeAt(i), s.length, 0x811C9DC5, 0x1000193);
+}
+// Empreinte des octets d'un fichier. La longueur est préfixée : deux fichiers de tailles
+// différentes ne peuvent pas partager une empreinte, quelle que soit la valeur du hash.
+function fitFileFingerprint(buffer) {
+  const u8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  return u8.length.toString(36) + '-' + _fnvHex(i => u8[i], u8.length, 0x811C9DC5, 0x1000193);
+}
+// Identité de contenu d'une séance. `ctx` vient de summarizeFit, qui seul dispose des messages FIT.
+function fitIdentityKey(ctx, fileMeta) {
+  fileMeta = fileMeta || {};
+  const dev = (ctx.devices || []).find(d => d.serialNumber != null) || (ctx.devices || [])[0] || {};
+  const parts = [
+    't' + (ctx.startTsRaw != null ? Math.round(ctx.startTsRaw) : 'na'),
+    's' + (ctx.session && ctx.session.sport != null ? ctx.session.sport : 'na'),
+    'd' + (dev.manufacturer ?? 'na') + '.' + (dev.product ?? 'na') + '.' + (dev.serialNumber ?? 'na'),
+    'm' + (ctx.distanceM != null ? Math.round(ctx.distanceM * 100) : 'na'),
+    'u' + (ctx.durationS != null ? Math.round(ctx.durationS * 1000) : 'na'),
+    'r' + (ctx.records || []).length,
+  ];
+  // Sans instant de départ ET sans mesure, le contenu ne distingue plus rien : on retombe alors
+  // sur le fichier lui-même (empreinte fournie par l'import, sinon nom + taille + date), qui reste
+  // déterministe — réimporter deux fois le même fichier doit donner la même identité, toujours.
+  const contenuSuffisant = ctx.startTsRaw != null && (ctx.distanceM != null || ctx.durationS != null);
+  if (!contenuSuffisant) {
+    parts.push('f' + (fileMeta.fileHash || ((fileMeta.name || '') + ':' + (fileMeta.lastModified || 0))));
+  }
+  return elevHash(parts.join('|'));
+}
+// Identifiant historique (avant 2026-08-22). Conservé pour RECONNAÎTRE les séances déjà stockées
+// sous cette forme, jamais pour en produire de nouvelles.
+function legacySessionId(summary) {
+  return summary.date + '_' + (summary.sport || 'activite').replace(/\s+/g, '-') + '_' + Math.round((summary.distanceKm || 0) * 1000);
+}
+// Identifiant d'une NOUVELLE séance : lisible (date + sport, utile dans une URL et dans le chemin
+// de stockage du .fit) et discriminant (empreinte d'identité de contenu).
+function makeSessionId(summary) {
+  const sport = (summary.sport || 'activite').replace(/\s+/g, '-');
+  return summary.date + '_' + sport + '_' + String(summary.identityKey || elevHash(JSON.stringify(summary))).slice(0, 10);
+}
+// Deux séances décrivent-elles la même activité, au vu de leurs seules mesures ? Utilisé uniquement
+// pour rattacher un réimport à une séance ANCIENNE, enregistrée avant l'identité de contenu (elle
+// n'a ni `identityKey` ni `fileHash`). Volontairement strict : date, sport, distance au mètre,
+// durée à la seconde et D+ au mètre. Deux sorties réellement différentes ne satisfont pas tout cela.
+function sameActivityMetrics(a, b) {
+  const eq = (x, y, tol) => (x == null && y == null) || (x != null && y != null && Math.abs(x - y) <= tol);
+  return a.date === b.date
+    && (a.sport || null) === (b.sport || null)
+    && eq(a.distanceKm, b.distanceKm, 0.001)
+    && eq(a.durationS, b.durationS, 1)
+    && eq(a.ascent, b.ascent, 1);
+}
+/* Rattache une séance fraîchement analysée à une séance déjà enregistrée, s'il y en a une.
+   Retourne `null` si c'est une nouvelle activité, sinon `{ session, reason }` où `reason` vaut :
+   - 'file'     : octets strictement identiques -> doublon exact ;
+   - 'identity' : même activité, fichier éventuellement ré-exporté -> mise à jour ;
+   - 'legacy'   : séance importée avant l'identité de contenu, mesures identiques -> mise à jour.
+   `sessions` est passé par l'appelant pour ne pas relire tout le stockage à chaque fichier d'un
+   import multiple. */
+function findExistingSession(summary, fileHash, sessions) {
+  const list = sessions || loadAllSessions();
+  if (fileHash) {
+    const parFichier = list.find(s => s.fileHash && s.fileHash === fileHash);
+    if (parFichier) return { session: parFichier, reason: 'file' };
+  }
+  if (summary.identityKey) {
+    const parIdentite = list.find(s => s.identityKey && s.identityKey === summary.identityKey);
+    if (parIdentite) return { session: parIdentite, reason: 'identity' };
+  }
+  const legacyId = legacySessionId(summary);
+  const ancienne = list.find(s => s.id === legacyId && !s.identityKey);
+  if (ancienne && sameActivityMetrics(ancienne, summary)) return { session: ancienne, reason: 'legacy' };
+  return null;
+}
+
+/* Décide ce qu'il advient d'un fichier importé, SANS écrire quoi que ce soit. Extraite de la page
+   Activités pour être vérifiable seule : c'est ici que se joue la différence entre « nouvelle
+   séance », « doublon » et « mise à jour », c'est-à-dire les deux anomalies BUG-003 et UX-001.
+   Retourne `{ action, session, existing, reason }` avec `action` parmi :
+   - 'duplicate' : octets identiques à une séance déjà présente — rien à écrire, et surtout rien à
+                   annoncer comme un ajout ;
+   - 'update'    : même activité, fichier différent — l'identifiant EXISTANT est conservé (URL,
+                   ligne Supabase et fichier .fit en Storage restent reliés) et les champs saisis
+                   par l'utilisateur sont préservés ;
+   - 'new'       : activité inconnue — identifiant dérivé de l'identité de contenu. */
+function prepareSessionForImport(summary, fileHash, sessions) {
+  const existante = findExistingSession(summary, fileHash, sessions);
+  if (existante && existante.reason === 'file') {
+    return { action: 'duplicate', existing: existante.session, reason: existante.reason };
+  }
+  if (existante) {
+    const s = Object.assign({}, summary, { id: existante.session.id });
+    SESSION_USER_FIELDS.forEach(k => { if (existante.session[k] !== undefined) s[k] = existante.session[k]; });
+    s.id = existante.session.id;
+    if (summary.fileName !== undefined) s.fileName = summary.fileName;
+    if (summary.importedAt !== undefined) s.importedAt = summary.importedAt;
+    if (fileHash) s.fileHash = fileHash;
+    // Une séance ancienne n'a pas d'identité de contenu : elle l'acquiert ici, ce qui la rend
+    // reconnaissable aux imports suivants sans jamais changer son identifiant.
+    if (!existante.session.identityKey) s.identityKey = summary.identityKey;
+    return { action: 'update', session: s, existing: existante.session, reason: existante.reason };
+  }
+  return { action: 'new', session: Object.assign({}, summary, { id: makeSessionId(summary) }) };
+}
+
 /* --------------------------- FIT IMPORT INSPECTOR (outil de développement) ---------------------------
    Radiographie d'un fichier .fit : en-tête, intégrité (CRC), inventaire complet des messages
    (connus et inconnus/propriétaires), taux de couverture des champs de la série de points, champs
@@ -453,28 +665,80 @@ function fitCrc16(bytes) {
   }
   return crc;
 }
-function buildFitInspectorReport(buffer, fileMeta) {
+/* Validation d'un fichier .fit AVANT parsing — en-tête, signature, taille annoncée, CRC d'en-tête
+   et CRC de fin de fichier. Ce contrôle n'existait QUE dans l'inspecteur : l'import normal acceptait
+   sans broncher un fichier dont le CRC final est faux, et produisait des statistiques issues d'un
+   fichier altéré (audit BUG-004). Une seule fonction sert désormais les deux chemins.
+   Règle documentée sur le CRC : un CRC stocké à ZÉRO signifie « non calculé par l'appareil » et non
+   « invalide » — la spécification FIT l'autorise, et le contrôle d'en-tête l'admettait déjà. Il est
+   donc rapporté comme `null` (indéterminé) et n'empêche pas l'import ; seul un CRC présent ET faux
+   est un refus. */
+function validateFitFile(buffer) {
+  const out = {
+    ok: false, sizeBytes: buffer ? buffer.byteLength : 0,
+    headerSize: null, dataSize: null, protocolVersion: null, profileVersion: null,
+    signature: null, signatureValid: false, truncated: true,
+    headerCrcValid: null, fileCrcValid: null, expectedSize: null, reason: null,
+  };
+  if (!buffer || buffer.byteLength < 14) { out.reason = 'Fichier trop court pour être un .FIT valide'; return out; }
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
   const headerSize = view.getUint8(0);
+  out.headerSize = headerSize;
   const protocolByte = view.getUint8(1);
-  const protocolVersion = (protocolByte >> 4) + '.' + (protocolByte & 0x0F);
-  const profileVersion = (view.getUint16(2, true) / 100).toFixed(2);
+  out.protocolVersion = (protocolByte >> 4) + '.' + (protocolByte & 0x0F);
+  out.profileVersion = (view.getUint16(2, true) / 100).toFixed(2);
   const dataSize = view.getUint32(4, true);
-  const signature = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+  out.dataSize = dataSize;
+  out.signature = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+  out.signatureValid = out.signature === '.FIT';
   const expectedSize = headerSize + dataSize + 2; // +2 = CRC de fin de fichier
-  const truncated = buffer.byteLength < expectedSize;
+  out.expectedSize = expectedSize;
+  out.truncated = buffer.byteLength < expectedSize;
 
-  let headerCrcValid = null;
   if (headerSize >= 14) {
     const storedHeaderCrc = view.getUint16(12, true);
-    headerCrcValid = storedHeaderCrc === 0 ? null : (fitCrc16(bytes.slice(0, 12)) === storedHeaderCrc);
+    out.headerCrcValid = storedHeaderCrc === 0 ? null : (fitCrc16(bytes.slice(0, 12)) === storedHeaderCrc);
   }
-  let fileCrcValid = null;
-  if (!truncated && buffer.byteLength >= headerSize + dataSize + 2) {
+  if (!out.truncated) {
     const storedFileCrc = view.getUint16(headerSize + dataSize, true);
-    fileCrcValid = fitCrc16(bytes.slice(0, headerSize + dataSize)) === storedFileCrc;
+    out.fileCrcValid = storedFileCrc === 0 ? null : (fitCrc16(bytes.slice(0, headerSize + dataSize)) === storedFileCrc);
   }
+
+  if (!out.signatureValid) { out.reason = "Signature '.FIT' manquante — ce n'est pas un fichier FIT valide"; return out; }
+  if (headerSize < 12 || headerSize > buffer.byteLength) { out.reason = 'En-tête .FIT incohérent (taille annoncée : ' + headerSize + ' octets)'; return out; }
+  if (out.truncated) { out.reason = 'Fichier tronqué : ' + buffer.byteLength + ' octets reçus, ' + expectedSize + ' attendus'; return out; }
+  if (out.headerCrcValid === false) { out.reason = "CRC d'en-tête invalide — le fichier est corrompu"; return out; }
+  if (out.fileCrcValid === false) { out.reason = 'CRC de fin de fichier invalide — le contenu a été modifié ou le transfert est incomplet'; return out; }
+  out.ok = true;
+  return out;
+}
+
+/* Pipeline commun d'import : validation -> parsing -> résumé. Seul point d'entrée des pages qui
+   IMPORTENT un fichier. L'inspecteur (inspecteur.html), lui, doit pouvoir analyser un fichier
+   corrompu pour le diagnostiquer : il appelle donc parseFit directement, en connaissance de cause.
+   `opts.allowCrcMismatch` permet à l'appelant de passer outre un CRC faux APRÈS confirmation
+   explicite de l'utilisateur — jamais par défaut. */
+function readFitFile(buffer, fileMeta, opts) {
+  opts = opts || {};
+  const validation = validateFitFile(buffer);
+  const crcSeul = !validation.ok && validation.fileCrcValid === false && validation.signatureValid && !validation.truncated && validation.headerCrcValid !== false;
+  if (!validation.ok && !(crcSeul && opts.allowCrcMismatch)) {
+    const err = new FitParseError(validation.reason || 'Fichier .fit invalide');
+    err.validation = validation;
+    throw err;
+  }
+  const messages = parseFit(buffer);
+  const summary = summarizeFit(messages, fileMeta);
+  // Trace honnête dans la séance : un fichier accepté malgré un CRC faux le reste, et l'interface
+  // peut le signaler plus tard. `null` (CRC non calculé par l'appareil) n'est pas un défaut.
+  if (validation.fileCrcValid === false) summary.crcMismatch = true;
+  return { messages, summary, validation };
+}
+
+function buildFitInspectorReport(buffer, fileMeta) {
+  const validation = validateFitFile(buffer);
+  const { headerSize, dataSize, protocolVersion, profileVersion, signature, expectedSize, truncated, headerCrcValid, fileCrcValid } = validation;
 
   let messages = {}, parseError = null, summary = null;
   try {
@@ -509,7 +773,9 @@ function buildFitInspectorReport(buffer, fileMeta) {
     file: {
       filename: fileMeta.name || null, sizeBytes: buffer.byteLength,
       headerSize, protocolVersion, profileVersion, dataSize, signature,
-      signatureValid: signature === '.FIT', truncated, headerCrcValid, fileCrcValid, expectedSize,
+      signatureValid: validation.signatureValid, truncated, headerCrcValid, fileCrcValid, expectedSize,
+      // Verdict de la validation partagée : ce que l'import normal ferait de ce fichier.
+      importAccepte: validation.ok, motifRefus: validation.reason,
     },
     parseError,
     summary,
@@ -560,6 +826,41 @@ function saveSession(id, data) {
 }
 function deleteSession(id) { try { localStorage.removeItem(STORAGE_PREFIX + 'seance:' + id); scheduleSync(); } catch (e) {} }
 function loadAllSessions() { return loadIndex().map(loadSession).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date)); }
+
+/* Écriture d'une séance ET publication de son identifiant dans l'index, dans le BON ORDRE.
+   L'import écrivait `saveIndex(idx) && saveSession(id, summary)` : l'identifiant était publié
+   AVANT la séance. Si l'écriture de la séance échouait — le cas courant étant un quota de
+   navigateur atteint, et la séance est de loin le plus gros objet écrit — l'index référençait une
+   clé absente : une activité fantôme, comptée nulle part et jamais affichable (audit BUG-008).
+   Transaction locale simulée : la séance d'abord, l'index ensuite, et retrait de la séance qui
+   vient d'être écrite si l'index ne peut pas être publié. Ce retrait n'est pas une « réparation »
+   de données existantes (interdite en silence) : c'est l'annulation de l'opération en cours, qui
+   n'a jamais été visible, et elle est rapportée à l'appelant. */
+function persistSession(id, session) {
+  const idx = loadIndex();
+  const dejaIndexee = idx.indexOf(id) >= 0;
+  if (!saveSession(id, session)) return { ok: false, reason: lastStorageError || 'Écriture de la séance impossible.' };
+  if (dejaIndexee) return { ok: true, indexed: true };
+  if (!saveIndex(idx.concat([id]))) {
+    try { localStorage.removeItem(STORAGE_PREFIX + 'seance:' + id); } catch (e) {}
+    return { ok: false, reason: lastStorageError || "L'index n'a pas pu être enregistré ; la séance a été retirée pour ne pas laisser de donnée inaccessible." };
+  }
+  return { ok: true, indexed: true };
+}
+
+// Identifiants de toutes les séances RÉELLEMENT stockées, index ou pas — base du contrôle
+// d'intégrité (une séance hors index est invisible partout ailleurs dans l'application).
+function allStoredSessionIds() {
+  const prefix = STORAGE_PREFIX + 'seance:';
+  const ids = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(prefix) === 0) ids.push(k.slice(prefix.length));
+    }
+  } catch (e) { /* stockage indisponible : rien à inventorier */ }
+  return ids;
+}
 // Dernier appareil ayant enregistré une séance importée (page Profil, carte Connectivité) — lecture
 // seule des `devices` déjà extraits par le parser FIT à l'import, aucune nouvelle intégration. N'affiche
 // que si le fichier .fit fournissait un nom lisible (`product_name`) : un code fabricant/produit brut
@@ -580,7 +881,27 @@ function findPlannedSession(dateISO) { const plan = getPlan(); if (!plan) return
 // Note libre sur le plan (page Plan, onglet Ajustements) — texte manuel de l'utilisateur, jamais généré.
 function getPlanNotes() { try { return localStorage.getItem(PLAN_NOTES_KEY) || ''; } catch (e) { return ''; } }
 function savePlanNotes(text) { try { localStorage.setItem(PLAN_NOTES_KEY, text || ''); scheduleSync(); return true; } catch (e) { return false; } }
-function getApiKey() { try { return localStorage.getItem(KEY_KEY); } catch (e) { return null; } }
+/* La clé Anthropic était conservée en clair sous `trail:apikey` puis envoyée depuis le navigateur
+   en en-tête `x-api-key` (audit RISK-002). Tout script exécuté sur la même origine — extension,
+   dépendance CDN compromise — pouvait la lire, et elle partait aussi dans l'export JSON.
+   Elle n'est plus ni lue ni écrite par le produit : les appels IA passent par une fonction serveur
+   authentifiée (voir callElevAi et supabase/functions/ai-proxy). `getApiKey()` a été SUPPRIMÉE
+   volontairement plutôt que neutralisée, pour qu'aucun code ne puisse la réintroduire sans le voir.
+   La fonction ci-dessous efface la clé restée d'une version antérieure : elle s'exécute au
+   chargement, une fois, et signale son passage à l'interface. */
+function purgeLegacyApiKey() {
+  try {
+    if (localStorage.getItem(KEY_KEY) == null) return false;
+    localStorage.removeItem(KEY_KEY);
+    console.info('ELEV : clé API locale supprimée — les appels IA passent désormais par une fonction serveur authentifiée.');
+    return true;
+  } catch (e) { return false; }
+}
+// `var` et non `let` : la page Paramètres l'affiche, et une fonction d'accès la rend lisible
+// depuis un contexte de test isolé (un `let` de premier niveau n'appartient pas à l'objet global).
+var legacyApiKeyPurged = false;
+try { legacyApiKeyPurged = purgeLegacyApiKey(); } catch (e) { /* stockage indisponible */ }
+function legacyApiKeyWasPurged() { return legacyApiKeyPurged === true; }
 
 // --- Courses (échéances) ---
 const DEFAULT_RACES = [
@@ -611,7 +932,7 @@ function statutLabel(s) { return s === 'principal' ? 'Objectif principal' : (s =
 // (defaultRaceId), pas réutilisée en amont sur Accueil/Objectifs pour ne rien changer à leur
 // comportement actuel (voir CLAUDE.md, refonte Profil).
 function getMainObjectiveRace() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const races = getRaces().filter(r => !r.archived);
   if (!races.length) return null;
   const upcoming = races.filter(r => r.date >= today).sort((a,b) => a.date.localeCompare(b.date));
@@ -793,13 +1114,73 @@ function getEquipmentUsage(item) {
   };
 }
 
-// Vérification d'intégrité simple (page Paramètres) : uniquement ce qui est réellement vérifiable en
-// local — séances dont le gearId pointe vers un équipement supprimé (référence orpheline). Volontairement
-// limité, pas de contrôle inventé sur des structures qui n'existent pas (voir CLAUDE.md).
+/* Contrôle d'intégrité. Il ne cherchait qu'une chose : les séances pointant vers un équipement
+   supprimé. Il ne voyait donc ni les identifiants d'index sans objet (activité fantôme, voir
+   persistSession), ni les objets hors index (séance invisible, voir syncActivitiesWithSupabase),
+   ni deux séances partageant la même identité de contenu, ni une version de schéma non reconnue.
+   Aucune de ces situations n'est réparée en supprimant une donnée : ce qui peut être récupéré sans
+   perte l'est par repairDataIntegrity(), le reste est signalé et laissé intact.
+   `orphanGearRefs` et `ok` sont conservés tels quels : la page Paramètres les lit déjà. */
 function checkDataIntegrity() {
+  const stored = new Set(allStoredSessionIds());
+  const vus = new Set();
+  const indexDoublons = [];
+  const indexSansSeance = [];
+  loadIndex().forEach(id => {
+    if (vus.has(id)) indexDoublons.push(id); else vus.add(id);
+    if (!stored.has(id)) indexSansSeance.push(id);
+  });
+  const seanceHorsIndex = [...stored].filter(id => !vus.has(id));
+
+  const sessions = loadAllSessions();
+  const parIdentite = new Map();
+  sessions.forEach(s => {
+    if (!s.identityKey) return;
+    if (!parIdentite.has(s.identityKey)) parIdentite.set(s.identityKey, []);
+    parIdentite.get(s.identityKey).push(s.id);
+  });
+  const collisionsIdentite = [...parIdentite.values()].filter(ids => ids.length > 1);
+
   const gearIds = new Set(getGear().map(g => g.id));
-  const orphanSessions = loadAllSessions().filter(s => s.gearId && !gearIds.has(s.gearId));
-  return { orphanGearRefs: orphanSessions.length, ok: orphanSessions.length === 0 };
+  const orphanGearRefs = sessions.filter(s => s.gearId && !gearIds.has(s.gearId)).length;
+
+  const schemaInconnu = [];
+  try {
+    const brut = localStorage.getItem(SCHEMA_VERSION_KEY);
+    const v = brut == null ? null : parseInt(brut, 10);
+    if (v != null && Number.isFinite(v) && v > SCHEMA_VERSION) schemaInconnu.push(v);
+  } catch (e) { /* rien */ }
+
+  const problemes = indexSansSeance.length + seanceHorsIndex.length + indexDoublons.length
+    + collisionsIdentite.length + orphanGearRefs + schemaInconnu.length;
+  return {
+    ok: problemes === 0,
+    orphanGearRefs,
+    indexSansSeance, seanceHorsIndex, indexDoublons, collisionsIdentite, schemaInconnu,
+    reparable: seanceHorsIndex.length + indexSansSeance.length + indexDoublons.length,
+  };
+}
+
+/* Réparation NON destructive : les séances stockées hors index y sont réintégrées (elles
+   redeviennent visibles), les doublons d'index sont dédupliqués, et les identifiants d'index sans
+   objet sont retirés de l'index — ces derniers ne référencent rien, il n'y a aucune donnée à
+   perdre. Rien d'autre n'est touché : une collision d'identité ou une référence d'équipement
+   orpheline est signalée, jamais « corrigée » par une suppression. */
+function repairDataIntegrity() {
+  const avant = checkDataIntegrity();
+  const stored = new Set(allStoredSessionIds());
+  const vus = new Set();
+  const idx = [];
+  loadIndex().forEach(id => { if (!vus.has(id) && stored.has(id)) { vus.add(id); idx.push(id); } });
+  avant.seanceHorsIndex.forEach(id => { if (!vus.has(id)) { vus.add(id); idx.push(id); } });
+  const ok = saveIndex(idx);
+  return {
+    ok,
+    reintegrees: avant.seanceHorsIndex.length,
+    fantomesRetires: avant.indexSansSeance.length,
+    doublonsRetires: avant.indexDoublons.length,
+    restant: checkDataIntegrity(),
+  };
 }
 
 // Appareils FIT récemment détectés (montre/GPS) qui ne sont pas encore enregistrés comme équipement —
@@ -824,6 +1205,38 @@ function getDetectedDevices(n) {
 // Le CSV du plan ne contient pas l'année dans la colonne "Jour" — configurable dans Paramètres
 // (onglet "Plan d'entraînement"), 2026 par défaut si rien n'est enregistré.
 const PLAN_YEAR_KEY = STORAGE_PREFIX + 'planYear';
+/* Version du schéma des données locales et des sauvegardes JSON. Aucune version n'était déclarée :
+   l'export et l'import évoluaient sans que rien ne permette de dire à quel format on avait affaire,
+   ni de refuser proprement un fichier venu d'une version ultérieure (audit TECH-001).
+   1 = premier format versionné. Un export SANS `schemaVersion` est un export antérieur : il reste
+   accepté tel quel, c'est précisément à ça que sert le numéro. */
+const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION_KEY = STORAGE_PREFIX + 'schemaVersion';
+/* Toutes les clés de DONNÉES applicatives locales, en un seul endroit. La réinitialisation en
+   listait huit à la main et en oubliait deux — la note du plan et son année survivaient à un
+   « effacer toutes les données », et l'ancien contexte réapparaissait après un nouveau départ
+   (audit BUG-009).
+   NE SONT VOLONTAIREMENT PAS PURGÉES, et c'est un choix documenté : le thème (préférence
+   d'affichage, pas une donnée), la configuration Supabase (url + clé anon : les effacer
+   couperait l'accès à la copie cloud que la réinitialisation promet justement de préserver) et
+   les repères d'onboarding (ne pas réafficher le parcours de bienvenue à quelqu'un qui repart
+   d'un stockage propre sur un appareil qu'il connaît déjà). */
+function localDataKeys() {
+  return [
+    IDX_KEY, PLAN_KEY, PLAN_NOTES_KEY, PLAN_YEAR_KEY, KEY_KEY,
+    RACES_KEY, PROFILE_KEY, GEAR_KEY, SUPA_META_KEY, SYNCED_IDS_KEY, SCHEMA_VERSION_KEY,
+  ];
+}
+/* Efface toutes les données locales, séances comprises. `suspendSync()` doit être posé par
+   l'appelant AVANT le premier effacement (voir la section synchronisation) : sans lui, chaque
+   suppression reprogramme un envoi différé qui publierait l'état vidé vers le cloud. */
+function resetLocalData() {
+  const ids = loadIndex().concat(allStoredSessionIds());
+  const vus = new Set();
+  ids.forEach(id => { if (!vus.has(id)) { vus.add(id); deleteSession(id); } });
+  localDataKeys().forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+  return { seancesSupprimees: vus.size, clesSupprimees: localDataKeys().length };
+}
 function getPlanYear() { try { return parseInt(localStorage.getItem(PLAN_YEAR_KEY), 10) || 2026; } catch (e) { return 2026; } }
 function savePlanYear(year) { try { localStorage.setItem(PLAN_YEAR_KEY, String(year)); scheduleSync(); return true; } catch (e) { return false; } }
 
@@ -939,7 +1352,7 @@ function parsePlanCsv(text) {
 function getCurrentBloc() {
   const plan = getPlan();
   if (!plan || !plan.length) return null;
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const past = plan.filter(p => p.date <= today && p.bloc).sort((a,b) => b.date.localeCompare(a.date));
   return past.length ? past[0].bloc : null;
 }
@@ -996,6 +1409,29 @@ function fmtDayMonth(iso) { const [,m,d] = iso.split('-'); return parseInt(d,10)
 const SUPA_URL_KEY = STORAGE_PREFIX + 'supabaseUrl';
 const SUPA_ANON_KEY = STORAGE_PREFIX + 'supabaseAnonKey';
 const SUPA_META_KEY = STORAGE_PREFIX + 'supabaseMeta';
+/* Identifiants des séances dont on a la CONFIRMATION qu'elles existent côté Supabase (upsert
+   accepté, ou ligne réellement lue). C'est ce qui permet de distinguer, quand une séance locale
+   n'apparaît pas dans la table :
+   - « elle a été supprimée depuis un autre appareil » (elle était confirmée, elle ne l'est plus)
+     -> on la retire du cache local ;
+   - « elle n'est jamais partie » (jamais confirmée, import hors ligne ou envoi refusé)
+     -> on la GARDE, sans quoi une panne réseau la ferait disparaître de l'interface, des totaux
+     et de l'export (audit BUG-001).
+   Volontairement une clé à part et non un champ de séance : quelques centaines d'octets, aucune
+   réécriture des objets séance, et rien à pousser vers le cloud. */
+const SYNCED_IDS_KEY = STORAGE_PREFIX + 'syncedActivityIds';
+function getSyncedActivityIds() {
+  try { const v = JSON.parse(localStorage.getItem(SYNCED_IDS_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+  catch (e) { return []; }
+}
+function setSyncedActivityIds(ids) {
+  try { localStorage.setItem(SYNCED_IDS_KEY, JSON.stringify([...new Set(ids)])); return true; } catch (e) { return false; }
+}
+function markActivitySynced(id) {
+  if (!id) return;
+  const ids = getSyncedActivityIds();
+  if (ids.indexOf(id) < 0) { ids.push(id); setSyncedActivityIds(ids); }
+}
 
 function getSupabaseConfig() {
   try { return { url: localStorage.getItem(SUPA_URL_KEY) || '', anonKey: localStorage.getItem(SUPA_ANON_KEY) || '' }; }
@@ -1039,7 +1475,7 @@ function buildSyncPayload() {
   // seules séries de points. Sur des séances réelles (~1200 points au lieu de 150), la projection
   // à 50 séances passe d'environ 4,4 Mo renvoyés à CHAQUE modification locale à environ 50 ko.
   // Ne jamais y réintroduire `sessions` : ce serait recréer les deux écrivains concurrents.
-  return { plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
+  return { schemaVersion: SCHEMA_VERSION, plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
 }
 // Sauvegarde manuelle (page Paramètres → Exporter) : elle, doit être COMPLÈTE. C'est la seule
 // copie hors ligne de l'utilisateur, et la seule qui existe s'il n'a jamais configuré la synchro.
@@ -1047,48 +1483,162 @@ function buildSyncPayload() {
 // synchronisation partageaient la même fonction, et sortir les séances de l'une aurait vidé
 // l'autre en silence.
 function buildExportPayload() {
-  return Object.assign({ sessions: loadAllSessions() }, buildSyncPayload());
+  return Object.assign(
+    { schemaVersion: SCHEMA_VERSION, appVersion: APP_VERSION, exportedAt: new Date().toISOString(), sessions: loadAllSessions() },
+    buildSyncPayload()
+  );
+}
+
+/* --------------------------- RESTAURATION D'UNE SAUVEGARDE (source unique) ---------------------------
+   Il existait DEUX moteurs de restauration aux règles différentes (audit TECH-001) : la
+   restauration cloud (`applySyncPayload`) savait appliquer `races: []`, `planNotes` et `planYear` ;
+   l'import JSON manuel de la page Paramètres, écrit plus tôt et jamais réaligné, ne restaurait ni
+   la note ni l'année du plan (audit BUG-006) et refusait de vider une liste de courses parce qu'il
+   testait `data.races.length` (audit BUG-007). Un export réimporté ne redonnait donc pas l'état
+   exporté.
+   Une seule fonction sert désormais les deux chemins. Sémantique de présence, appliquée partout :
+   - clé ABSENTE            -> on ne touche à rien (sauvegarde ancienne ou partielle) ;
+   - clé PRÉSENTE et vide   -> l'utilisateur a réellement tout supprimé, la suppression s'applique ;
+   - clé PRÉSENTE et remplie-> remplacement ;
+   - clé PRÉSENTE mais du mauvais type -> ignorée et SIGNALÉE, jamais devinée. */
+const BACKUP_FIELDS = ['sessions', 'plan', 'races', 'profile', 'gear', 'planNotes', 'planYear'];
+
+function validateBackupPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { ok: false, reason: 'Le fichier ne contient pas un objet de sauvegarde ELEV.' };
+  }
+  const v = payload.schemaVersion;
+  if (v !== undefined && v !== null) {
+    if (!Number.isFinite(v)) return { ok: false, reason: 'Version de schéma illisible : ' + JSON.stringify(v) };
+    if (v > SCHEMA_VERSION) {
+      return { ok: false, reason: 'Sauvegarde créée par une version plus récente d\'ELEV (schéma ' + v + ', cette version lit jusqu\'au ' + SCHEMA_VERSION + '). Mets ELEV à jour avant de restaurer.' };
+    }
+  }
+  const present = BACKUP_FIELDS.filter(k => Object.prototype.hasOwnProperty.call(payload, k));
+  if (!present.length) return { ok: false, reason: 'Aucune donnée ELEV reconnue dans ce fichier (attendu : un export généré par ce dashboard).' };
+  // schemaVersion absent = export antérieur au versionnement : accepté tel quel, c'est à ça que
+  // sert le numéro. On le note comme 0 pour que l'appelant puisse le dire à l'utilisateur.
+  return { ok: true, schemaVersion: Number.isFinite(v) ? v : 0, present };
+}
+
+/* `opts.sessionsMode` :
+   - 'merge'       (import manuel) : chaque séance présente est écrite, comptée ajoutée ou mise à jour ;
+   - 'legacy-only' (blob cloud)    : uniquement si le cache local est VIDE — la table `activities`
+                                     est propriétaire des séances depuis le 2026-08-22, ce chemin
+                                     n'existe que pour un blob ancien reçu sur un appareil neuf. */
+function restoreBackupPayload(payload, opts) {
+  opts = opts || {};
+  const check = validateBackupPayload(payload);
+  const res = { ok: false, reason: null, schemaVersion: null, applied: [], ignored: [], added: 0, updated: 0, failed: 0, errors: [] };
+  if (!check.ok) { res.reason = check.reason; return res; }
+  res.schemaVersion = check.schemaVersion;
+
+  const a = k => res.applied.push(k);
+  const ignore = (k, why) => { res.ignored.push(k); res.errors.push(k + ' : ' + why); };
+  const has = k => Object.prototype.hasOwnProperty.call(payload, k);
+
+  if (has('sessions')) {
+    if (!Array.isArray(payload.sessions)) ignore('sessions', 'tableau attendu');
+    else {
+      const mode = opts.sessionsMode || 'merge';
+      const cacheVide = !loadIndex().length;
+      if (mode === 'legacy-only' && (!payload.sessions.length || !cacheVide)) {
+        // Rien à faire : soit le blob ne porte pas de séances, soit l'appareil en a déjà.
+      } else {
+        /* Écriture par lot : les séances d'abord, l'index UNE FOIS à la fin. Publier l'index à
+           chaque séance en ferait autant de réécritures d'un tableau qui grossit (quadratique sur
+           une restauration de plusieurs centaines de séances), et autant de synchronisations
+           programmées. L'ordre reste celui de persistSession — séance puis index — et les séances
+           écrites sont retirées si l'index ne peut pas être publié, pour ne laisser aucune donnée
+           inaccessible (même invariant que BUG-008). */
+        const idx = loadIndex();
+        const dejaIndexees = new Set(idx);
+        const nouvelles = [];
+        payload.sessions.forEach(s => {
+          if (!s || !s.id) { res.failed++; res.errors.push('Séance sans identifiant ignorée.'); return; }
+          const existe = !!loadSession(s.id);
+          if (!saveSession(s.id, s)) { res.failed++; res.errors.push(s.id + ' : ' + (lastStorageError || 'écriture impossible')); return; }
+          if (!dejaIndexees.has(s.id)) { dejaIndexees.add(s.id); nouvelles.push(s.id); }
+          if (existe) res.updated++; else res.added++;
+        });
+        if (nouvelles.length && !saveIndex(idx.concat(nouvelles))) {
+          nouvelles.forEach(id => { try { localStorage.removeItem(STORAGE_PREFIX + 'seance:' + id); } catch (e) {} });
+          res.failed += nouvelles.length;
+          res.added = 0;
+          res.errors.push("L'index n'a pas pu être enregistré : les séances ajoutées ont été retirées pour ne pas laisser de donnée inaccessible.");
+        } else {
+          a('sessions');
+        }
+      }
+    }
+  }
+  if (has('plan')) {
+    if (payload.plan == null || payload.plan === false) { clearPlan(); a('plan'); }
+    else if (Array.isArray(payload.plan)) { savePlan(payload.plan); a('plan'); }
+    else ignore('plan', 'tableau attendu');
+  }
+  if (has('races')) {
+    if (Array.isArray(payload.races)) { saveRaces(payload.races); a('races'); }
+    else ignore('races', 'tableau attendu');
+  }
+  if (has('profile')) {
+    if (payload.profile && typeof payload.profile === 'object' && !Array.isArray(payload.profile)) { saveProfile(payload.profile); a('profile'); }
+    else ignore('profile', 'objet attendu');
+  }
+  if (has('gear')) {
+    if (Array.isArray(payload.gear)) { saveGear(payload.gear); a('gear'); }
+    else ignore('gear', 'tableau attendu');
+  }
+  if (has('planNotes')) {
+    if (typeof payload.planNotes === 'string') { savePlanNotes(payload.planNotes); a('planNotes'); }
+    else if (payload.planNotes == null) { savePlanNotes(''); a('planNotes'); }
+    else ignore('planNotes', 'texte attendu');
+  }
+  if (has('planYear')) {
+    const y = Number(payload.planYear);
+    if (Number.isFinite(y) && y >= 1900 && y <= 2999) { savePlanYear(y); a('planYear'); }
+    else ignore('planYear', 'année attendue');
+  }
+  try { localStorage.setItem(SCHEMA_VERSION_KEY, String(SCHEMA_VERSION)); } catch (e) {}
+  res.ok = res.applied.length > 0 || res.added > 0 || res.updated > 0;
+  if (!res.ok && !res.reason) res.reason = 'Aucun champ exploitable dans ce fichier.';
+  return res;
 }
 // Pendant l'application des données reçues du cloud, on désactive scheduleSync() pour ne pas
 // renvoyer immédiatement vers Supabase ce qu'on vient d'en recevoir.
 let _applyingRemote = false;
+// Restauration du blob cloud : même moteur que l'import manuel (voir restoreBackupPayload), au
+// mode de séances près. `_applyingRemote` neutralise scheduleSync() pendant l'opération, pour ne
+// pas renvoyer immédiatement vers Supabase ce qu'on vient d'en recevoir.
 function applySyncPayload(payload) {
   _applyingRemote = true;
   try {
-    // Les séances ne sont plus pilotées ici (voir buildSyncPayload) : c'est `activities` qui les
-    // possède, via syncActivitiesWithSupabase(). Ce bloc effaçait TOUT l'index local avant de le
-    // réécrire depuis le blob — c'était la moitié destructrice des deux écrivains concurrents.
-    // Seul cas conservé, et volontairement étroit : un blob ANCIEN qui porte encore des séances,
-    // reçu sur un appareil dont le cache local est vide. Sans lui, cet appareil resterait vide le
-    // temps que `activities` prenne le relais. Il s'éteint de lui-même dès le premier envoi
-    // effectué depuis n'importe quel appareil à jour, puisque le champ disparaît alors du blob.
-    if (Array.isArray(payload.sessions) && payload.sessions.length && !loadIndex().length) {
-      const ids = [];
-      payload.sessions.forEach(s => { if (s && s.id) { saveSession(s.id, s); ids.push(s.id); } });
-      saveIndex(ids);
-      console.info('Séances reprises d\'un payload antérieur au passage à la table `activities` :', ids.length);
-    }
-    // Règle appliquée ci-dessous : on distingue « la clé est absente du payload » (payload ancien
-    // ou partiel — on ne touche à rien en local) de « la clé est présente et vide » (l'utilisateur
-    // a réellement tout supprimé sur l'autre appareil — la suppression doit se propager).
-    // Auparavant `if (payload.plan)` et `if (... && payload.races.length)` traitaient les deux cas
-    // de la même façon : supprimer toutes ses courses sur un appareil ne se propageait jamais, et
-    // l'appareil resté en arrière renvoyait ensuite sa liste périmée, ressuscitant les courses
-    // supprimées. Le même raisonnement vaut pour un plan effacé via clearPlan().
-    if ('plan' in payload) { if (payload.plan) savePlan(payload.plan); else clearPlan(); }
-    if (Array.isArray(payload.races)) saveRaces(payload.races);
-    if (payload.profile) saveProfile(payload.profile);
-    if (Array.isArray(payload.gear)) saveGear(payload.gear);
-    if (typeof payload.planNotes === 'string') savePlanNotes(payload.planNotes);
-    if (Number.isFinite(payload.planYear)) savePlanYear(payload.planYear);
+    return restoreBackupPayload(payload || {}, { sessionsMode: 'legacy-only' });
   } finally { _applyingRemote = false; }
 }
 
 let _syncTimer = null;
+/* Verrou de synchronisation sortante. `cancelPendingSync()` seul ne suffisait pas : il annule un
+   envoi déjà programmé, mais la suppression SUIVANTE en reprogramme un aussitôt (chaque écriture
+   locale appelle scheduleSync). La réinitialisation et le vidage du cache annulaient donc la
+   minuterie puis la réarmaient immédiatement, et si la récupération cloud tardait plus de 1,5 s ou
+   échouait, l'état local vidé partait vers Supabase — détruisant exactement la copie que le
+   message de confirmation promet de conserver (audit BUG-002).
+   Compteur et non booléen : deux opérations imbriquées ne peuvent pas se déverrouiller l'une
+   l'autre. Toujours poser/lever via withSyncSuspended() ou un try/finally, sous peine de laisser
+   la synchronisation muette. */
+let _syncSuspended = 0;
+function suspendSync() { _syncSuspended++; cancelPendingSync(); }
+function resumeSync() { _syncSuspended = Math.max(0, _syncSuspended - 1); }
+function isSyncSuspended() { return _syncSuspended > 0; }
+async function withSyncSuspended(fn) {
+  suspendSync();
+  try { return await fn(); } finally { resumeSync(); }
+}
 // Appelé automatiquement par les fonctions de sauvegarde locales — programme un envoi vers
 // Supabase avec un léger délai (pour regrouper plusieurs modifications rapprochées).
 function scheduleSync() {
-  if (_applyingRemote) return;
+  if (_applyingRemote || _syncSuspended) return;
   if (!getSupabaseClient()) return;
   clearTimeout(_syncTimer);
   // Le résultat de syncPush() était jeté : un envoi refusé (session expirée, RLS, réseau coupé,
@@ -1159,6 +1709,109 @@ async function autoPullIfNewer() {
   if (res.ok) { sessionStorage.setItem(guardKey, data.updated_at); location.reload(); }
 }
 
+/* --------------------------- APPELS IA (façade serveur authentifiée) ---------------------------
+   Les deux fonctionnalités IA (retour Coach ELEV sur une séance, estimation de temps de course)
+   appelaient l'API Anthropic DIRECTEMENT depuis le navigateur, avec la clé secrète de l'utilisateur
+   en en-tête (audit RISK-002), et sans aucun délai maximal : sur un réseau suspendu, le bouton et
+   le spinner restaient bloqués indéfiniment (audit RISK-003).
+   Les appels passent désormais par une fonction Edge Supabase (`supabase/functions/ai-proxy`) :
+   - le secret vit dans la configuration du projet Supabase, le navigateur ne le reçoit jamais ;
+   - l'appel est authentifié par le jeton de session de l'utilisateur (RLS/JWT déjà en place) ;
+   - la fonction n'accepte que les deux usages connus, avec un plafond de jetons.
+   CONSÉQUENCE PRODUIT ASSUMÉE : les fonctions IA exigent maintenant un compte Supabase configuré,
+   connecté, et la fonction déployée (voir supabase/functions/README.md). Sans cela, l'interface le
+   dit explicitement plutôt que d'échouer à l'appel. Tout le reste du produit continue de
+   fonctionner sans compte, comme avant. */
+const AI_TIMEOUT_MS = 60000;
+const AI_FUNCTION_NAME = 'ai-proxy';
+// 'diagnostic' : vérification de bout en bout déclenchée depuis Paramètres. Le prompt et le
+// plafond de jetons sont imposés côté serveur, pas ici (voir supabase/functions/ai-proxy).
+const AI_TASKS = ['coach-seance', 'estimation-course', 'diagnostic'];
+
+// Ce qui manque, le cas échéant, pour pouvoir appeler l'IA — permet à chaque page d'afficher un
+// message utile AVANT de tenter l'appel, plutôt qu'une erreur technique après.
+function aiAvailability() {
+  const cfg = getSupabaseConfig();
+  if (!cfg.url || !cfg.anonKey) {
+    return { ok: false, reason: 'not-configured', message: "Les fonctions IA passent par ton projet Supabase : configure la synchronisation dans Paramètres pour les activer." };
+  }
+  if (!getSupabaseClient()) {
+    return { ok: false, reason: 'sdk-missing', message: "Le module Supabase n'a pas pu être chargé (réseau ou blocage de script) — les fonctions IA sont indisponibles pour l'instant." };
+  }
+  return { ok: true };
+}
+
+function _aiMessageForStatus(status, data) {
+  const detail = data && (data.error || data.message) ? String(data.error || data.message) : null;
+  if (status === 401 || status === 403) return "Session expirée ou accès refusé — reconnecte-toi depuis la page Connexion." + (detail ? ' (' + detail + ')' : '');
+  if (status === 404) return "La fonction serveur `" + AI_FUNCTION_NAME + "` n'est pas déployée sur ton projet Supabase (voir supabase/functions/README.md).";
+  if (status === 429) return "Quota atteint côté service IA — réessaie dans quelques minutes." + (detail ? ' (' + detail + ')' : '');
+  if (status >= 500) return "Le service IA est momentanément indisponible (erreur " + status + ")." + (detail ? ' ' + detail : '');
+  return "Appel refusé (HTTP " + status + ")." + (detail ? ' ' + detail : '');
+}
+function _aiReasonForStatus(status) {
+  if (status === 401 || status === 403) return 'unauthorized';
+  if (status === 404) return 'not-deployed';
+  if (status === 429) return 'rate-limited';
+  if (status >= 500) return 'server-error';
+  return 'http-error';
+}
+
+/* Retourne toujours un objet, jamais une exception : chaque page peut donc remettre son bouton et
+   son indicateur dans un état stable sans dépendre d'un try/catch correct côté appelant.
+   `{ ok:true, text }` ou `{ ok:false, reason, message }`. */
+async function callElevAi(req) {
+  req = req || {};
+  if (AI_TASKS.indexOf(req.task) < 0) return { ok: false, reason: 'bad-request', message: 'Usage IA inconnu : ' + req.task };
+  const dispo = aiAvailability();
+  if (!dispo.ok) return { ok: false, reason: dispo.reason, message: dispo.message };
+  const cfg = getSupabaseConfig();
+  const client = getSupabaseClient();
+
+  let token = null;
+  try {
+    const { data } = await client.auth.getSession();
+    token = data && data.session ? data.session.access_token : null;
+  } catch (e) { token = null; }
+  if (!token) return { ok: false, reason: 'not-logged-in', message: "Connecte-toi à ton compte ELEV pour utiliser les fonctions IA (page Connexion)." };
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const delai = Number.isFinite(req.timeoutMs) ? req.timeoutMs : AI_TIMEOUT_MS;
+  const minuterie = controller ? setTimeout(() => controller.abort(), delai) : null;
+  try {
+    const resp = await fetch(cfg.url.replace(/\/+$/, '') + '/functions/v1/' + AI_FUNCTION_NAME, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token, 'apikey': cfg.anonKey },
+      body: JSON.stringify({ task: req.task, system: req.system || null, message: req.message || '', maxTokens: req.maxTokens || 1600 }),
+      signal: controller ? controller.signal : undefined,
+    });
+    const brut = await resp.text();
+    let data = null;
+    try { data = brut ? JSON.parse(brut) : null; } catch (e) { data = null; }
+    if (!resp.ok) return { ok: false, reason: _aiReasonForStatus(resp.status), status: resp.status, message: _aiMessageForStatus(resp.status, data) };
+    const text = data && typeof data.text === 'string' ? data.text.trim() : '';
+    if (!text) return { ok: false, reason: 'empty', message: "Le service IA a répondu sans contenu exploitable — réessaie." };
+    return { ok: true, text, model: (data && data.model) || null, usage: (data && data.usage) || null };
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      return { ok: false, reason: 'timeout', message: "Pas de réponse après " + Math.round(delai / 1000) + " s — l'appel a été interrompu. Réessaie." };
+    }
+    return { ok: false, reason: 'network', message: "Appel impossible (réseau indisponible ou requête bloquée) : " + (err && err.message ? err.message : 'raison inconnue') };
+  } finally { if (minuterie) clearTimeout(minuterie); }
+}
+
+/* Vérification de bout en bout de la chaîne IA, pour la page Paramètres.
+   Sans elle, la ligne « Fonctions IA » ne pouvait dire que « Supabase est configuré », ce qui ne
+   prouve NI que la fonction serveur est déployée, NI que la clé Anthropic est présente et valide.
+   L'appel est réel et consomme donc quelques jetons — c'est le prix d'une réponse honnête, et les
+   deux causes d'échec les plus fréquentes (fonction absente, secret manquant) sont détectées AVANT
+   d'atteindre le service payant, respectivement en 404 et en 503. */
+async function testElevAi() {
+  const t0 = Date.now();
+  const res = await callElevAi({ task: 'diagnostic', timeoutMs: 25000 });
+  return Object.assign({ dureeMs: Date.now() - t0 }, res);
+}
+
 /* --------------------------- SYNCHRO PAR SÉANCE (table `activities` + fichiers .fit) ---------------------------
    S'ajoute à la synchro globale ci-dessus (`trail_data`, qui reste le mécanisme principal de secours
    entre appareils). Ici : une ligne par séance dans Supabase + le fichier .fit original conservé en
@@ -1215,7 +1868,11 @@ async function downloadFitFile(session) {
 // Champs d'une séance que le fichier .fit ne contient PAS : ils viennent de l'utilisateur ou de
 // l'import, et une ré-analyse qui les écraserait détruirait son travail. Liste tenue à jour en
 // même temps que `sessionToActivityRow` — même vigilance, même conséquence si on en oublie un.
-const SESSION_USER_FIELDS = ['id', 'gearId', 'contexte', 'aiFeedback', 'fileName', 'importedAt', 'fitFilePath'];
+// `identityKey` et `fileHash` y figurent aussi : l'identité d'une séance déjà enregistrée ne se
+// recalcule JAMAIS (voir la section « IDENTITÉ D'UNE SÉANCE »), et `fileHash` est posé par
+// l'import — le fichier .fit ne le contient pas, une ré-analyse le perdrait donc, et avec lui la
+// détection de doublon exact.
+const SESSION_USER_FIELDS = ['id', 'gearId', 'contexte', 'aiFeedback', 'fileName', 'importedAt', 'fitFilePath', 'identityKey', 'fileHash'];
 
 // Ré-analyse une séance à partir de son fichier original : re-télécharge, re-parse avec le moteur
 // COURANT, puis remplace les données dérivées en préservant ce que l'utilisateur a saisi.
@@ -1235,7 +1892,10 @@ async function reanalyzeSessionFromFit(sessionId) {
   const merged = Object.assign({}, fresh);
   SESSION_USER_FIELDS.forEach(k => { if (local[k] !== undefined) merged[k] = local[k]; });
   merged.id = local.id; // l'identifiant ne se recalcule jamais : il indexe déjà la séance
-  if (!saveSession(merged.id, merged)) return { ok:false, reason: lastStorageError || 'écriture impossible' };
+  // `persistSession` et non `saveSession` : même chemin d'écriture que l'import, donc même
+  // garantie d'ordre séance-puis-index si la séance venait à ne plus figurer dans l'index.
+  const ecriture = persistSession(merged.id, merged);
+  if (!ecriture.ok) return { ok:false, reason: ecriture.reason };
   // La ligne `activities` est réécrite avec les nouvelles valeurs, sans renvoyer le fichier
   // (il est déjà en Storage et n'a pas changé) — `pushActivityRow` préserve alors le chemin.
   await pushActivityRow(merged, null);
@@ -1280,7 +1940,12 @@ function sessionToActivityRow(session, userId, fitFilePath) {
     // (historique.html), et `dateApprox` l'astérisque affiché sur 4 pages. Les loger dans `raw`,
     // déjà en jsonb et déjà prévu pour « ce qui n'entre pas dans les colonnes ci-dessus », évite
     // d'exiger une migration : la correction est effective sans aucune action dans Supabase.
+    // ORDRE IMPORTANT : `session.raw` d'abord, les champs calculés ENSUITE. L'ordre inverse
+    // laissait gagner un `raw` qui avait déjà fait l'aller-retour (il porte alors une copie de
+    // `clientMeta`), donc une valeur PÉRIMÉE écrasait la valeur fraîche à chaque nouvel envoi.
     raw: Object.assign(
+      {},
+      session.raw || {},
       {
         events: session.events || [],
         devices: session.devices || [],
@@ -1288,9 +1953,16 @@ function sessionToActivityRow(session, userId, fitFilePath) {
           fileName: session.fileName ?? null,
           importedAt: session.importedAt ?? null,
           dateApprox: session.dateApprox ?? null,
+          // Ajoutés le 2026-08-22 avec la correction des identités et des dates : sans colonne
+          // dédiée, ils voyagent ici. Les OUBLIER reviendrait à les détruire au retour, puisque
+          // syncActivitiesWithSupabase reconstruit le cache local à partir de ces lignes.
+          startedAt: session.startedAt ?? null,
+          utcOffsetS: session.utcOffsetS ?? null,
+          identityKey: session.identityKey ?? null,
+          fileHash: session.fileHash ?? null,
+          crcMismatch: session.crcMismatch ?? null,
         },
-      },
-      session.raw || {}
+      }
     ),
     fit_file_path: fitFilePath,
     updated_at: new Date().toISOString(),
@@ -1311,6 +1983,10 @@ async function pushActivityRow(session, fitArrayBuffer) {
   if (fitFilePath == null) delete row.fit_file_path;
   const { error } = await client.from('activities').upsert(row, { onConflict: 'user_id,client_id' });
   if (error) return { ok:false, reason: error.message };
+  // Confirmation d'existence côté cloud : c'est elle qui autorisera un jour à retirer la séance du
+  // cache local si elle disparaît de la table. Sans confirmation, une absence distante est traitée
+  // comme « pas encore envoyée » et la séance est conservée (voir SYNCED_IDS_KEY, audit BUG-001).
+  markActivitySynced(session.id);
   return { ok:true };
 }
 
@@ -1348,6 +2024,11 @@ function activityRowToSession(row) {
     fileName: (row.raw && row.raw.clientMeta && row.raw.clientMeta.fileName) || undefined,
     importedAt: (row.raw && row.raw.clientMeta && row.raw.clientMeta.importedAt) || undefined,
     dateApprox: (row.raw && row.raw.clientMeta && row.raw.clientMeta.dateApprox) || undefined,
+    startedAt: (row.raw && row.raw.clientMeta && row.raw.clientMeta.startedAt) || undefined,
+    utcOffsetS: (row.raw && row.raw.clientMeta && row.raw.clientMeta.utcOffsetS != null) ? row.raw.clientMeta.utcOffsetS : undefined,
+    identityKey: (row.raw && row.raw.clientMeta && row.raw.clientMeta.identityKey) || undefined,
+    fileHash: (row.raw && row.raw.clientMeta && row.raw.clientMeta.fileHash) || undefined,
+    crcMismatch: (row.raw && row.raw.clientMeta && row.raw.clientMeta.crcMismatch) || undefined,
     // Conservé pour que l'application sache qu'un fichier .fit original existe côté Storage.
     fitFilePath: row.fit_file_path || undefined,
     raw: row.raw || {},
@@ -1382,21 +2063,55 @@ async function syncActivitiesWithSupabase() {
   const user = await supaGetUser();
   if (!user) return { ok:false, reason:'not-logged-in' };
 
+  // Photographie des confirmations AVANT ce cycle. Une séance poussée à l'instant ne doit pas être
+  // considérée comme « déjà confirmée » : si la relecture qui suit ne la renvoie pas, c'est la
+  // lecture qui est incomplète, pas la séance qui a été supprimée.
+  const confirmeesAvant = new Set(getSyncedActivityIds());
   const localSessions = loadAllSessions();
+
   const { data: existing, error: existingErr } = await client.from('activities').select('client_id').eq('user_id', user.id);
-  if (!existingErr) {
-    const existingIds = new Set((existing || []).map(r => r.client_id));
-    for (const s of localSessions) {
-      if (!existingIds.has(s.id)) await pushActivityRow(s, null);
-    }
+  // On ne reconstruit JAMAIS l'index à partir d'une lecture distante dont on sait qu'elle a échoué :
+  // impossible alors de distinguer « supprimée ailleurs » de « jamais envoyée ». L'erreur était
+  // ignorée (`if (!existingErr)`), et la reconstruction se poursuivait quand même (audit BUG-001).
+  if (existingErr) return { ok:false, reason: existingErr.message };
+
+  const distantes = new Set((existing || []).map(r => r.client_id));
+  const echecs = [];
+  for (const s of localSessions) {
+    if (distantes.has(s.id)) continue;
+    // Séance DÉJÀ confirmée côté cloud lors d'un cycle précédent et absente aujourd'hui : elle a
+    // été supprimée depuis un autre appareil. La renvoyer la ressusciterait — c'est exactement le
+    // symétrique du défaut BUG-001, et tout aussi faux. Elle sera retirée du cache plus bas.
+    if (confirmeesAvant.has(s.id)) continue;
+    const res = await pushActivityRow(s, null);
+    if (res.ok) distantes.add(s.id);
+    else echecs.push({ id: s.id, reason: res.reason });
+  }
+  // Le résultat de pushActivityRow était jeté : un envoi refusé (RLS, session expirée, réseau,
+  // table absente) n'empêchait rien, et l'index était ensuite remplacé par une table distante qui
+  // ne contenait pas la séance — elle disparaissait de l'interface, des totaux et de l'export,
+  // pendant que la fonction retournait `ok: true` (audit BUG-001).
+  if (echecs.length) {
+    return {
+      ok: false,
+      reason: echecs.length + ' séance(s) n\'ont pas pu être envoyées : ' + echecs[0].reason,
+      pending: echecs.map(e => e.id),
+      // L'index local n'a pas été touché : rien n'a disparu, l'envoi sera retenté.
+      indexPreserve: true,
+    };
   }
 
   const { data: rows, error } = await client.from('activities').select('*').eq('user_id', user.id).order('date', { ascending: true });
   if (error || !rows) return { ok:false, reason: error ? error.message : 'empty' };
+  // Les deux lectures doivent au moins s'accorder sur le nombre de lignes. Si la seconde en renvoie
+  // moins que ce que la première a listé (plus ce qu'on vient d'envoyer), elle est incomplète :
+  // reconstruire l'index dessus reviendrait à faire disparaître des séances bien présentes.
+  if (rows.length < distantes.size) {
+    return { ok:false, reason: 'Lecture distante incomplète (' + rows.length + ' ligne(s) reçues, ' + distantes.size + ' attendues) — index local conservé.', indexPreserve: true };
+  }
   // `_applyingRemote` neutralise scheduleSync() pendant la reconstruction : chaque saveSession()
   // en déclenchait un, donc CHAQUE chargement de page programmait un envoi complet du blob vers
-  // Supabase pour y renvoyer ce qu'on venait d'en lire. Inutile même maintenant que le payload
-  // est petit — et c'était l'un des chemins par lesquels les deux mécanismes se marchaient dessus.
+  // Supabase pour y renvoyer ce qu'on venait d'en lire.
   _applyingRemote = true;
   try {
     const ids = [];
@@ -1408,8 +2123,14 @@ async function syncActivitiesWithSupabase() {
       saveSession(remote.id, mergeSessionFromRemote(loadSession(remote.id), remote));
       ids.push(remote.id);
     });
-    saveIndex(ids);
-    return { ok:true, count: rows.length };
+    const distantesSet = new Set(ids);
+    // Séances locales absentes de la table : on ne les retire QUE si elles y avaient déjà été vues.
+    // Jamais confirmées = jamais parties (import hors ligne, envoi refusé plus tôt) : les supprimer
+    // du cache local les ferait disparaître pour de bon.
+    const conservees = loadIndex().filter(id => !distantesSet.has(id) && !confirmeesAvant.has(id) && loadSession(id));
+    saveIndex(ids.concat(conservees));
+    setSyncedActivityIds(ids);
+    return { ok:true, count: rows.length, conservees: conservees.length };
   } finally { _applyingRemote = false; }
 }
 
@@ -1444,6 +2165,10 @@ async function deleteSessionEverywhere(sessionId) {
 
   deleteSession(sessionId);
   saveIndex(loadIndex().filter(id => id !== sessionId));
+  // La confirmation d'existence distante doit partir avec la séance : sinon une resynchronisation
+  // ultérieure verrait un identifiant « déjà confirmé » absent de la table et croirait à une
+  // suppression venue d'ailleurs — sans conséquence ici, mais la liste dériverait sans raison.
+  setSyncedActivityIds(getSyncedActivityIds().filter(id => id !== sessionId));
   return { ok:true, cloud: !!(client && user) };
 }
 
@@ -1639,12 +2364,15 @@ const ANALYSIS_PERIODS = {
   '1y': { label: '1 an', days: 365 },
   'all': { label: 'Tout', days: null },
 };
-function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0,10); }
+// Date civile d'il y a n jours. L'ancienne version décalait un instant en heure locale puis le
+// lisait en UTC : les deux conventions se mélangeaient, et le résultat pouvait sauter un jour
+// selon l'heure d'appel. Arithmétique de dates civiles à partir d'une date civile (voir addDaysIso).
+function isoDaysAgo(n) { return addDaysIso(todayISO(), -n); }
 
 // Résout une période "rapide" (ou personnalisée) en bornes ISO [from, to]. "Tout" s'appuie sur la
 // première séance réellement connue, jamais une date arbitraire.
 function resolveAnalysisRange(key, customFrom, customTo, sessions) {
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   if (key === 'custom' && customFrom && customTo) return { fromISO: customFrom, toISO: customTo };
   const def = ANALYSIS_PERIODS[key] || ANALYSIS_PERIODS['12w'];
   if (def.days == null) return { fromISO: sessions.length ? sessions[0].date : today, toISO: today };
@@ -2212,13 +2940,29 @@ function activityRowHtml(s, opts) {
   '</a>';
 }
 
+/* Messages applicatifs (résultat d'import, sauvegarde, erreur…).
+   `text` était concaténé directement dans `innerHTML` : un message d'erreur qui contient du HTML
+   — nom de fichier, message d'erreur Supabase, texte d'exception d'un parseur — était donc
+   INTERPRÉTÉ comme du balisage, et non affiché (audit RISK-001). Ces sources ne sont pas toutes
+   sous notre contrôle.
+   Construction DOM sûre plutôt qu'un échappement artisanal : `textContent` ne peut, par
+   construction, produire aucun nœud. `kind` est validé sur une liste fermée, sinon une valeur
+   inattendue deviendrait un nom de classe arbitraire.
+   Conservés à l'identique : les classes, `role="status"`, `aria-live="polite"` (le message doit
+   être annoncé même si le focus est ailleurs) et la disparition automatique des confirmations. */
+const MSG_KINDS = ['ok', 'err', 'info', 'warn'];
 function showMsg(elId, text, kind) {
   const el = document.getElementById(elId);
   if (!el) return;
-  // aria-live="polite" : ces messages (résultat d'import, sauvegarde, erreur...) doivent être
-  // annoncés par un lecteur d'écran même si le focus reste ailleurs sur la page.
-  el.innerHTML = '<div class="msg ' + kind + '" role="status" aria-live="polite">' + text + '</div>';
-  if (kind === 'ok') setTimeout(() => { if (el.firstChild) el.innerHTML=''; }, 5000);
+  const type = MSG_KINDS.indexOf(kind) >= 0 ? kind : 'info';
+  el.textContent = '';
+  const box = document.createElement('div');
+  box.className = 'msg ' + type;
+  box.setAttribute('role', 'status');
+  box.setAttribute('aria-live', 'polite');
+  box.textContent = text == null ? '' : String(text);
+  el.appendChild(box);
+  if (type === 'ok') setTimeout(() => { if (el.firstChild) el.textContent = ''; }, 5000);
 }
 
 // Fermeture au clavier (Échap) de toute modale ouverte (.modal-backdrop.open) — geste attendu
@@ -2332,7 +3076,7 @@ function countIsoWeeksBetween(fromISO, toISO) {
 function computePrepStatus(raceDateISO) {
   const plan = getPlan();
   if (!plan || !plan.length) return null;
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const windowStart = new Date(new Date(today).getTime() - 28*86400000).toISOString().slice(0,10);
   const plannedInWindow = plan.filter(p => p.date >= windowStart && p.date <= today);
   const doneInWindow = loadAllSessions().filter(s => s.date >= windowStart && s.date <= today);
@@ -2360,7 +3104,7 @@ const READINESS_DPLUS_BENCHMARK = 2200; // m D+/semaine — idem
 const READINESS_INTENSITY_BENCHMARK = 15; // % du temps en zone FC 3+ (tempo/seuil/VMA) sur la fenêtre, pour un score plein
 function computeRaceReadiness(race) {
   const sessions = loadAllSessions();
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const windowStart = new Date(new Date(today).getTime() - READINESS_WEEKS*7*86400000).toISOString().slice(0,10);
   const recent = sessions.filter(s => s.date >= windowStart && s.date <= today);
   const subs = [];
@@ -2527,7 +3271,7 @@ function getPlanDateRange(plan) {
 function getPlanProgress(plan) {
   const range = getPlanDateRange(plan);
   if (!range) return null;
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const totalWeeks = countIsoWeeksBetween(range.fromISO, range.toISO);
   let weeksElapsed, status;
   if (today < range.fromISO) { weeksElapsed = 0; status = 'not_started'; }
@@ -2565,7 +3309,7 @@ function getPlanPhases(plan) {
 }
 function getCurrentPlanPhase(phases) {
   if (!phases) return null;
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   return phases.find(ph => today >= ph.fromDate && today <= ph.toDate) || null;
 }
 
@@ -2574,7 +3318,7 @@ function getCurrentPlanPhase(phases) {
 function getCurrentPlanWeek(plan) {
   if (!plan || !plan.length) return null;
   const range = getPlanDateRange(plan);
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const startISO = isoWeek(today);
   const endISO = addDaysIso(startISO, 6);
   const items = plan.filter(p => p.date >= startISO && p.date <= endISO);
@@ -2596,7 +3340,7 @@ function getCurrentPlanWeek(plan) {
 function getPlanDayStatus(dateISO, plannedCount, doneCount) {
   if (!plannedCount) return doneCount ? 'done' : 'rest';
   if (doneCount >= plannedCount) return 'done';
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   return dateISO < today ? 'missed' : 'todo';
 }
 
@@ -2645,7 +3389,7 @@ function matchActivitiesToPlannedSessions(plannedItems, sessions) {
 // liste de séances importantes, distincte de "la prochaine".
 function getNextPlanSession(plan, sessions) {
   if (!plan || !plan.length) return null;
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const upcoming = plan.filter(p => p.date >= today && !sessions.some(s => s.date === p.date)).sort((a,b) => a.date.localeCompare(b.date));
   return upcoming[0] || null;
 }
@@ -2690,7 +3434,7 @@ function getKeyPlannedSessions(plan) {
 function getPlanWeeksOverview(plan) {
   if (!plan || !plan.length) return [];
   const sessions = loadAllSessions();
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const todayWeek = isoWeek(today);
   const weeksMap = new Map();
   plan.forEach(p => {
@@ -2771,7 +3515,7 @@ function getLinkedPlanGoal() {
 function getWeeklyStats() {
   const sessions = loadAllSessions();
   if (!sessions.length) return null;
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const weekStart = isoWeek(today);
   const prevWeekStart = new Date(new Date(weekStart).getTime() - 7*86400000).toISOString().slice(0,10);
   // Jours réellement écoulés dans la semaine en cours (1 = on est lundi).
@@ -2821,7 +3565,7 @@ const TREND_LABELS = { rising: 'En hausse', rising_fast: 'Hausse rapide', stable
 function getTrainingTrend() {
   const sessions = loadAllSessions();
   if (sessions.length < 2) return null;
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const weeks = [];
   for (let i = 3; i >= 0; i--) {
     const start = new Date(new Date(today).getTime() - (i+1)*7*86400000).toISOString().slice(0,10);
@@ -2947,8 +3691,7 @@ const RADAR_AXES = [
 ];
 function clampScore(v) { return v == null ? null : Math.round(Math.max(0, Math.min(100, v))); }
 function computePerformanceRadar(sessions) {
-  const today = new Date();
-  const windowStart = new Date(today.getTime() - RADAR_WEEKS*7*86400000).toISOString().slice(0,10);
+  const windowStart = addDaysIso(todayISO(), -RADAR_WEEKS * 7);
   const recent = sessions.filter(s => s.date >= windowStart);
   const notes = [];
 
@@ -3014,14 +3757,14 @@ function computePerformanceRadar(sessions) {
 function getRecentWeeklyVolumes(nWeeks) {
   const sessions = loadAllSessions();
   if (!sessions.length) return [];
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayISO();
   const firstWeek = isoWeek(sessions[0].date);
   const weeks = [];
   for (let i = nWeeks - 1; i >= 0; i--) {
     const ws = isoWeek(new Date(new Date(today).getTime() - i*7*86400000).toISOString().slice(0,10));
     if (ws < firstWeek) continue;
-    const weEnd = new Date(ws); weEnd.setDate(weEnd.getDate() + 6);
-    const inWeek = sessions.filter(s => s.date >= ws && s.date <= weEnd.toISOString().slice(0,10));
+    const weEnd = addDaysIso(ws, 6);
+    const inWeek = sessions.filter(s => s.date >= ws && s.date <= weEnd);
     weeks.push({
       startISO: ws,
       km: inWeek.reduce((a,s) => a + (s.distanceKm||0), 0),
@@ -3159,7 +3902,14 @@ function _drawResponsiveChart(el) {
   const render = _responsiveCharts.get(el);
   if (!render || !el.isConnected) return;
   const w = Math.round(el.clientWidth);
-  if (!w) return;                                   // pas encore mis en page
+  /* Seuil et non `if (!w)` : le premier dessin a lieu juste après l'insertion, avant que les
+     scènes pleine largeur ne soient dimensionnées en JS. Le conteneur y était mesuré à ~24 px sur
+     l'Accueil — largeur à laquelle la géométrie des barres devient NÉGATIVE, ce qui produisait
+     douze erreurs `<rect> attribute width: A negative value is not valid` à chaque chargement
+     (défaut préexistant, observé en vérifiant le rendu ; absent du rapport d'audit, qui n'avait
+     relevé aucune erreur de console sur la version publique). Sous 200 px de conteneur, aucun
+     graphique n'est lisible de toute façon : on attend la passe suivante (rAF puis 220 ms). */
+  if (w < 200) return;
   if (el.dataset.chartWidth === String(w)) return;  // deja dessine a cette largeur
   el.dataset.chartWidth = String(w);
   el.innerHTML = render(w);
@@ -3203,7 +3953,7 @@ function volumeChartSvg(weeks, opts) {
   const maxKm = Math.max(1, ...weeks.map(x => x.km));
   const maxDurH = Math.max(1, ...weeks.map(x => x.durationS / 3600));
   const groupW = (w - padL - padR) / weeks.length;
-  const barW = Math.min(groupW * 0.55, 46);
+  const barW = Math.max(1, Math.min(groupW * 0.55, 46));
   const syDur = v => (h - padB) - (v / maxDurH) * (h - padT - padB);
   let bars = '';
   weeks.forEach((wk, i) => {
@@ -3243,7 +3993,7 @@ function goalTrendChartSvg(weeks, planMap, key, opts) {
   const plannedVals = planMap ? weeks.map(x => (planMap.get(x.startISO) || {})[key] || 0) : [];
   const maxV = Math.max(1, ...realizedVals, ...plannedVals);
   const groupW = (w - padL - padR) / weeks.length;
-  const barW = Math.min(groupW * 0.55, 46);
+  const barW = Math.max(1, Math.min(groupW * 0.55, 46));
   const sy = v => (h - padB) - (v / maxV) * (h - padT - padB);
   let bars = '';
   weeks.forEach((wk, i) => {
@@ -4349,7 +5099,10 @@ function groupedBarChartSvg(title, weeks, series, opts) {
   const w = chartViewboxWidth(opts), h = opts.height || 290, padL = 54, padR = 18, padT = 20, padB = 44;
   const maxV = Math.max(1, ...series.flatMap(s => s.values));
   const groupW = (w - padL - padR) / weeks.length;
-  const barW = (groupW * 0.7) / series.length;
+  // Plancher à 1 px : une géométrie négative n'est jamais une largeur valide, et le SVG la
+  // refuse en journalisant une erreur par barre. Filet de sécurité en plus du seuil de
+  // _drawResponsiveChart, ces fonctions étant aussi appelées avec une largeur explicite.
+  const barW = Math.max(1, (groupW * 0.7) / series.length);
   let bars = '';
   weeks.forEach((wk, i) => {
     const groupX = padL + i * groupW + groupW * 0.15;

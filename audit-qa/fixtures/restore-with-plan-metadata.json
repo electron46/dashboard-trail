@@ -1,0 +1,9 @@
+{
+  "sessions": [],
+  "plan": [],
+  "races": [],
+  "profile": { "nom": "Profil de test" },
+  "gear": [],
+  "planNotes": "Note qui doit survivre à une restauration",
+  "planYear": 2031
+}

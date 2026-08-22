@@ -72,7 +72,12 @@ function renderReport(r) {
     row('Version protocole', f.protocolVersion) + row('Version profil', f.profileVersion) +
     row('Fichier tronqué', f.truncated ? '⚠ oui — taille attendue ' + f.expectedSize + ' o, taille réelle ' + f.sizeBytes + ' o' : 'non') +
     row('CRC en-tête', f.headerCrcValid === null ? 'non renseigné' : (f.headerCrcValid ? 'valide' : '⚠ invalide')) +
-    row('CRC fichier', f.fileCrcValid === null ? 'non vérifiable' : (f.fileCrcValid ? 'valide' : '⚠ invalide')) +
+    row('CRC fichier', f.fileCrcValid === null ? 'non vérifiable (non calculé par l\'appareil)' : (f.fileCrcValid ? 'valide' : '⚠ invalide')) +
+    // Verdict de la validation partagée avec l'import normal. L'inspecteur et l'import suivaient
+    // jusqu'ici deux règles différentes : un fichier au CRC invalide était signalé ici et accepté
+    // là-bas (audit BUG-004). Le même contrôle sert désormais les deux, et cette ligne dit
+    // explicitement ce que l'import ferait de ce fichier.
+    row('Import normal', f.importAccepte ? 'accepté' : '⚠ refusé — ' + esc(f.motifRefus || 'motif inconnu')) +
     '</tbody></table>';
 
   if (r.parseError) {
