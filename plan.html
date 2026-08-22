@@ -19,6 +19,9 @@
      depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
      une empreinte non verifiee ici serait une fausse garantie. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -447,11 +450,14 @@ function renderPlanCharts() {
   initChartTooltips(volBox); initChartTooltips(dplusBox);
 
   const trend = getTrainingTrend();
-  if (!trend) chargeBox.innerHTML = '<div class="empty">Pas assez d\'historique pour calculer une tendance de charge.</div>';
+  // getTrainingTrend() retourne désormais la RAISON de son refus (4 semaines couvertes minimum,
+  // 3 non vides) plutôt que null : on l'affiche, au lieu d'un message générique qui laissait
+  // croire à un défaut du produit.
+  if (!trend || !trend.available) chargeBox.innerHTML = '<div class="empty">' + escapeHtml((trend && trend.reason) || "Pas assez d'historique pour calculer une tendance de charge.") + '</div>';
   else {
     chargeBox.innerHTML = '<div class="metric" style="border:none;padding:0;"><div class="lbl">Tendance de charge (volume)</div><div class="val">' + escapeHtml(trend.label) + '</div>' +
       '<div class="kpi-spark" style="width:100px;height:28px;margin-top:6px;">' + sparklineSvg(trend.weeks) + '</div>' +
-      '<p class="hint" style="margin-top:6px;">' + trend.acute.toFixed(1) + ' km cette semaine vs ' + trend.chronic.toFixed(1) + ' km en moyenne (4 dernières semaines). Repère qualitatif basé sur le volume, pas une mesure physiologique.</p>' +
+      '<p class="hint" style="margin-top:6px;">' + trend.acute.toFixed(1) + ' km cette semaine vs ' + trend.chronic.toFixed(1) + ' km en moyenne (4 dernières semaines). Observation de volume uniquement : ELEV ne suit ni sommeil, ni variabilité cardiaque, ni FC de repos, et ne dit donc rien de ta récupération.</p>' +
     '</div>';
   }
 }
@@ -607,6 +613,16 @@ document.querySelectorAll('#planTabs button').forEach(btn => btn.addEventListene
 function renderPlanPage() {
   renderPlanHero();
   const plan = getPlan();
+  /* Audit §4.7 et §13 / UX-09 : sans plan, la page laissait en place la rangée d'onglets et les
+     sept panneaux d'analyse, tous vides, derrière le message « Aucun plan importé ». Un état vide
+     ne doit rien laisser survivre derrière lui : ce qui reste visible suggère que le produit est
+     cassé plutôt qu'en attente d'une action. */
+  const aPlan = !!(plan && plan.length);
+  const tabs = document.getElementById('planTabs');
+  const selWrap = document.querySelector('.tabs-select-wrap');
+  if (tabs) tabs.hidden = !aPlan;
+  if (selWrap) selWrap.hidden = !aPlan;
+  document.querySelectorAll('.tab-panel').forEach(p2 => { p2.hidden = !aPlan; });
   if (plan && plan.length) {
     renderPlanToday();
     renderPlanWeekBox();
@@ -619,7 +635,7 @@ function renderPlanPage() {
     renderPlanIntensity();
     renderPlanDplusTab();
   }
-  renderPlanInsightCompact();
+  if (aPlan) renderPlanInsightCompact();
   renderPlanNotes();
 }
 

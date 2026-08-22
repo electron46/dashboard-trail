@@ -19,6 +19,9 @@
      depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
      une empreinte non verifiee ici serait une fausse garantie. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -136,20 +139,31 @@
 
   </div>
 
-  <!-- 5. CHARGE ET INTENSITÉ — analyses secondaires. Restent des cards dans la grille centrée de
-       <main> : seules les scènes narratives ci-dessus sont pleine largeur. -->
+  <!-- 5. À SURVEILLER — audit §7, écran 4. N'apparaît QUE si un signal réel existe (usure d'un
+       équipement au-delà du seuil, qualité de donnée dégradée, synchronisation en échec). Aucune
+       carte n'est conservée pour remplir : sans signal, la section n'existe pas dans la page. -->
+  <section class="card card-compact dash-full reveal-on-scroll" id="watchCard" hidden>
+    <h2>À surveiller</h2>
+    <div id="watchBox"></div>
+  </section>
+
+  <!-- 6. CHARGE — analyse secondaire, masquée tant que l'historique ne permet pas d'en parler.
+       La carte « Intensité » (répartition détaillée des zones FC) a été RETIRÉE de l'Accueil :
+       l'audit la liste parmi ce qui doit disparaître du premier niveau (§7), et elle dupliquait
+       exactement la carte de la page Progression, qui est la page de l'effort dans le temps. -->
   <div class="dash-secondary-grid dash-full reveal-on-scroll">
-    <section class="card card-compact">
+    <section class="card card-compact" id="loadCard">
       <!-- La periode n'est pas le sujet de la carte : elle qualifie la donnee. Elle passe donc en
            metadonnee sous le titre plutot que dans le titre lui-meme (plan §3). -->
       <h2>Charge d'entraînement</h2>
       <p class="card-period">12 dernières semaines</p>
       <div id="loadChartBox"></div>
+      <p class="hint" style="margin-top:8px;">Observation de volume. ELEV ne suit ni sommeil, ni variabilité cardiaque, ni FC de repos&nbsp;: cette carte ne dit rien de ta récupération.</p>
     </section>
     <section class="card card-compact">
-      <h2>Intensité</h2>
-      <p class="card-period">30 derniers jours</p>
-      <div id="fcSummaryBox"></div>
+      <h2>Répartition de l'effort</h2>
+      <p class="card-period">Zones cardiaques</p>
+      <p class="hint">Le détail de tes zones vit sur la page <a href="analyse.html">Progression</a>, avec la tendance qui lui donne du sens, et sur chaque <a href="historique.html">séance</a>.</p>
     </section>
   </div>
 
@@ -162,6 +176,51 @@
 <nav class="mobile-nav" id="mobileNav"></nav>
 
 <script>
+/* « À surveiller » — audit §7, écran 4. Trois sources de signal seulement, et chacune doit être
+   RÉELLE : un seuil franchi, une donnée mesurément dégradée, une synchronisation en échec. Rien
+   n'est affiché « pour information ». Si la liste est vide, la section entière disparaît. */
+function renderWatchList() {
+  const card = document.getElementById('watchCard');
+  const box = document.getElementById('watchBox');
+  if (!card || !box) return;
+  const items = [];
+
+  // 1. Équipement : uniquement au-delà du seuil d'alerte réellement paramétré.
+  try {
+    (getGear() || []).filter(g => g.actif !== false && (g.category || 'chaussures') === 'chaussures').forEach(g => {
+      const u = getEquipmentUsage(g);
+      if (u && u.statut === 'remplacer') items.push({ txt: g.nom + ' : seuil de remplacement atteint (' + Math.round(u.km) + ' km).', href: 'equipements.html', lien: 'Voir mes équipements' });
+    });
+  } catch (e) { /* la page ne doit pas dépendre de cette section */ }
+
+  // 2. Qualité de donnée : un signal essentiel absent ou troué sur les séances récentes.
+  try {
+    const recentes = loadAllSessions().filter(s2 => s2.date >= addDaysIso(todayISO(), -30));
+    if (recentes.length >= 3) {
+      [['cadence', 'la cadence'], ['hr', 'la fréquence cardiaque'], ['alt', "l'altitude"]].forEach(([cle, nom]) => {
+        const cov = elevAggregateCoverage(recentes, cle);
+        if (cov.ratio != null && elevCoverageLevel(cov.ratio) === 'insufficient') {
+          items.push({ txt: 'Sur tes 30 derniers jours, ' + nom + " n'est enregistrée que sur " + cov.pct + ' % du temps : les analyses qui s\'y appuient restent incomplètes.' });
+        }
+      });
+    }
+  } catch (e) {}
+
+  // 3. Synchronisation : uniquement si le dernier envoi a réellement échoué.
+  try {
+    const meta = getSyncMeta();
+    if (meta && meta.lastPushOk === false && meta.lastPushError) {
+      items.push({ txt: 'La dernière synchronisation a échoué : ' + meta.lastPushError, href: 'parametres.html#connectivite', lien: 'Vérifier la connexion' });
+    }
+  } catch (e) {}
+
+  if (!items.length) { card.hidden = true; box.innerHTML = ''; return; }
+  card.hidden = false;
+  box.innerHTML = '<ul class="watch-list">' + items.map(i =>
+    '<li><span class="dq-sym" aria-hidden="true">▲</span> ' + escapeHtml(i.txt) +
+    (i.href ? ' <a href="' + i.href + '">' + escapeHtml(i.lien) + ' →</a>' : '') + '</li>').join('') + '</ul>';
+}
+
 function renderGearAlert() {
   const box = document.getElementById('gearAlertBox');
   const alerts = getGear().filter(g => g.actif !== false).map(g => {
@@ -415,39 +474,23 @@ function renderTrajectory() {
     };
   }
 
-  const insight = generateElevInsight();
   const trend = getTrainingTrend();
-  if (insight) {
-    /* §14 du brief : ne jamais présenter une période incomplète comme une conclusion ferme.
-       Deux garde-fous ici.
-       1) `getTrainingTrend()` raisonne en fenêtre GLISSANTE de 7 jours, alors que la carte voisine
-          parle de la SEMAINE CALENDAIRE en cours. Afficher « vs moyenne 4 sem. » sans dire de quelle
-          fenêtre il s'agit laissait lire le chiffre comme un bilan de la semaine partielle. La
-          fenêtre est donc nommée explicitement.
-       2) Une fenêtre à zéro produit mécaniquement « -100 % », qui se lit comme un verdict définitif
-          alors que c'est une absence de donnée. Dans ce cas on n'affiche aucun pourcentage : le
-          constat factuel (nombre de jours écoulés) remplace la conclusion. */
-    const noRecentVolume = trend && trend.acute === 0;
-    const deltaPct = (trend && trend.chronic > 0 && !noRecentVolume)
-      ? Math.round(((trend.acute - trend.chronic) / trend.chronic) * 100) : null;
-    const factual = noRecentVolume
-      ? ' <strong class="delta">(aucune activité sur les 7 derniers jours' +
-        (stats.isPartialWeek ? ', ' + stats.daysElapsed + (stats.daysElapsed > 1 ? ' jours écoulés' : ' jour écoulé') + ' sur la semaine en cours' : '') + ')</strong>'
-      : '';
-    insightHtml = '<div class="landscape-callout status-' + insight.level + '">' +
-      '<span class="dot" aria-hidden="true"></span>' +
-      '<div class="body">' +
-        '<span class="elev-signal"><img src="' + ICON('zap') + '" alt="">Insight ELEV</span>' +
-        '<strong>' + escapeHtml(insight.title) + '</strong>' +
-        '<p>' + escapeHtml(insight.text) + (deltaPct != null ? ' <strong class="delta">(' + (deltaPct >= 0 ? '+' : '') + deltaPct + '% sur 7 jours glissants, vs moyenne 4 sem.)</strong>' : factual) + '</p>' +
-        // Observations complémentaires (phase 12) : l'interprétation ne portait que sur le
-        // VOLUME. Le dénivelé — la mesure qui définit le trail — et la sortie longue n'étaient
-        // jamais commentés, alors que les deux se calculent depuis les mêmes semaines déjà
-        // agrégées pour le graphique. Chacune porte son constat ET sa référence.
-        generateElevSideInsights().map(o =>
-          '<p class="insight-extra"><strong>' + escapeHtml(o.title) + '</strong> ' + escapeHtml(o.text) + '</p>'
-        ).join('') +
-      '</div>' +
+
+  /* Bloc d'interprétation de l'Accueil. Audit ELEV 2.0, §6.4 / INS-04 : un écran porte AU PLUS un
+     insight principal et deux secondaires, jamais deux de la même famille. La composition et les
+     garde-fous ne sont plus écrits ici — c'est prioritizeInsights() qui décide, pour que l'Accueil
+     ne puisse pas publier une observation qu'une autre page refuserait.
+
+     Le pourcentage « sur 7 jours glissants » écrit à la main ici a disparu : le delta et sa
+     référence font désormais partie du contrat de l'insight, donc du composant. */
+  const homeInsights = prioritizeInsights(
+    [generateElevInsight()].concat(generateElevSideInsights()).filter(Boolean),
+    { hasRecoveryData: false }
+  );
+  if (homeInsights.primary || homeInsights.secondary.length) {
+    insightHtml = '<div class="landscape-callout-wrap">' +
+      '<p class="elev-signal"><img src="' + ICON('zap') + '" alt="">Insight ELEV</p>' +
+      insightBlockHtml(homeInsights, { headingLevel: 3 }) +
     '</div>';
   }
 
@@ -459,10 +502,16 @@ function renderTrajectory() {
   };
   const trendStatus = { rising: 'ok', rising_fast: 'warn', stable: 'ok', falling: null };
   const avg = weeks.length ? weeks.reduce((a, w) => a + (isKm ? w.km : w.dplus), 0) / weeks.length : null;
+  /* La tendance peut être REFUSÉE faute d'historique (4 semaines couvertes, 3 non vides). On dit
+     alors pourquoi, plutôt que de masquer la ligne — masquer laisse croire à un bug, et afficher
+     une tendance sur deux séances était précisément le défaut relevé par l'audit (P1-5). */
   const sideHtml =
     '<div class="landscape-side-panel">' +
-      (trend ? '<div class="landscape-trend-tag"><span class="kpi-status-dot' + (trendStatus[trend.level] ? ' status-' + trendStatus[trend.level] : '') + '"></span>' +
-        '<span><strong>' + escapeHtml(trend.label) + '</strong> — ' + escapeHtml(trendSubs[trend.level]) + '</span></div>' : '') +
+      (trend && trend.available
+        ? '<div class="landscape-trend-tag"><span class="kpi-status-dot' + (trendStatus[trend.level] ? ' status-' + trendStatus[trend.level] : '') + '"></span>' +
+          '<span><strong>' + escapeHtml(trend.label) + '</strong> — ' + escapeHtml(trendSubs[trend.level]) + '</span></div>'
+        : '<div class="landscape-trend-tag partial-note"><span class="dq-sym" aria-hidden="true">—</span>' +
+          '<span>' + escapeHtml((trend && trend.reason) || "Pas encore assez d'historique pour une tendance.") + '</span></div>') +
       '<dl class="landscape-figures">' +
         '<div><dt>Semaine précédente (complète)</dt><dd>' + fmtNum(isKm ? stats.prevFull.distanceKm : stats.prevFull.ascent, unit, dec) + '</dd></div>' +
         (avg != null ? '<div><dt>Moyenne sur ' + weeks.length + ' sem.</dt><dd>' + fmtNum(avg, unit, dec) + '</dd></div>' : '') +
@@ -622,8 +671,18 @@ function renderLastRide() {
 /* --------------------------- ANALYSES SECONDAIRES --------------------------- */
 function renderLoadChart() {
   const box = document.getElementById('loadChartBox');
+  const card = document.getElementById('loadCard');
   const weeks = getRecentWeeklyVolumes(12);
-  if (weeks.length < 2) { box.innerHTML = svgEmpty('Charge d\'entraînement'); return; }
+  /* « Aucune carte sans signal » (audit §7). Sous le seuil d'historique qui autorise à parler de
+     charge, la carte disparaît au lieu d'afficher un graphique à deux points, qui donnerait à une
+     variation fragile la même autorité visuelle qu'une tendance établie. */
+  const hist = elevHistoryCoverage(weeks.map(w => w.km));
+  if (!hist.enoughForTrend) {
+    if (card) card.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  if (card) card.hidden = false;
   weeks.forEach((w, i) => {
     const windowVals = weeks.slice(Math.max(0,i-3), i+1).map(x => x.km);
     w.chronic = +(windowVals.reduce((a,b)=>a+b,0) / windowVals.length).toFixed(1);
@@ -643,45 +702,12 @@ function renderLoadChart() {
 
 // Répartition du temps passé par zone FC sur les 30 derniers jours — lecture seule sur l'Accueil
 // (FC max / FC repos se règlent en page Profil, qui reste la source unique de ces deux valeurs).
-function renderFcSummary() {
-  const box = document.getElementById('fcSummaryBox');
-  const profile = getProfile();
-  const zones = getActiveHrZones(profile);
-  if (!zones) {
-    box.innerHTML = '<div class="empty">Renseigne ta FC max et ta FC repos dans <a href="profil.html">ton profil</a> pour voir cette répartition.</div>';
-    return;
-  }
-  const today = todayISO();
-  // Arithmétique de dates CIVILES : décaler un instant en heure locale puis le relire en UTC
-  // mélangeait deux conventions et pouvait décaler la fenêtre d'un jour (audit BUG-005).
-  const c30 = addDaysIso(today, -30);
-  const sessions = loadAllSessions().filter(s => s.date >= c30 && s.date <= today && Array.isArray(s.series) && s.series.length >= 2);
-  const zoneSeconds = zones.map(() => 0);
-  let totalSeconds = 0;
-  sessions.forEach(s => {
-    const pts = s.series.filter(p => p.hr != null && p.t != null);
-    for (let i = 1; i < pts.length; i++) {
-      const dt = pts[i].t - pts[i-1].t;
-      if (dt <= 0 || dt > 300) continue; // ignore les trous (pause, arrêt GPS...)
-      const hr = (pts[i].hr + pts[i-1].hr) / 2;
-      let zi = zones.findIndex(z => hr >= z.low && hr <= z.high);
-      if (zi < 0) zi = hr < zones[0].low ? 0 : zones.length - 1;
-      zoneSeconds[zi] += dt;
-      totalSeconds += dt;
-    }
-  });
-  if (!totalSeconds) {
-    box.innerHTML = '<div class="empty">Pas assez de séances avec FC sur les 30 derniers jours.</div>';
-    return;
-  }
-  box.innerHTML = zones.map((z, i) => {
-    const pct = Math.round((zoneSeconds[i] / totalSeconds) * 100);
-    return '<div style="margin-bottom:7px;">' +
-      '<div class="row" style="justify-content:space-between;font-size:.78rem;"><span>' + escapeHtml(z.label) + '</span><span>' + pct + '%</span></div>' +
-      '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%;"></div></div>' +
-    '</div>';
-  }).join('');
-}
+/* renderFcSummary() a été RETIRÉE le 22 août 2026 (audit ELEV 2.0, §7 et §13). Elle rendait la
+   répartition détaillée des zones cardiaques sur l'Accueil — que l'audit liste explicitement
+   parmi ce qui doit disparaître du premier niveau, et qui dupliquait exactement la carte de la
+   page Progression. Les zones vivent désormais là où elles ont du sens : avec la tendance qui
+   les explique (Progression) et sur chaque séance (détail d'activité). La fonction n'est pas
+   laissée en place inutilisée : du code mort finit par être rebranché. */
 
 // Rendu dans l'ordre de la narration : où je veux aller → où j'en suis → quoi faire ensuite →
 // ce que je viens de faire → analyses secondaires.
@@ -694,8 +720,8 @@ function renderAll() {
   renderTrajectory();  // 2. Trajectoire actuelle (agrégats hebdomadaires)
   renderCheckpoint();  // 3. Prochain checkpoint (plan)
   renderLastRide();    // 4. Dernière sortie (dernière activité)
-  renderLoadChart();   // 5. Charge et intensité
-  renderFcSummary();
+  renderWatchList();   // 5. À surveiller (seulement si signal réel)
+  renderLoadChart();   // 6. Charge
 }
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderAll(); // premier rendu depuis le cache local, avant même la vérification de connexion

@@ -19,6 +19,9 @@
      depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
      une empreinte non verifiee ici serait une fausse garantie. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -167,6 +170,15 @@
   </div>
 
   <div class="tab-panel" data-panel="details">
+    <!-- LIAISON PLAN <-> OBJECTIF (audit P0-1 / CRED-02).
+         Sans cette liaison, computePrepStatus() rendait exactement le même résultat pour toutes les
+         courses : deux objectifs affichaient donc la même « préparation » présentée comme
+         spécifique à chacun. Le modèle ne connaissant qu'UN plan, la liaison est un simple
+         rattachement de ce plan à une course. -->
+    <section class="card" id="planLinkCard">
+      <h2>Plan d'entraînement lié</h2>
+      <div id="planLinkBox"></div>
+    </section>
     <section class="card">
       <h2>Détails de l'objectif</h2>
       <div id="goalDetailsBox"></div>
@@ -417,10 +429,18 @@ function renderGoalHero() {
     '</div>' +
     '<div class="metrics-grid goal-hero-metrics" style="margin-top:18px;">' +
       '<div class="goal-hero-score">' +
-        '<div class="goal-ring-big">' + ringSvg(readiness.overall || 0, 96, readiness.overall != null ? readiness.overall + '%' : '—') + '</div>' +
+        /* `readiness.overall || 0` dessinait un anneau VIDE quand l'indice n'était pas calculable :
+           visuellement identique à 0 % de préparation, donc une absence de données présentée comme
+           un échec. L'anneau n'est plus dessiné du tout dans ce cas. */
+        '<div class="goal-ring-big">' + (readiness.overall != null
+          ? ringSvg(readiness.overall, 96, readiness.overall + '%')
+          : '<div class="ring-unavailable" role="img" aria-label="Indice de préparation non calculable"><span class="dq-sym" aria-hidden="true">—</span></div>') + '</div>' +
         '<div class="goal-score-meta">' +
-          '<div class="goal-score-eyebrow">Préparation</div>' +
-          '<div class="lbl">' + (readinessLevelLabel(readiness.overall) || 'Pas assez de données') + '</div>' +
+          /* Audit P0-1 / CRED-01 : l'intitulé dit maintenant SI la préparation est propre à cette
+             course. Sans plan lié à cet objectif, le calcul est le même pour toutes les courses —
+             l'appeler « Préparation » tout court laissait croire à un cockpit personnalisé. */
+          '<div class="goal-score-eyebrow">' + escapeHtml(readiness.scopeLabel) + '</div>' +
+          '<div class="lbl">' + (readinessLevelLabel(readiness.overall, readiness) || 'Pas assez de données') + '</div>' +
           '<div class="countdown">' + escapeHtml(countdown.main) + '<small>' + escapeHtml(countdown.sub) + '</small></div>' +
         '</div>' +
       '</div>' +
@@ -429,11 +449,24 @@ function renderGoalHero() {
       kpiCell('Sortie longue', longestRecent != null ? fmtNum(longestRecent,' km',1) : null, longSpark, null) +
     '</div>' +
     '<div class="goal-subscores">' +
-      readiness.subs.map(s => '<div class="goal-subscore-row" title="' + escapeHtml(s.detail) + '">' +
+      readiness.subs.map(s => '<div class="goal-subscore-row" title="' + escapeHtml(s.detail || '') + '">' +
         '<span>' + escapeHtml(s.label) + '</span>' +
-        '<div class="goal-subscore-track"><div class="goal-subscore-fill" style="width:' + (s.score!=null?Math.min(100,s.score):0) + '%"></div></div>' +
-        '<span class="goal-subscore-val' + (s.score==null?' na':'') + '">' + (s.score!=null ? s.score+'%' : 'n/d') + '</span>' +
+        '<div class="goal-subscore-track">' + (s.score != null
+          ? '<div class="goal-subscore-fill" style="width:' + Math.min(100, s.score) + '%"></div>'
+          : '<div class="goal-subscore-fill goal-subscore-fill--na"></div>') + '</div>' +
+        '<span class="goal-subscore-val' + (s.score==null?' na':'') + '">' +
+          (s.score != null ? s.score + '%' : '<span class="dq-sym" aria-hidden="true">—</span> indisponible') + '</span>' +
       '</div>').join('') +
+    '</div>' +
+    /* Trois blocs que la page mélangeait jusqu'ici (audit §4.4 / UX-07) : ce qui est DISPONIBLE,
+       ce qui est ALIGNÉ au plan, et ce qu'ELEV ne peut pas conclure. */
+    '<div class="goal-scope-note">' +
+      (readiness.scopeWhy ? '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> ' + escapeHtml(readiness.scopeWhy) +
+        (readiness.scope === 'general' ? ' <a href="#" data-link-plan>Lier mon plan à cette course</a>' : '') + '</p>' : '') +
+      (readiness.unscoredWhy ? '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> ' + escapeHtml(readiness.unscoredWhy) + '</p>' : '') +
+      (readiness.diverging ? '<p class="partial-note" data-divergence><span class="dq-sym" aria-hidden="true">▲</span> ' +
+        escapeHtml('Ton ' + (readiness.divergence.key === 'volume' ? 'volume' : 'dénivelé') + ' réalisé atteint ' + readiness.divergence.pct +
+        ' % de la cible du plan. Au-delà de 140 %, ELEV ne note plus le respect du plan : le plan ne décrit plus ce que tu fais.') + '</p>' : '') +
     '</div>';
   initChartTooltips(card);
 }
@@ -588,11 +621,17 @@ function renderApercu() {
       partialNoteHtml('Ton plan ne couvre encore que ' + plan28 + ' séance' + (plan28 > 1 ? 's' : '') +
         ' sur les 28 derniers jours : la comparaison réalisé / planifié ne serait pas représentative. Elle apparaîtra une fois le plan entamé.');
   } else {
-    const statut = prep.level === 'low'
+    /* Le statut suit désormais planAlignment(), qui distingue « au-dessus de la cible » (encore une
+       exécution du plan) de « divergence » (le plan ne décrit plus l'entraînement). L'ancien seuil
+       unique à 130 % rangeait les deux dans la même case. */
+    const etat = prep.alignment.state;
+    const statut = (etat === 'far_under' || etat === 'under')
       ? { cls: 'status-late',  txt: 'En retard sur le plan' }
-      : (prep.level === 'high'
-        ? { cls: 'status-ahead', txt: 'Au-dessus du plan' }
-        : { cls: 'status-ok',    txt: 'Dans les temps' });
+      : (etat === 'diverging'
+        ? { cls: 'status-late', txt: 'Divergence avec le plan' }
+        : (etat === 'over'
+          ? { cls: 'status-ahead', txt: 'Au-dessus du plan' }
+          : { cls: 'status-ok',    txt: 'Dans les temps' }));
     // « 180 / 9 km » ne dit pas lequel des deux est le réalisé. Les deux termes sont nommés.
     const ligne = (label, done, planned, unit) =>
       '<div class="mini-list-row"><span class="mini-list-lbl">' + label + '</span>' +
@@ -796,6 +835,70 @@ document.querySelectorAll('#goalTabs button').forEach(btn => btn.addEventListene
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
 }));
 
+/* --------------------------- LIAISON PLAN <-> OBJECTIF --------------------------- */
+/* La liaison est ce qui autorise ELEV à parler de « préparation à cette course » plutôt que de
+   « préparation générale ». Elle est explicite et réversible : rien n'est deviné, et délier est un
+   état valable (un plan générique existe). */
+function renderPlanLink() {
+  const box = document.getElementById('planLinkBox');
+  const card = document.getElementById('planLinkCard');
+  if (!box) return;
+  const race = currentRace();
+  const plan = getPlan();
+  if (!race) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  if (!plan || !plan.length) {
+    box.innerHTML = '<div class="empty">Aucun plan importé. Sans plan, ELEV compare ton entraînement à des repères génériques, jamais à une préparation conçue pour cette course. ' +
+      '<a href="parametres.html#plan">Importer un plan →</a></div>';
+    return;
+  }
+
+  const liee = getPlanGoalRace();
+  const estLiee = !!(liee && liee.id === race.id);
+  const range = getPlanDateRange(plan);
+  const periode = range ? ('Plan du ' + fmtDate(range.fromISO) + ' au ' + fmtDate(range.toISO) + ' — ' + plan.length + ' séances planifiées.') : '';
+
+  if (estLiee) {
+    box.innerHTML = '<div class="mini-list"><div class="mini-list-row">' +
+        '<span class="mini-list-lbl">Ce plan prépare</span><span class="mini-list-val">' + escapeHtml(race.name) + '</span>' +
+      '</div></div>' +
+      '<p class="hint">' + escapeHtml(periode) + ' La préparation affichée est donc bien spécifique à cette course.</p>' +
+      '<div class="row" style="margin-top:12px;"><button class="btn" type="button" id="planUnlinkBtn">Délier ce plan</button></div>';
+  } else {
+    box.innerHTML = (liee
+        ? '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> Ton plan est actuellement lié à « ' + escapeHtml(liee.name) + ' ».</p>'
+        : '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> Ton plan n\'est lié à aucune course.</p>') +
+      '<p class="hint">' + escapeHtml(periode) + '</p>' +
+      '<div class="row" style="margin-top:12px;"><button class="btn accent" type="button" id="planLinkBtn">Lier ce plan à ' + escapeHtml(race.name) + '</button></div>';
+  }
+
+  const lier = document.getElementById('planLinkBtn');
+  if (lier) lier.addEventListener('click', () => {
+    savePlanGoalId(race.id);
+    showMsg('planLinkBox', 'Plan lié à « ' + race.name + ' ». La préparation affichée devient spécifique à cette course.', 'ok');
+    renderGoalPage();
+  });
+  const delier = document.getElementById('planUnlinkBtn');
+  if (delier) delier.addEventListener('click', () => {
+    savePlanGoalId(null);
+    showMsg('planLinkBox', "Plan délié : ELEV parlera de préparation générale.", 'ok');
+    renderGoalPage();
+  });
+}
+
+/* Raccourci depuis le hero (« Lier mon plan à cette course ») : ouvre l'onglet Détails plutôt que
+   d'agir directement — lier un plan est une décision, elle mérite son écran et son contexte. */
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-link-plan]');
+  if (!a) return;
+  e.preventDefault();
+  const btn = document.querySelector('#detailTabs button[data-tab="details"], .tabs button[data-tab="details"]');
+  if (btn) btn.click();
+  const card = document.getElementById('planLinkCard');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
 /* --------------------------- ORCHESTRATION --------------------------- */
 function renderGoalPage() {
   if (!selectedRaceId || !getRaces().find(r => r.id === selectedRaceId)) selectedRaceId = defaultRaceId();
@@ -812,6 +915,7 @@ function renderGoalPage() {
     renderVamTab();
     renderHistorique();
     renderDetails();
+    renderPlanLink();
   }
 }
 

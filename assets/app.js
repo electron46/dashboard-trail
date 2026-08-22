@@ -796,6 +796,12 @@ const STORAGE_PREFIX = 'trail:';
 const IDX_KEY = STORAGE_PREFIX + 'index';
 const PLAN_KEY = STORAGE_PREFIX + 'plan';
 const PLAN_NOTES_KEY = STORAGE_PREFIX + 'planNotes';
+/* Liaison explicite plan <-> objectif (audit ELEV 2.0, P0-1 / CRED-02).
+   Le modèle ne connaît qu'UN plan : la liaison est donc un simple identifiant de course, pas une
+   table d'association. Sans elle, computePrepStatus() ne pouvait pas être spécifique à une course
+   — il rendait le même résultat pour toutes, ce qui donnait à chaque objectif l'apparence d'un
+   cockpit personnalisé alimenté par un calcul générique. */
+const PLAN_GOAL_KEY = STORAGE_PREFIX + 'planGoalId';
 const KEY_KEY = STORAGE_PREFIX + 'apikey';
 const RACES_KEY = STORAGE_PREFIX + 'races';
 const PROFILE_KEY = STORAGE_PREFIX + 'profile';
@@ -879,6 +885,23 @@ function savePlan(plan) { try { localStorage.setItem(PLAN_KEY, JSON.stringify(pl
 function clearPlan() { try { localStorage.removeItem(PLAN_KEY); scheduleSync(); } catch (e) {} }
 function findPlannedSession(dateISO) { const plan = getPlan(); if (!plan) return null; return plan.find(p => p.date === dateISO) || null; }
 // Note libre sur le plan (page Plan, onglet Ajustements) — texte manuel de l'utilisateur, jamais généré.
+function getPlanGoalId() { try { return localStorage.getItem(PLAN_GOAL_KEY) || null; } catch (e) { return null; } }
+/* `null` délie explicitement le plan de toute course : c'est un état voulu, pas une absence de
+   réglage — un plan générique existe, et le produit doit alors parler de « préparation générale »
+   plutôt que de faire croire à une préparation spécifique. */
+function savePlanGoalId(raceId) {
+  try {
+    if (raceId) localStorage.setItem(PLAN_GOAL_KEY, String(raceId));
+    else localStorage.removeItem(PLAN_GOAL_KEY);
+    scheduleSync(); return true;
+  } catch (e) { return false; }
+}
+/* La course réellement liée, ou null si l'identifiant pointe vers une course supprimée — auquel cas
+   la liaison est traitée comme absente plutôt que de faire échouer le calcul. */
+function getPlanGoalRace() {
+  const id = getPlanGoalId(); if (!id) return null;
+  return getRaces().find(r => r.id === id) || null;
+}
 function getPlanNotes() { try { return localStorage.getItem(PLAN_NOTES_KEY) || ''; } catch (e) { return ''; } }
 function savePlanNotes(text) { try { localStorage.setItem(PLAN_NOTES_KEY, text || ''); scheduleSync(); return true; } catch (e) { return false; } }
 /* La clé Anthropic était conservée en clair sous `trail:apikey` puis envoyée depuis le navigateur
@@ -1224,7 +1247,7 @@ const SCHEMA_VERSION_KEY = STORAGE_PREFIX + 'schemaVersion';
 function localDataKeys() {
   return [
     IDX_KEY, PLAN_KEY, PLAN_NOTES_KEY, PLAN_YEAR_KEY, KEY_KEY,
-    RACES_KEY, PROFILE_KEY, GEAR_KEY, SUPA_META_KEY, SYNCED_IDS_KEY, SCHEMA_VERSION_KEY,
+    RACES_KEY, PROFILE_KEY, GEAR_KEY, SUPA_META_KEY, SYNCED_IDS_KEY, SCHEMA_VERSION_KEY, PLAN_GOAL_KEY,
   ];
 }
 /* Efface toutes les données locales, séances comprises. `suspendSync()` doit être posé par
@@ -1475,7 +1498,7 @@ function buildSyncPayload() {
   // seules séries de points. Sur des séances réelles (~1200 points au lieu de 150), la projection
   // à 50 séances passe d'environ 4,4 Mo renvoyés à CHAQUE modification locale à environ 50 ko.
   // Ne jamais y réintroduire `sessions` : ce serait recréer les deux écrivains concurrents.
-  return { schemaVersion: SCHEMA_VERSION, plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
+  return { schemaVersion: SCHEMA_VERSION, plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear(), planGoalId: getPlanGoalId() };
 }
 // Sauvegarde manuelle (page Paramètres → Exporter) : elle, doit être COMPLÈTE. C'est la seule
 // copie hors ligne de l'utilisateur, et la seule qui existe s'il n'a jamais configuré la synchro.
@@ -1501,7 +1524,7 @@ function buildExportPayload() {
    - clé PRÉSENTE et vide   -> l'utilisateur a réellement tout supprimé, la suppression s'applique ;
    - clé PRÉSENTE et remplie-> remplacement ;
    - clé PRÉSENTE mais du mauvais type -> ignorée et SIGNALÉE, jamais devinée. */
-const BACKUP_FIELDS = ['sessions', 'plan', 'races', 'profile', 'gear', 'planNotes', 'planYear'];
+const BACKUP_FIELDS = ['sessions', 'plan', 'races', 'profile', 'gear', 'planNotes', 'planYear', 'planGoalId'];
 
 function validateBackupPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -1598,6 +1621,13 @@ function restoreBackupPayload(payload, opts) {
     const y = Number(payload.planYear);
     if (Number.isFinite(y) && y >= 1900 && y <= 2999) { savePlanYear(y); a('planYear'); }
     else ignore('planYear', 'année attendue');
+  }
+  // Même sémantique de présence que le reste : clé absente = on ne touche à rien ; clé présente et
+  // nulle = la liaison a été retirée volontairement, et cette suppression doit se propager.
+  if (has('planGoalId')) {
+    if (payload.planGoalId == null || payload.planGoalId === '') { savePlanGoalId(null); a('planGoalId'); }
+    else if (typeof payload.planGoalId === 'string') { savePlanGoalId(payload.planGoalId); a('planGoalId'); }
+    else ignore('planGoalId', 'identifiant texte attendu');
   }
   try { localStorage.setItem(SCHEMA_VERSION_KEY, String(SCHEMA_VERSION)); } catch (e) {}
   res.ok = res.applied.length > 0 || res.added > 0 || res.updated > 0;
@@ -2313,42 +2343,169 @@ function computeSessionComparison(session, allSessions, n) {
 // vérifiable). Retourne un tableau de 0 à 3 phrases courtes.
 // Retourne jusqu'à 3 observations {title, text} — mêmes règles/seuils déterministes qu'avant,
 // juste enrichies d'un court titre pour l'affichage (voir renderInsight dans activite.html).
-function generateSessionInsight(session, zoneDist, climbs) {
-  const bullets = [];
+/* « Trois choses à retenir » d'une séance. Audit P1-6 et §8 : c'est le bloc qui doit répondre à
+   « qu'est-ce que le terrain a changé dans cette sortie ? » AVANT les graphiques.
 
+   Passe au contrat commun (elev-insight.js) : chaque observation porte sa référence, sa couverture
+   et sa confiance, et c'est prioritizeInsights() qui compose l'écran. Trois familles typiques
+   selon l'audit — terrain, gestion d'effort, comparaison — d'où le fait qu'il n'y ait jamais trois
+   observations de terrain : la règle « une seule par famille » les départage.
+
+   `history` (facultatif) apporte les séances passées, sans lesquelles aucune COMPARAISON n'est
+   publiable — l'audit fixe le minimum à 3 références réellement comparables (§6.3). */
+function generateSessionInsight(session, zoneDist, climbs, history) {
+  const out = [];
+  const cov = elevSessionCoverage(session);
+
+  /* 1. QUALITÉ DE DONNÉE — priorité absolue (§6.4). Une séance dont l'altitude est trouée ne peut
+        pas soutenir un récit de terrain, et le dire vaut mieux que de raconter le terrain quand
+        même. Ne se déclenche que s'il y a bien une série à juger. */
+  if (cov.points > 10) {
+    const trous = ELEV_SIGNALS
+      .map(sig => cov.signals[sig.key])
+      .filter(c => c && c.ratio != null && c.ratio > 0 && elevCoverageLevel(c.ratio) === 'insufficient');
+    if (trous.length) {
+      const pire = trous.sort((a, b) => a.ratio - b.ratio)[0];
+      out.push(makeInsight({
+        id: 'session-data-' + pire.key, family: 'data',
+        title: pire.label + ' incomplète sur cette sortie',
+        observation: pire.label + ' présente sur ' + pire.pct + ' % du temps seulement.',
+        reference: 'le seuil de 60 % en dessous duquel ELEV ne conclut pas',
+        coverage: 1, confidence: 'high', importance: 'attention',
+        why: 'Les analyses qui reposent sur ce signal (' + pire.usage.toLowerCase() + ') sont donc incomplètes sur cette séance.',
+        method: 'Part du temps enregistré où le champ est présent dans le fichier.',
+      }));
+    }
+  }
+
+  /* 2. TERRAIN — ce que le relief a réellement imposé. Montée et descente séparées. */
+  let dist = null;
+  try { dist = terrainGradeDistribution(session); } catch (e) { dist = null; }
+  if (dist) {
+    const up = dist.byDir.find(d => d.dir === 'up');
+    const down = dist.byDir.find(d => d.dir === 'down');
+    const raide = dist.bands.filter(b => b.key === 'up_steep').reduce((a, b) => a + b.pct, 0);
+    if (raide >= 20) {
+      out.push(makeInsight({
+        id: 'session-terrain-steep', family: 'terrain',
+        title: 'Sortie dominée par la pente raide',
+        observation: raide + ' % de ton temps en mouvement se passe en montée de plus de 15 %.',
+        reference: "l'ensemble de ton temps en mouvement sur cette sortie",
+        confidence: 'high', importance: 'notable',
+        method: dist.method, window: 'cette séance',
+        limits: "C'est une description du terrain parcouru, pas une évaluation de ta performance.",
+      }));
+    } else if (up && down && Math.abs(up.pct - down.pct) >= 20) {
+      const dominante = up.pct > down.pct ? up : down;
+      out.push(makeInsight({
+        id: 'session-terrain-balance', family: 'terrain',
+        title: dominante.dir === 'up' ? 'Sortie très montante' : 'Sortie très descendante',
+        observation: dominante.pct + ' % du temps en ' + dominante.label.toLowerCase() + ', contre ' +
+          (dominante.dir === 'up' ? down.pct : up.pct) + ' % dans l\'autre sens.',
+        reference: "la répartition montée / descente / roulant de cette sortie",
+        confidence: 'high', importance: 'context',
+        method: dist.method, window: 'cette séance',
+      }));
+    }
+  }
+
+  /* 3. LOCOMOTION — uniquement en pente POSITIVE, et seulement si la cadence le permet. */
+  let rw = null;
+  try { rw = terrainRunWalkByGrade(session); } catch (e) { rw = null; }
+  if (rw && rw.available) {
+    const bascule = (rw.bands || []).filter(b => b.dir === 'up')
+      .find(b => b.walkPct != null && b.runPct != null && b.walkPct >= b.runPct);
+    if (bascule) {
+      out.push(makeInsight({
+        id: 'session-locomotion', family: 'terrain',
+        title: 'La marche prend le relais en montée',
+        observation: 'En ' + bascule.label.toLowerCase() + ', tu marches ' + bascule.walkPct + ' % du temps.',
+        reference: 'les tranches de pente positive moins raides de la même sortie',
+        coverage: rw.coverage, confidence: elevCapConfidence('medium', rw.coverage),
+        importance: 'context', provenance: 'inferred',
+        method: rw.method, window: 'cette séance',
+        limits: 'Marcher en forte pente est un choix courant et souvent plus efficace que courir. Les descentes sont exclues.',
+      }));
+    }
+  }
+
+  /* 4. EFFORT — zones cardiaques, avec la couverture FC réelle. */
   if (zoneDist) {
+    const hrCov = cov.signals.hr;
     const z1z2 = zoneDist.slice(0, 2).reduce((a, z) => a + z.pct, 0);
     const z3plus = zoneDist.slice(2).reduce((a, z) => a + z.pct, 0);
-    if (z3plus >= 55) bullets.push({ title: 'Intensité soutenue', text: z3plus + '% du temps a été passé en zones Z3, Z4 et Z5.' });
-    else if (z1z2 >= 65) bullets.push({ title: 'Sortie endurance', text: z1z2 + '% du temps a été passé en zones Z1 et Z2 : sortie principalement axée endurance.' });
-  }
-
-  if (climbs && climbs.length) {
-    const withHr = climbs.filter(c => c.avgHr != null);
-    if (withHr.length && session.avgHr != null) {
-      const avgClimbHr = Math.round(withHr.reduce((a, c) => a + c.avgHr, 0) / withHr.length);
-      if (avgClimbHr - session.avgHr >= 8) bullets.push({ title: 'FC en montée', text: 'Nettement plus élevée dans les montées (' + avgClimbHr + ' bpm en moyenne) que sur l\'ensemble de la séance (' + session.avgHr + ' bpm).' });
+    if (z3plus >= 55) {
+      out.push(makeInsight({
+        id: 'session-effort-high', family: 'effort',
+        title: 'Intensité soutenue',
+        observation: z3plus + ' % du temps se passe en zones 3 à 5.',
+        reference: 'la répartition de tes zones sur cette séance',
+        coverage: hrCov ? hrCov.ratio : null,
+        confidence: elevCapConfidence('high', hrCov ? hrCov.ratio : null),
+        importance: 'notable', window: 'cette séance',
+        method: 'Temps passé dans chaque zone cardiaque, zones actives de ton profil.',
+      }));
+    } else if (z1z2 >= 65) {
+      out.push(makeInsight({
+        id: 'session-effort-low', family: 'effort',
+        title: 'Sortie en endurance',
+        observation: z1z2 + ' % du temps se passe en zones 1 et 2.',
+        reference: 'la répartition de tes zones sur cette séance',
+        coverage: hrCov ? hrCov.ratio : null,
+        confidence: elevCapConfidence('high', hrCov ? hrCov.ratio : null),
+        importance: 'context', window: 'cette séance',
+        method: 'Temps passé dans chaque zone cardiaque, zones actives de ton profil.',
+      }));
     }
-    const withVam = climbs.filter(c => c.vamMh != null && c.gainM != null);
-    if (withVam.length) {
-      const totalGain = withVam.reduce((a, c) => a + c.gainM, 0);
-      const avgVam = Math.round(withVam.reduce((a, c) => a + c.vamMh * c.gainM, 0) / totalGain);
-      bullets.push({ title: 'Montées', text: 'VAM moyenne : ' + avgVam + ' m/h sur ' + withVam.length + ' montée' + (withVam.length > 1 ? 's' : '') + ' détectée' + (withVam.length > 1 ? 's' : '') + '.' });
+  }
+
+  /* 5. DÉRIVE à effort externe comparable — remplace l'ancienne « résistance » à deux moyennes de
+        FC sans contrôle. Ne se publie que si l'appariement a réellement été possible. */
+  let drift = null;
+  try { drift = computeEffortDrift(session); } catch (e) { drift = null; }
+  if (drift && drift.available && Math.abs(drift.driftPct) >= 4) {
+    out.push(makeInsight({
+      id: 'session-drift', family: 'effort',
+      title: drift.driftPct > 0 ? 'Ta FC monte en fin de sortie à effort comparable' : 'Ta FC reste contenue en fin de sortie',
+      observation: 'Écart de ' + (drift.driftPct > 0 ? '+' : '') + drift.driftPct + ' % entre le début et la fin, sur des portions de même pente et de même vitesse.',
+      reference: drift.pairs + ' paires de segments comparables dans cette sortie',
+      delta: drift.driftPct, coverage: drift.coverage,
+      confidence: elevCapConfidence('medium', drift.coverage),
+      importance: 'notable', window: 'cette séance',
+      method: drift.method, limits: drift.limits,
+    }));
+  }
+
+  /* 6. COMPARAISON — jamais sous 3 références réellement comparables (§6.3). Le garde-fou est
+        aussi appliqué par le moteur via `comparableCount`, mais on évite de fabriquer l'insight
+        pour rien. */
+  if (Array.isArray(history) && history.length) {
+    let segs = [];
+    try { segs = terrainSegments(session).filter(x => x.dir === 'up' && x.vamMh != null); } catch (e) {}
+    if (segs.length) {
+      const ref = segs.reduce((a, b) => (b.denivM > a.denivM ? b : a), segs[0]);
+      const comparables = terrainFindComparableSegments(ref, history, { excludeSessionId: session.id });
+      if (comparables.length >= INSIGHT_MIN_COMPARABLE) {
+        const passees = _median(comparables.map(c => c.vamMh).filter(v => v != null));
+        if (passees) {
+          const ecart = Math.round((ref.vamMh / passees - 1) * 100);
+          out.push(makeInsight({
+            id: 'session-compare-climb', family: 'compare',
+            title: ecart >= 0 ? 'VAM au-dessus de tes montées comparables' : 'VAM en dessous de tes montées comparables',
+            observation: ref.vamMh + ' m/h sur ta principale montée (' + ref.gradePct + ' % de pente, ' + Math.round(ref.durationS / 60) + ' min).',
+            reference: comparables.length + ' montées comparables de tes sorties passées (médiane ' + Math.round(passees) + ' m/h)',
+            delta: ecart, confidence: comparables.length >= 5 ? 'medium' : 'low',
+            importance: 'notable', window: 'tes séances précédentes',
+            evidence: comparables.map(c => c.sessionId).filter(Boolean),
+            method: 'Segments retenus pour une direction identique, une pente à ±4 points, une durée et une longueur du même ordre.',
+            limits: "La comparabilité porte sur la forme du terrain, pas sur sa technicité ni sur les conditions du jour.",
+          }));
+        }
+      }
     }
   }
 
-  // Régularité de l'allure sur les portions "roulantes" (même seuil que la classification déjà
-  // utilisée pour les splits) — coefficient de variation faible = allure stable.
-  const flatLaps = (session.laps || []).filter(l => l.distanceKm > 0 && l.avgPaceSecPerKm && ((l.ascent || 0) / l.distanceKm) < 20);
-  if (flatLaps.length >= 3) {
-    const paces = flatLaps.map(l => l.avgPaceSecPerKm);
-    const mean = paces.reduce((a, b) => a + b, 0) / paces.length;
-    const variance = paces.reduce((a, p) => a + Math.pow(p - mean, 2), 0) / paces.length;
-    const cv = Math.sqrt(variance) / mean;
-    if (cv < 0.06) bullets.push({ title: 'Régularité', text: 'Ton allure est restée relativement stable sur les portions de terrain comparables.' });
-  }
-
-  return bullets.slice(0, 3);
+  return out;
 }
 
 /* --------------------------- ANALYSE GLOBALE (page Analyse, multi-séances) ---------------------------
@@ -2445,18 +2602,39 @@ function aggregatePeriod(sessions) {
   return { distanceKm, ascent, durationS, avgHr, vamAvg, count: sessions.length };
 }
 function pctDelta(cur, prev) { if (cur == null || prev == null || prev === 0) return null; return Math.round((cur - prev) / prev * 100); }
-// Compare deux agrégats de période (courante / précédente de même durée). Ne calcule un delta que
-// pour les métriques où une hausse a un sens univoque à colorer (distance/D+/durée/VAM) — la FC et
-// le nombre de séances restent gérés à l'affichage sans jugement automatique de couleur (voir CLAUDE.md).
-function comparePeriods(current, previous) {
+
+/* Couverture réelle d'une période : nombre de JOURS séparant la première et la dernière séance
+   qu'elle contient. Ce n'est pas sa largeur calendaire — et c'est toute la question soulevée par
+   l'audit (P1-4 / CRED-07). La page Analyse affichait des variations supérieures à +400 % parce
+   qu'elle comparait 12 semaines pleines à 12 semaines dont 2 seulement contenaient des séances :
+   les durées étaient comparables, la profondeur d'historique ne l'était pas. */
+function periodCoveredDays(sessions) {
+  const dates = (sessions || []).map(s => s && s.date).filter(Boolean).sort();
+  if (!dates.length) return 0;
+  return Math.round((new Date(dates[dates.length - 1]) - new Date(dates[0])) / 86400000) + 1;
+}
+
+/* Compare deux agrégats de période. Un delta n'est calculé QUE si la référence couvre réellement
+   une part suffisante de la période comparée (elevBaselineComparable). Sinon `deltas` reste à null
+   et `baseline.reason` porte l'explication à afficher — la valeur brute reste visible, ce qui est
+   toujours vrai, plutôt qu'un pourcentage spectaculaire qui ne l'est pas.
+   Le 3e argument est optionnel : appelée à deux arguments, la fonction se comporte comme avant. */
+function comparePeriods(current, previous, opts) {
   if (!current) return null;
+  opts = opts || {};
+  let baseline = { comparable: !!previous, ratio: null, reason: previous ? null : 'Aucune période précédente.' };
+  if (previous && opts.currentDays) {
+    baseline = elevBaselineComparable(opts.currentDays, opts.previousCoveredDays != null ? opts.previousCoveredDays : opts.currentDays);
+  }
+  const usable = !!previous && baseline.comparable;
   return {
-    current, previous,
+    current, previous, baseline,
+    comparable: usable,
     deltas: {
-      distanceKm: previous ? pctDelta(current.distanceKm, previous.distanceKm) : null,
-      ascent: previous ? pctDelta(current.ascent, previous.ascent) : null,
-      durationS: previous ? pctDelta(current.durationS, previous.durationS) : null,
-      vamAvg: previous ? pctDelta(current.vamAvg, previous.vamAvg) : null,
+      distanceKm: usable ? pctDelta(current.distanceKm, previous.distanceKm) : null,
+      ascent: usable ? pctDelta(current.ascent, previous.ascent) : null,
+      durationS: usable ? pctDelta(current.durationS, previous.durationS) : null,
+      vamAvg: usable ? pctDelta(current.vamAvg, previous.vamAvg) : null,
     },
   };
 }
@@ -2497,70 +2675,16 @@ function aggregateLocomotion(sessions) {
   };
 }
 
-// Tranches de pente utilisées pour la répartition par pente et le run/walk par pente. Pente en
-// valeur absolue (montée et descente confondues) : convention documentée à l'affichage.
-const GRADE_BUCKETS = [
-  { key: 'g0', label: '0–5 %', min: 0, max: 5 },
-  { key: 'g5', label: '5–10 %', min: 5, max: 10 },
-  { key: 'g10', label: '10–15 %', min: 10, max: 15 },
-  { key: 'g15', label: '15–20 %', min: 15, max: 20 },
-  { key: 'g20', label: '> 20 %', min: 20, max: Infinity },
-];
-function gradeBucketIndex(pct) {
-  const abs = Math.abs(pct);
-  const i = GRADE_BUCKETS.findIndex(b => abs >= b.min && abs < b.max);
-  return i < 0 ? GRADE_BUCKETS.length - 1 : i;
-}
+/* GRADE_BUCKETS, gradeBucketIndex(), aggregateGradeBuckets() et aggregateRunWalkByGrade() ont été
+   RETIRÉS le 22 août 2026 (audit ELEV 2.0, P1-8). Ils classaient la pente en VALEUR ABSOLUE :
+   « 15 % » pouvait donc désigner une ascension ou une descente technique, deux contraintes
+   biomécaniques distinctes que la littérature citée par l'audit décrit comme non fusionnables.
 
-// Répartition du temps EN MOUVEMENT (arrêts exclus) par tranche de pente, cumulée sur une période.
-// Convention : % du temps en mouvement, pas % de la distance.
-function aggregateGradeBuckets(sessions) {
-  const secByBucket = GRADE_BUCKETS.map(() => 0);
-  let total = 0;
-  sessions.forEach(s => {
-    const series = (s.series || []).filter(p => p.alt != null && p.distKm != null && p.t != null);
-    for (let i = 1; i < series.length; i++) {
-      const p0 = series[i-1], p1 = series[i];
-      const dt = p1.t - p0.t; if (!dt || dt <= 0 || dt > 120) continue;
-      const dDistKm = p1.distKm - p0.distKm; if (dDistKm <= 0) continue;
-      const speedKmh = dDistKm / (dt/3600);
-      if (speedKmh < RUNWALK_STOP_SPEED_KMH) continue;
-      const gradePct = ((p1.alt - p0.alt) / (dDistKm * 1000)) * 100;
-      secByBucket[gradeBucketIndex(gradePct)] += dt; total += dt;
-    }
-  });
-  if (!total) return null;
-  return GRADE_BUCKETS.map((b,i) => ({ key: b.key, label: b.label, sec: secByBucket[i], pct: Math.round(secByBucket[i]/total*100) }));
-}
+   Remplacés par `terrainGradeDistribution()` et `terrainRunWalkByGrade()` (assets/elev-terrain.js),
+   qui portent le signe de la pente, lissent l'altitude avant de classer et publient leur couverture.
 
-// Course vs marche par tranche de pente — estimation ELEV basée cadence (mêmes seuils que
-// computeRunWalkBreakdown). N'utilise que les intervalles où la cadence est réellement disponible
-// (jamais de repli sur l'allure ici, pour ne pas empiler une estimation sur une estimation).
-function aggregateRunWalkByGrade(sessions) {
-  const runByBucket = GRADE_BUCKETS.map(() => 0), walkByBucket = GRADE_BUCKETS.map(() => 0);
-  let anyCadence = false;
-  sessions.forEach(s => {
-    const series = (s.series || []).filter(p => p.alt != null && p.distKm != null && p.t != null);
-    for (let i = 1; i < series.length; i++) {
-      const p0 = series[i-1], p1 = series[i];
-      const dt = p1.t - p0.t; if (!dt || dt <= 0 || dt > 120) continue;
-      const dDistKm = p1.distKm - p0.distKm; if (dDistKm <= 0) continue;
-      const speedKmh = dDistKm / (dt/3600);
-      if (speedKmh < RUNWALK_STOP_SPEED_KMH) continue;
-      const cad = (p0.cadenceSpm != null && p1.cadenceSpm != null) ? (p0.cadenceSpm + p1.cadenceSpm) / 2 : null;
-      if (cad == null) continue;
-      anyCadence = true;
-      const gradePct = ((p1.alt - p0.alt) / (dDistKm * 1000)) * 100;
-      const bi = gradeBucketIndex(gradePct);
-      if (cad < RUNWALK_CADENCE_THRESHOLD) walkByBucket[bi] += dt; else runByBucket[bi] += dt;
-    }
-  });
-  if (!anyCadence) return null;
-  return GRADE_BUCKETS.map((b,i) => {
-    const totalSec = runByBucket[i] + walkByBucket[i];
-    return { key: b.key, label: b.label, totalSec, runPct: totalSec ? Math.round(runByBucket[i]/totalSec*100) : null, walkPct: totalSec ? Math.round(walkByBucket[i]/totalSec*100) : null };
-  }).filter(b => b.totalSec > 0);
-}
+   Ils ne sont pas laissés en place « au cas où » : garder une seconde définition de la pente, plus
+   permissive, est précisément ce qui permettrait au défaut de revenir par une nouvelle page. */
 
 function bestByKey(sessions, key, better) {
   const withVal = sessions.filter(s => s[key] != null);
@@ -2596,32 +2720,130 @@ function computePeriodBests(sessions) {
 // candidats possibles (volume, VAM/montées, locomotion, verticalité, intensité) sont évalués puis
 // classés par un poids indicatif (grandeur de l'écart ou pertinence du signal) : les 3 plus forts
 // sont retenus, jamais deux fois la même catégorie — pour éviter de toujours répéter les mêmes.
-function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zoneDist) {
-  const candidates = [];
-  if (deltas.distanceKm != null && Math.abs(deltas.distanceKm) >= 8) {
-    candidates.push({ weight: Math.abs(deltas.distanceKm), title: deltas.distanceKm > 0 ? 'Volume en progression' : 'Volume en retrait',
-      text: 'Ton volume total a ' + (deltas.distanceKm > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.distanceKm) + '% par rapport à la période précédente de même durée.' });
+/* Observations de la page Progression. Passe au contrat commun (voir elev-insight.js) : chaque
+   candidat porte désormais sa référence, sa fenêtre et sa confiance, et c'est prioritizeInsights()
+   qui compose l'écran — le tri « par poids » maison a disparu, ainsi que la règle « jamais deux
+   fois la même catégorie » qui y était réimplémentée à la main.
+
+   `opts` porte le contexte que les garde-fous exigent : couverture de l'historique, comparabilité
+   de la période de référence. Sans lui, une observation de volume pourrait s'appuyer sur un delta
+   que la page a justement refusé d'afficher. */
+function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zoneDist, opts) {
+  opts = opts || {};
+  const out = [];
+  const fen = opts.windowLabel || 'la période sélectionnée';
+  const ref = opts.baselineLabel || 'la période précédente de même durée';
+  const comparable = opts.comparable !== false;
+
+  /* Les deltas ne sont publiables que si la référence est réellement comparable (CRED-07) : c'est
+     la même condition que celle qui gouverne les KPI, appliquée ici plutôt que dupliquée. */
+  if (comparable && deltas.distanceKm != null && Math.abs(deltas.distanceKm) >= 8) {
+    out.push(makeInsight({
+      id: 'analysis-volume', family: 'load',
+      title: deltas.distanceKm > 0 ? 'Volume en progression' : 'Volume en retrait',
+      observation: 'Ton volume total a ' + (deltas.distanceKm > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.distanceKm) + ' % sur ' + fen + '.',
+      reference: ref, delta: deltas.distanceKm,
+      confidence: 'high', importance: 'notable', window: fen,
+      method: 'Somme des distances de la période, comparée à la période précédente de même durée.',
+    }));
   }
-  if (deltas.ascent != null && deltas.vamAvg != null && deltas.ascent >= 8 && Math.abs(deltas.vamAvg) <= 5) {
-    candidates.push({ weight: 55, title: 'Montées', text: 'Ta VAM moyenne reste stable malgré une hausse du D+ de ' + deltas.ascent + '% sur la période.' });
-  } else if (deltas.vamAvg != null && Math.abs(deltas.vamAvg) >= 8) {
-    candidates.push({ weight: Math.abs(deltas.vamAvg), title: deltas.vamAvg > 0 ? 'VAM en progression' : 'VAM en retrait', text: 'Ta VAM moyenne a ' + (deltas.vamAvg > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.vamAvg) + '% par rapport à la période précédente.' });
+  if (comparable && deltas.ascent != null && deltas.vamAvg != null && deltas.ascent >= 8 && Math.abs(deltas.vamAvg) <= 5) {
+    out.push(makeInsight({
+      id: 'analysis-vam-stable', family: 'terrain',
+      title: 'VAM stable malgré plus de dénivelé',
+      observation: 'Ta VAM moyenne reste stable alors que ton D+ a augmenté de ' + deltas.ascent + ' %.',
+      reference: ref, delta: deltas.vamAvg,
+      confidence: 'medium', importance: 'progress', window: fen,
+      method: 'VAM agrégée sur les montées fiables de la période.',
+      limits: "La VAM dépend de la pente des montées rencontrées : deux périodes n'ont pas forcément le même terrain.",
+    }));
+  } else if (comparable && deltas.vamAvg != null && Math.abs(deltas.vamAvg) >= 8) {
+    out.push(makeInsight({
+      id: 'analysis-vam', family: 'terrain',
+      title: deltas.vamAvg > 0 ? 'VAM en progression' : 'VAM en retrait',
+      observation: 'Ta VAM moyenne a ' + (deltas.vamAvg > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.vamAvg) + ' %.',
+      reference: ref, delta: deltas.vamAvg,
+      confidence: 'medium', importance: 'notable', window: fen,
+      method: 'VAM agrégée sur les montées fiables de la période.',
+      limits: "La VAM dépend de la pente des montées rencontrées : deux périodes n'ont pas forcément le même terrain.",
+    }));
   }
-  if (runWalkByGrade && runWalkByGrade.length) {
-    const tip = runWalkByGrade.find(b => b.walkPct != null && b.walkPct >= b.runPct);
-    if (tip) candidates.push({ weight: 45, title: 'Locomotion', text: 'La marche devient majoritaire à partir de ' + tip.label + ' de pente (estimation ELEV, basée cadence).' });
+
+  /* Locomotion : ne parle plus que de pente POSITIVE, et porte sa couverture cadence. Auparavant,
+     la bande était en valeur absolue — « la marche devient majoritaire à 15 % » pouvait donc
+     désigner une descente, où marcher n'a pas du tout la même signification. */
+  if (runWalkByGrade && runWalkByGrade.available) {
+    const up = (runWalkByGrade.bands || []).filter(b => b.dir === 'up');
+    const tip = up.find(b => b.walkPct != null && b.runPct != null && b.walkPct >= b.runPct);
+    if (tip) {
+      out.push(makeInsight({
+        id: 'analysis-locomotion', family: 'terrain',
+        title: 'La marche prend le relais en montée',
+        observation: 'En ' + tip.label.toLowerCase() + ', tu marches ' + tip.walkPct + ' % du temps.',
+        reference: 'les autres tranches de pente positive de la même période',
+        coverage: runWalkByGrade.coverage,
+        confidence: elevCapConfidence('medium', runWalkByGrade.coverage),
+        importance: 'notable', window: fen,
+        provenance: 'inferred',
+        method: 'Estimation ELEV basée sur la cadence, pente positive uniquement, altitude lissée.',
+        limits: 'Les descentes sont exclues de ce constat. Marcher en forte pente est un choix courant et efficace, pas un défaut.',
+      }));
+    }
+  } else if (runWalkByGrade && runWalkByGrade.coveragePct != null) {
+    /* Une alerte de qualité de donnée passe AVANT une recommandation sportive (§6.3, §6.4). */
+    out.push(makeInsight({
+      id: 'analysis-cadence-coverage', family: 'data',
+      title: 'Cadence trop incomplète pour analyser ta locomotion',
+      observation: 'La cadence est disponible sur ' + runWalkByGrade.coveragePct + ' % du temps seulement sur cette période.',
+      reference: 'le seuil de 60 % en dessous duquel ELEV ne distingue pas course et marche',
+      coverage: 1, confidence: 'high', importance: 'attention', window: fen,
+      why: "Sans cadence, la distinction course/marche reposerait sur la seule allure, ce qui est trompeur en trail.",
+      action: 'Vérifie que ta montre enregistre bien la cadence sur tes sorties.',
+      method: 'Part du temps de déplacement où la cadence est présente dans les fichiers importés.',
+    }));
   }
-  if (gradeBuckets) {
-    const steepPct = gradeBuckets.filter(b => b.key === 'g15' || b.key === 'g20').reduce((a,b) => a + b.pct, 0);
-    if (steepPct >= 15) candidates.push({ weight: 40 + steepPct, title: 'Verticalité', text: steepPct + '% du temps en mouvement a été passé sur des pentes de plus de 15%.' });
+
+  if (gradeBuckets && gradeBuckets.byDir) {
+    const up = gradeBuckets.bands.filter(b => b.dir === 'up' && (b.key === 'up_steep' || b.key === 'up_mid'))
+      .reduce((a, b) => a + b.pct, 0);
+    if (up >= 15) {
+      out.push(makeInsight({
+        id: 'analysis-verticality', family: 'terrain',
+        title: 'Ton terrain est franchement montant',
+        observation: up + ' % de ton temps en mouvement se passe en montée de plus de 8 %.',
+        reference: "l'ensemble de ton temps en mouvement sur la période",
+        confidence: 'high', importance: 'context', window: fen,
+        method: gradeBuckets.method,
+        limits: "C'est une exposition au dénivelé, pas une aptitude en montée.",
+      }));
+    }
   }
+
   if (zoneDist) {
-    const z3plus = zoneDist.slice(2).reduce((a,z) => a + z.pct, 0);
-    const z1z2 = zoneDist.slice(0,2).reduce((a,z) => a + z.pct, 0);
-    if (z3plus >= 55) candidates.push({ weight: 35 + z3plus, title: 'Intensité', text: z3plus + '% du temps avec FC disponible a été passé en zones Z3 à Z5.' });
-    else if (z1z2 >= 65) candidates.push({ weight: 35 + z1z2, title: 'Intensité', text: z1z2 + '% du temps avec FC disponible a été passé en zones Z1-Z2 : période orientée endurance fondamentale.' });
+    const z3plus = zoneDist.slice(2).reduce((a, z) => a + z.pct, 0);
+    const z1z2 = zoneDist.slice(0, 2).reduce((a, z) => a + z.pct, 0);
+    if (z3plus >= 55) {
+      out.push(makeInsight({
+        id: 'analysis-intensity-high', family: 'effort',
+        title: 'Période orientée intensité',
+        observation: z3plus + ' % du temps avec FC disponible se passe en zones 3 à 5.',
+        reference: 'la répartition de tes zones sur la même période',
+        confidence: 'medium', importance: 'notable', window: fen,
+        method: 'Temps par zone cardiaque, zones actives du profil.',
+      }));
+    } else if (z1z2 >= 65) {
+      out.push(makeInsight({
+        id: 'analysis-intensity-low', family: 'effort',
+        title: 'Période orientée endurance fondamentale',
+        observation: z1z2 + ' % du temps avec FC disponible se passe en zones 1 et 2.',
+        reference: 'la répartition de tes zones sur la même période',
+        confidence: 'medium', importance: 'context', window: fen,
+        method: 'Temps par zone cardiaque, zones actives du profil.',
+      }));
+    }
   }
-  return candidates.sort((a,b) => b.weight - a.weight).slice(0, 3).map(({ title, text }) => ({ title, text }));
+
+  return out;
 }
 
 /* --------------------------- 6) UTILITAIRES DOM --------------------------- */
@@ -2810,6 +3032,100 @@ function renderSidebarUser() {
   const initial = prenom ? prenom[0].toUpperCase() : '?';
   el.innerHTML = '<div class="avatar">' + escapeHtml(initial) + '</div>' +
     '<div class="user-info"><strong>' + escapeHtml(prenom || 'Ton profil') + '</strong><a href="profil.html">Voir mon profil</a></div>';
+}
+
+/* --------------------------- MODE HORS LIGNE (audit P2-10 / PWA-01) ---------------------------
+   Décision utilisateur : ELEV tient sa promesse d'application installable plutôt que de la retirer.
+   L'enregistrement est volontairement silencieux et sans conséquence en cas d'échec — un navigateur
+   qui ne supporte pas les service workers, ou une page servie en file://, doit continuer à
+   fonctionner exactement comme avant.
+
+   Enregistré APRÈS le chargement de la page : le faire pendant retarderait le premier rendu, alors
+   que le bénéfice ne concerne que les visites suivantes. */
+function initOfflineSupport() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(e => {
+      console.info('ELEV : mode hors ligne indisponible sur cet appareil.', e && e.message);
+    });
+  });
+}
+try { initOfflineSupport(); } catch (e) { /* jamais bloquant */ }
+
+/* État du réseau, pour que les zones qui en dépendent réellement (carte GPS, IA, synchronisation)
+   puissent le dire au lieu d'échouer en silence. `elevIsOnline()` est volontairement une fonction :
+   l'état change pendant la vie de la page. */
+function elevIsOnline() {
+  return typeof navigator === 'undefined' || navigator.onLine !== false;
+}
+function elevOfflineNoticeHtml(quoi) {
+  return '<div class="empty"><span class="dq-sym" aria-hidden="true">—</span> ' +
+    (quoi || 'Cette fonctionnalité') + ' a besoin du réseau. Le reste d\'ELEV et toutes tes données restent disponibles hors ligne.</div>';
+}
+
+/* --------------------------- ONGLETS RESPONSIVES (audit P1-7 / MOB-01) ---------------------------
+   Sur mobile, Objectifs, Plan et Activité présentaient 6 à 7 onglets dans un ruban qui défile
+   horizontalement. Le contenu principal n'était donc atteignable qu'après un geste latéral, et
+   l'audit relève en plus une barre de défilement visible qui dégrade la finition.
+
+   Un ruban qui défile n'est pas une navigation : rien n'indique combien d'onglets existent ni où
+   l'on se trouve dedans. Sous 640 px, la rangée est donc doublée par un `<select>` natif — le
+   contrôle que le système connaît déjà, avec son clavier, son accessibilité et sa liste complète.
+
+   Les boutons ne sont PAS supprimés : ils restent la source de vérité de l'état actif et le seul
+   mécanisme sur desktop. Le select les pilote et se resynchronise sur eux, ce qui évite d'avoir
+   deux états qui divergent. */
+function initResponsiveTabs(container, opts) {
+  if (!container || container.dataset.responsiveTabs) return;
+  const boutons = [...container.querySelectorAll('button[data-tab]')];
+  if (boutons.length < 4) return; // sous 4 onglets, le ruban tient sans aide
+  container.dataset.responsiveTabs = '1';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'tabs-select-wrap';
+  const id = 'tabsel-' + Math.random().toString(36).slice(2, 8);
+  const label = document.createElement('label');
+  label.className = 'tabs-select-label';
+  label.setAttribute('for', id);
+  label.textContent = (opts && opts.label) || 'Section';
+  const select = document.createElement('select');
+  select.id = id;
+  select.className = 'tabs-select';
+  boutons.forEach(b => {
+    const o = document.createElement('option');
+    o.value = b.dataset.tab;
+    o.textContent = b.textContent.trim();
+    if (b.classList.contains('active')) o.selected = true;
+    select.appendChild(o);
+  });
+  select.addEventListener('change', () => {
+    const cible = boutons.find(b => b.dataset.tab === select.value);
+    if (cible) cible.click();
+  });
+  wrap.appendChild(label);
+  wrap.appendChild(select);
+  container.parentNode.insertBefore(wrap, container);
+
+  // Resynchronisation : le select suit l'état réel des boutons, y compris quand un lien interne
+  // active un onglet (« Voir les 6 montées → », par exemple).
+  const sync = () => {
+    const actif = boutons.find(b => b.classList.contains('active'));
+    if (actif && select.value !== actif.dataset.tab) select.value = actif.dataset.tab;
+  };
+  boutons.forEach(b => b.addEventListener('click', () => setTimeout(sync, 0)));
+  new MutationObserver(sync).observe(container, { subtree: true, attributes: true, attributeFilter: ['class'] });
+}
+
+/* Applique le traitement à toutes les rangées d'onglets d'une page. Appelée automatiquement : une
+   page qui ajoute des onglets plus tard n'a rien à câbler. */
+function initAllResponsiveTabs() {
+  document.querySelectorAll('.tabs').forEach(t => {
+    try { initResponsiveTabs(t); } catch (e) { /* une rangée d'onglets ne doit jamais casser la page */ }
+  });
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('DOMContentLoaded', () => { try { initAllResponsiveTabs(); } catch (e) {} });
 }
 
 /* --------------------------- ÉTATS APPLICATIFS PARTAGÉS (Sprint 1) ---------------------------
@@ -3073,24 +3389,113 @@ function countIsoWeeksBetween(fromISO, toISO) {
 
 // État de préparation d'une course : compare le volume réalisé au volume planifié sur les 28 derniers jours
 // (ou depuis le début du plan si plus récent). Retourne null si aucun plan n'est enregistré.
-function computePrepStatus(raceDateISO) {
+/* --------------------------- ALIGNEMENT AU PLAN ---------------------------
+   Audit ELEV 2.0, P0-2 / CRED-03. Le calcul précédent plafonnait tout ratio à 100 avant de faire
+   la moyenne : 152 % du volume prévu contribuait donc EXACTEMENT comme 100 %, c'est-à-dire comme
+   une exécution parfaite. La page pouvait alors afficher « Excellente préparation » et « dépasse
+   nettement la cible » côte à côte, ce qui est contradictoire.
+
+   La correction sépare deux notions que le plafonnement confondait :
+     - ADÉQUATION : est-ce que j'ai fait ce qui était prévu ? (score)
+     - DIVERGENCE : est-ce que je m'en écarte assez pour que le score n'ait plus de sens ? (alerte)
+
+   Au-delà du seuil de divergence, l'adéquation n'est pas notée BASSE — elle n'est plus notée du
+   tout (`score: null`). Noter 20/100 un dépassement laisserait croire à une mauvaise exécution
+   alors que c'est le plan qui ne décrit plus ce qui se passe. */
+const PLAN_ALIGN_LOW = 85;        // en dessous : sous la cible
+const PLAN_ALIGN_HIGH = 115;      // entre les deux : aligné, la cible est atteinte
+const PLAN_DIVERGENCE_PCT = 140;  // au-delà : divergence, plus de score
+function planAlignment(pct) {
+  if (pct == null || !isFinite(pct)) return { state:'unknown', label:'Non calculable', score:null, diverging:false };
+  if (pct < 60)  return { state:'far_under', label:'Nettement sous la cible', score: clampScore(pct / PLAN_ALIGN_LOW * 100), diverging:false, pct };
+  if (pct < PLAN_ALIGN_LOW)  return { state:'under', label:'Sous la cible', score: clampScore(pct / PLAN_ALIGN_LOW * 100), diverging:false, pct };
+  if (pct <= PLAN_ALIGN_HIGH) return { state:'aligned', label:'Aligné avec le plan', score:100, diverging:false, pct };
+  if (pct <= PLAN_DIVERGENCE_PCT) {
+    // Décroissance linéaire de 100 à 40 entre 115 % et 140 % : dépasser reste une exécution du
+    // plan, mais de moins en moins fidèle à mesure que l'écart grandit.
+    return { state:'over', label:'Au-dessus de la cible', score: clampScore(100 - (pct - PLAN_ALIGN_HIGH) / (PLAN_DIVERGENCE_PCT - PLAN_ALIGN_HIGH) * 60), diverging:false, pct };
+  }
+  return { state:'diverging', label:'Divergence avec le plan', score:null, diverging:true, pct };
+}
+
+/* --------------------------- PRÉPARATION ---------------------------
+   Audit ELEV 2.0, P0-1 / CRED-01. `raceDateISO` était un paramètre DÉCLARÉ MAIS JAMAIS LU : le
+   calcul prenait les 28 derniers jours et le même plan quelle que soit la course, si bien que deux
+   objectifs recevaient mécaniquement le même « état de préparation » présenté comme spécifique.
+
+   Deux portées sont désormais distinguées, et la portée est retournée pour que l'interface ne
+   puisse pas se tromper de mot :
+
+     scope 'race'    — un plan est explicitement lié À CETTE course (voir savePlanGoalId). Le calcul
+                       porte alors sur ce plan, borné à la fenêtre du plan, et la course a une date
+                       qui compte réellement (semaines restantes, plan terminé ou non).
+     scope 'general' — aucun plan lié, ou plan lié à une AUTRE course. Le résultat reste utile mais
+                       il décrit une préparation GÉNÉRALE, jamais la préparation à cette course-là.
+
+   Retourne null quand rien n'est calculable, comme avant. */
+const PREP_WINDOW_DAYS = 28;
+function computePrepStatus(raceDateISO, opts) {
+  opts = opts || {};
   const plan = getPlan();
   if (!plan || !plan.length) return null;
   const today = todayISO();
-  const windowStart = new Date(new Date(today).getTime() - 28*86400000).toISOString().slice(0,10);
-  const plannedInWindow = plan.filter(p => p.date >= windowStart && p.date <= today);
-  const doneInWindow = loadAllSessions().filter(s => s.date >= windowStart && s.date <= today);
-  const plannedKm = plannedInWindow.reduce((s,p) => s + (p.distanceKm||0), 0);
-  const doneKm = doneInWindow.reduce((s,x) => s + (x.distanceKm||0), 0);
+
+  const linkedId = getPlanGoalId();
+  const race = raceDateISO ? getRaces().find(r => r.date === raceDateISO && (!linkedId || r.id === linkedId)) : null;
+  const linkedRace = getPlanGoalRace();
+  // Spécifique à la course seulement si le plan est lié À CETTE course. Comparer par date plutôt
+  // que par identifiant serait faux dès que deux courses tombent le même jour.
+  const isRaceScoped = !!(linkedRace && raceDateISO && linkedRace.date === raceDateISO &&
+                          (!opts.raceId || opts.raceId === linkedRace.id));
+  const scope = isRaceScoped ? 'race' : 'general';
+
+  // Fenêtre d'observation. En portée course, elle est bornée par le plan lui-même : compter des
+  // semaines postérieures à la fin du plan, ou antérieures à son début, mesurerait autre chose.
+  let windowStart = addDaysIso(today, -PREP_WINDOW_DAYS);
+  let windowEnd = today;
+  // getPlanDateRange retourne { fromISO, toISO } — pas { start, end }. Utiliser les mauvais noms
+  // ne levait aucune erreur mais désactivait silencieusement le bornage : la fenêtre débordait du
+  // plan sans que rien ne le signale.
+  const range = getPlanDateRange(plan);
+  if (isRaceScoped && range) {
+    if (windowStart < range.fromISO) windowStart = range.fromISO;
+    if (windowEnd > range.toISO) windowEnd = range.toISO;
+  }
+  if (windowEnd < windowStart) return null;
+
+  const plannedInWindow = plan.filter(p => p.date >= windowStart && p.date <= windowEnd);
+  const doneInWindow = loadAllSessions().filter(s => s.date >= windowStart && s.date <= windowEnd);
+  const plannedKm = plannedInWindow.reduce((s2,p) => s2 + (p.distanceKm||0), 0);
+  const doneKm = doneInWindow.reduce((s2,x) => s2 + (x.distanceKm||0), 0);
   if (plannedKm <= 0) return null;
+
   const pct = Math.round((doneKm / plannedKm) * 100);
-  const plannedDplus = plannedInWindow.reduce((s,p) => s + (p.deniveleM||0), 0);
-  const doneDplus = doneInWindow.reduce((s,x) => s + (x.ascent||0), 0);
+  const plannedDplus = plannedInWindow.reduce((s2,p) => s2 + (p.deniveleM||0), 0);
+  const doneDplus = doneInWindow.reduce((s2,x) => s2 + (x.ascent||0), 0);
   const pctDplus = plannedDplus > 0 ? Math.round((doneDplus / plannedDplus) * 100) : null;
-  // Repère d'alerte simple, sur le même principe que l'usure des chaussures : sous 60% = sous-préparation,
-  // au-dessus de 130% = possible surcharge (charge cumulée bien supérieure au plan). Indicatif, pas une science exacte.
+
+  const alignKm = planAlignment(pct);
+  const alignDplus = pctDplus != null ? planAlignment(pctDplus) : null;
+
+  // Conservé tel quel : d'autres écrans (statut de semaine, Plan) s'appuient sur ces trois paliers
+  // depuis longtemps, les changer ici ferait diverger deux lectures du même chiffre.
   const level = pct < 60 ? 'low' : (pct > 130 ? 'high' : 'ok');
-  return { pct, doneKm, plannedKm, pctDplus, doneDplus, plannedDplus, level };
+
+  const weeksToRace = raceDateISO ? Math.round((new Date(raceDateISO) - new Date(today)) / (7*86400000)) : null;
+
+  return {
+    pct, doneKm, plannedKm, pctDplus, doneDplus, plannedDplus, level,
+    scope, linkedRaceId: linkedRace ? linkedRace.id : null,
+    scopeLabel: scope === 'race' ? 'Préparation à cette course' : 'Préparation générale',
+    scopeWhy: scope === 'race' ? null
+      : (linkedRace ? 'Ton plan est lié à « ' + linkedRace.name + ' », pas à cette course.'
+                    : "Aucun plan n'est lié à une course : ELEV mesure ton exécution générale, pas ta préparation à cet objectif."),
+    alignment: alignKm, alignmentDplus: alignDplus,
+    diverging: !!(alignKm.diverging || (alignDplus && alignDplus.diverging)),
+    windowStart, windowEnd, windowDays: Math.round((new Date(windowEnd) - new Date(windowStart)) / 86400000) + 1,
+    weeksToRace, racePast: weeksToRace != null && weeksToRace < 0,
+    method: 'Volume et D+ réalisés comparés au plan importé, du ' + fmtDate(windowStart) + ' au ' + fmtDate(windowEnd) + '.',
+  };
 }
 
 // Indice de préparation détaillé pour une course donnée : décompose la préparation en 5 sous-scores
@@ -3101,93 +3506,171 @@ const READINESS_WEEKS = 12;
 const READINESS_LONG_RUN_RATIO = 0.6; // la plus longue sortie récente devrait représenter ~60% de la distance de course
 const READINESS_VOL_BENCHMARK = 60;   // km/semaine — repère générique utilisé seulement si aucun plan n'est importé
 const READINESS_DPLUS_BENCHMARK = 2200; // m D+/semaine — idem
-const READINESS_INTENSITY_BENCHMARK = 15; // % du temps en zone FC 3+ (tempo/seuil/VMA) sur la fenêtre, pour un score plein
+const READINESS_INTENSITY_BENCHMARK = 15;
+const READINESS_MIN_DIMENSIONS = 3;   // audit §6.3 : aucun score global sous 3 dimensions fiables // % du temps en zone FC 3+ (tempo/seuil/VMA) sur la fenêtre, pour un score plein
 function computeRaceReadiness(race) {
   const sessions = loadAllSessions();
   const today = todayISO();
-  const windowStart = new Date(new Date(today).getTime() - READINESS_WEEKS*7*86400000).toISOString().slice(0,10);
+  const windowStart = addDaysIso(today, -READINESS_WEEKS * 7);
   const recent = sessions.filter(s => s.date >= windowStart && s.date <= today);
   const subs = [];
 
-  // Volume + dénivelé : priorité à la comparaison avec le plan importé (28 derniers jours) si disponible,
-  // sinon repère générique hebdomadaire sur la fenêtre de 12 semaines.
-  const prep = computePrepStatus(race.date);
+  /* Volume + dénivelé. Priorité au plan quand il est disponible ; mais le score n'est plus le
+     ratio plafonné à 100 — c'est l'ADÉQUATION au plan (voir planAlignment), qui redescend en cas
+     de dépassement et n'est plus notée du tout en cas de divergence. */
+  const prep = computePrepStatus(race && race.date, { raceId: race && race.id });
   if (prep) {
-    subs.push({ key:'volume', label:'Volume', score: clampScore(prep.pct), detail: prep.pct + '% du volume prévu au plan (28 derniers jours)' });
-    subs.push({ key:'dplus', label:'Dénivelé', score: prep.pctDplus != null ? clampScore(prep.pctDplus) : null, detail: prep.pctDplus != null ? (prep.pctDplus + '% du D+ prévu au plan (28 derniers jours)') : 'Pas de D+ renseigné dans le plan' });
+    const fen = '(' + prep.windowDays + ' derniers jours du plan)';
+    subs.push({
+      key: 'volume', label: 'Volume', score: prep.alignment.score,
+      provenance: 'computed', confidence: prep.scope === 'race' ? 'high' : 'medium',
+      state: prep.alignment.state,
+      detail: prep.pct + ' % du volume prévu au plan ' + fen + ' — ' + prep.alignment.label.toLowerCase() + '.',
+      unavailableWhy: prep.alignment.score == null ? "Le volume réalisé s'écarte trop du plan pour que « respect du plan » ait encore un sens." : null,
+    });
+    subs.push({
+      key: 'dplus', label: 'Dénivelé',
+      score: prep.alignmentDplus ? prep.alignmentDplus.score : null,
+      provenance: 'computed', confidence: prep.scope === 'race' ? 'high' : 'medium',
+      state: prep.alignmentDplus ? prep.alignmentDplus.state : 'unknown',
+      detail: prep.pctDplus != null
+        ? (prep.pctDplus + ' % du D+ prévu au plan ' + fen + ' — ' + prep.alignmentDplus.label.toLowerCase() + '.')
+        : 'Aucun D+ renseigné dans le plan importé.',
+      unavailableWhy: prep.pctDplus == null ? 'Le plan importé ne porte pas de dénivelé.'
+        : (prep.alignmentDplus && prep.alignmentDplus.score == null ? "Le D+ réalisé s'écarte trop du plan pour être noté." : null),
+    });
   } else {
+    /* Aucun plan : les repères ci-dessous sont GÉNÉRIQUES (audit §5.4 / CRED-11). Ils ne sont pas
+       calibrés sur cet utilisateur, et le libellé doit le dire — sans quoi un repère de manuel
+       devient une note personnalisée. */
     const weekKm = {}, weekDplus = {};
-    recent.forEach(s => { const wk = isoWeek(s.date); weekKm[wk] = (weekKm[wk]||0) + (s.distanceKm||0); weekDplus[wk] = (weekDplus[wk]||0) + (s.ascent||0); });
+    recent.forEach(s => { const wk = isoWeek(s.date); weekKm[wk] = (weekKm[wk] || 0) + (s.distanceKm || 0); weekDplus[wk] = (weekDplus[wk] || 0) + (s.ascent || 0); });
     const kmVals = Object.values(weekKm), dplusVals = Object.values(weekDplus);
-    const avgKm = kmVals.length ? kmVals.reduce((a,b)=>a+b,0)/kmVals.length : null;
-    const avgDplus = dplusVals.length ? dplusVals.reduce((a,b)=>a+b,0)/dplusVals.length : null;
-    subs.push({ key:'volume', label:'Volume', score: avgKm!=null ? clampScore(avgKm/READINESS_VOL_BENCHMARK*100) : null, detail: avgKm!=null ? (Math.round(avgKm)+' km/semaine en moyenne (aucun plan importé — repère générique '+READINESS_VOL_BENCHMARK+' km/semaine)') : 'Pas assez de séances récentes' });
-    subs.push({ key:'dplus', label:'Dénivelé', score: avgDplus!=null ? clampScore(avgDplus/READINESS_DPLUS_BENCHMARK*100) : null, detail: avgDplus!=null ? (Math.round(avgDplus)+' m D+/semaine en moyenne (repère générique '+READINESS_DPLUS_BENCHMARK+' m/semaine)') : 'Pas assez de séances récentes' });
+    const avgKm = kmVals.length ? kmVals.reduce((a, b) => a + b, 0) / kmVals.length : null;
+    const avgDplus = dplusVals.length ? dplusVals.reduce((a, b) => a + b, 0) / dplusVals.length : null;
+    subs.push({
+      key: 'volume', label: 'Volume', score: avgKm != null ? clampScore(avgKm / READINESS_VOL_BENCHMARK * 100) : null,
+      provenance: 'computed', confidence: 'low',
+      detail: avgKm != null ? (Math.round(avgKm) + " km/semaine en moyenne, face à un repère générique de " + READINESS_VOL_BENCHMARK + " km/semaine (aucun plan importé — ce repère n'est pas calibré sur toi).") : 'Pas assez de séances récentes',
+      unavailableWhy: avgKm == null ? 'Aucune séance sur les 12 dernières semaines.' : null,
+    });
+    subs.push({
+      key: 'dplus', label: 'Dénivelé', score: avgDplus != null ? clampScore(avgDplus / READINESS_DPLUS_BENCHMARK * 100) : null,
+      provenance: 'computed', confidence: 'low',
+      detail: avgDplus != null ? (Math.round(avgDplus) + " m D+/semaine en moyenne, face à un repère générique de " + READINESS_DPLUS_BENCHMARK + " m/semaine (non calibré sur toi).") : 'Pas assez de séances récentes',
+      unavailableWhy: avgDplus == null ? 'Aucune séance sur les 12 dernières semaines.' : null,
+    });
   }
 
   // Sorties longues : la plus longue sortie récente, rapportée à la distance de la course visée.
-  const longest = recent.reduce((max, s) => (s.distanceKm||0) > (max ? max.distanceKm||0 : 0) ? s : max, null);
+  // C'est le seul sous-score qui a toujours dépendu de la course elle-même.
+  const longest = recent.reduce((max, s) => (s.distanceKm || 0) > (max ? max.distanceKm || 0 : 0) ? s : max, null);
   const longKm = longest ? longest.distanceKm : null;
-  const target = race.distanceKm * READINESS_LONG_RUN_RATIO;
+  const target = race && race.distanceKm ? race.distanceKm * READINESS_LONG_RUN_RATIO : 0;
   subs.push({
-    key:'longues', label:'Sorties longues',
+    key: 'longues', label: 'Sorties longues',
     score: (longKm != null && target > 0) ? clampScore(longKm / target * 100) : null,
-    detail: longKm != null ? ('Plus longue sortie récente : ' + longKm.toFixed(1) + ' km (repère : ' + target.toFixed(0) + ' km, soit ' + Math.round(READINESS_LONG_RUN_RATIO*100) + '% de la distance de course)') : 'Aucune séance récente',
+    provenance: 'computed', confidence: longKm != null ? 'medium' : 'none',
+    detail: longKm != null && target > 0
+      ? ('Plus longue sortie récente : ' + longKm.toFixed(1) + ' km, pour un repère de ' + target.toFixed(0) + ' km (' + Math.round(READINESS_LONG_RUN_RATIO * 100) + ' % de la distance de course).')
+      : 'Aucune séance récente',
+    unavailableWhy: longKm == null ? 'Aucune séance sur les 12 dernières semaines.' : (target <= 0 ? "La distance de cette course n'est pas renseignée." : null),
   });
 
-  // Intensité : part du temps passé en zone FC 3+ (tempo/seuil/VMA) sur la fenêtre — nécessite FC max
-  // et FC repos renseignées en page Accueil pour calculer les zones Karvonen.
+  // Intensité : part du temps en zone FC 3+. Porte désormais sa couverture réelle — sans elle,
+  // un pourcentage calculé sur 4 % du temps a la même apparence qu'un pourcentage calculé sur 95 %.
   const profile = getProfile();
   const zones = getActiveHrZones(profile);
+  const hrCov = elevAggregateCoverage(recent, 'hr');
   if (zones) {
     let z3PlusSec = 0, totalSec = 0;
     recent.forEach(s => {
       const series = s.series || [];
       for (let i = 1; i < series.length; i++) {
         const hr = series[i].hr; if (hr == null) continue;
-        const dt = series[i].t - series[i-1].t; if (!dt || dt <= 0 || dt > 120) continue;
+        const dt = series[i].t - series[i - 1].t; if (!dt || dt <= 0 || dt > 120) continue;
         totalSec += dt;
         let zi = zones.findIndex(z => hr >= z.low && hr <= z.high);
         if (zi < 0) zi = hr < zones[0].low ? 0 : zones.length - 1;
         if (zi >= 2) z3PlusSec += dt;
       }
     });
-    const pctZ3 = totalSec > 0 ? (z3PlusSec/totalSec*100) : null;
-    subs.push({ key:'intensite', label:'Intensité', score: pctZ3!=null ? clampScore(pctZ3/READINESS_INTENSITY_BENCHMARK*100) : null, detail: pctZ3!=null ? (Math.round(pctZ3)+'% du temps en zone 3+ (repère : '+READINESS_INTENSITY_BENCHMARK+'%)') : 'Pas de données FC exploitables récemment' });
+    const pctZ3 = totalSec > 0 ? (z3PlusSec / totalSec * 100) : null;
+    const covLvl = elevCoverageLevel(hrCov.ratio);
+    const covOk = covLvl !== 'insufficient' && covLvl !== 'none';
+    subs.push({
+      key: 'intensite', label: 'Intensité',
+      score: (pctZ3 != null && covOk) ? clampScore(pctZ3 / READINESS_INTENSITY_BENCHMARK * 100) : null,
+      provenance: 'computed', coverage: hrCov.ratio,
+      confidence: elevCapConfidence('medium', hrCov.ratio),
+      detail: pctZ3 != null
+        ? (Math.round(pctZ3) + ' % du temps en zone 3+, face à un repère générique de ' + READINESS_INTENSITY_BENCHMARK + ' % (FC disponible sur ' + (hrCov.pct != null ? hrCov.pct : 0) + ' % du temps).')
+        : 'Pas de données FC exploitables récemment',
+      unavailableWhy: pctZ3 == null ? 'Aucune donnée de fréquence cardiaque sur la période.'
+        : (!covOk ? 'FC disponible sur ' + (hrCov.pct || 0) + ' % du temps seulement — trop peu pour en tirer une répartition fiable.' : null),
+    });
   } else {
-    subs.push({ key:'intensite', label:'Intensité', score: null, detail: 'Renseigne ta FC max et ta FC repos en page Accueil pour calculer ce sous-score' });
+    subs.push({
+      key: 'intensite', label: 'Intensité', score: null, provenance: 'unavailable', confidence: 'none',
+      detail: 'Renseigne ta FC max et ta FC repos en page Profil pour calculer ce sous-score',
+      unavailableWhy: 'Zones de fréquence cardiaque non configurées.',
+    });
   }
 
-  // Régularité : proportion des 12 dernières semaines avec au moins une séance enregistrée.
-  // Ce sous-score était le SEUL à produire une valeur quand aucune donnée n'existe : tous les
-  // autres retournent null, lui retournait 0. Sur un compte sans aucune activité importée, il
-  // devenait donc l'unique sous-score « valide », et l'indice de préparation entier tombait à
-  // 0 % avec la mention « À renforcer » — une absence de données présentée comme un échec mesuré,
-  // ce que le produit s'interdit partout ailleurs.
-  // La distinction qui compte : « aucune séance n'a jamais été importée » (rien à dire) n'est pas
-  // « des séances existent mais aucune sur la fenêtre » (0 % est alors une vraie information).
-  const weeksWithSession = new Set(recent.map(s => isoWeek(s.date))).size;
+  // Régularité : proportion des 12 dernières semaines avec au moins une séance. Volontairement
+  // `null` quand aucune séance n'a JAMAIS été importée — sans quoi il devenait l'unique sous-score
+  // « valide » d'un compte vierge et faisait tomber l'indice entier à 0 %, c'est-à-dire une absence
+  // de données présentée comme un échec mesuré.
+  const weeksWithSession = Math.min(READINESS_WEEKS, new Set(recent.map(s => isoWeek(s.date))).size);
   subs.push({
     key: 'regularite', label: 'Régularité',
     score: sessions.length ? clampScore(weeksWithSession / READINESS_WEEKS * 100) : null,
+    provenance: 'computed', confidence: sessions.length ? 'high' : 'none',
     detail: sessions.length
       ? (weeksWithSession + '/' + READINESS_WEEKS + ' semaines avec au moins une séance')
       : 'Aucune séance importée',
+    unavailableWhy: sessions.length ? null : 'Aucune séance importée.',
   });
 
   const valid = subs.filter(s => s.score != null);
-  const overall = valid.length ? Math.round(valid.reduce((a,s) => a+s.score, 0) / valid.length) : null;
-  const weakest = valid.length ? valid.reduce((min,s) => s.score < min.score ? s : min, valid[0]) : null;
-  return { overall, subs, weakest };
+  /* Audit §6.3 / CRED-10 : aucun score global sous 3 dimensions fiables. Moyenner un seul
+     sous-score et l'afficher comme « indice de préparation » donne à une mesure isolée l'autorité
+     d'une synthèse. En dessous du seuil, ELEV montre les sous-scores et se tait sur le total. */
+  const enough = valid.length >= READINESS_MIN_DIMENSIONS;
+  const overall = enough ? Math.round(valid.reduce((a, s) => a + s.score, 0) / valid.length) : null;
+  const weakest = valid.length ? valid.reduce((min, s) => s.score < min.score ? s : min, valid[0]) : null;
+
+  const scope = prep ? prep.scope : 'general';
+  return {
+    overall, subs, weakest,
+    dimensions: valid.length, minDimensions: READINESS_MIN_DIMENSIONS,
+    unscoredWhy: enough ? null
+      : (valid.length ? 'Seulement ' + valid.length + ' sous-score' + (valid.length > 1 ? 's' : '') + ' sur ' + subs.length + ' est calculable : trop peu pour un indice global.'
+        : "Aucun sous-score n'est calculable pour l'instant."),
+    scope,
+    scopeLabel: prep ? prep.scopeLabel : 'Préparation générale',
+    scopeWhy: prep ? prep.scopeWhy : "Aucun plan n'est importé : ELEV compare ton entraînement à des repères génériques, pas à une préparation conçue pour cette course.",
+    diverging: prep ? prep.diverging : false,
+    divergence: prep && prep.diverging
+      ? (prep.alignment.diverging ? { key: 'volume', pct: prep.pct } : { key: 'dplus', pct: prep.pctDplus })
+      : null,
+    window: READINESS_WEEKS + ' dernières semaines',
+    confidence: prep && prep.scope === 'race' ? 'high' : (prep ? 'medium' : 'low'),
+  };
 }
 
-// Libellé qualitatif de l'indice de préparation — seuils documentés (mêmes que le badge déjà utilisé
-// sur la page Objectifs avant cette refonte, complétés d'un 3e palier) : jamais un mot choisi à
-// l'œil, toujours dérivé du même pourcentage affiché à côté (voir CLAUDE.md — pas de score inventé).
-function readinessLevelLabel(overall) {
+/* Libellé qualitatif de l'indice. Audit P0-2 / CRED-04 : il ne doit JAMAIS annoncer une excellente
+   préparation pendant qu'un autre bloc de la même page signale une divergence au plan — c'est la
+   contradiction que l'audit relève explicitement. Le libellé porte aussi la portée : « générale »
+   n'est pas « pour cette course », et le mot doit le dire.
+   Signature rétrocompatible : appelée avec le seul nombre, elle retombe sur le comportement
+   d'origine, ce qui évite de casser un appelant qui n'a pas encore l'objet complet. */
+function readinessLevelLabel(overall, readiness) {
   if (overall == null) return null;
-  if (overall >= 85) return 'Excellente préparation';
-  if (overall >= 60) return 'Sur la bonne voie';
+  if (readiness && readiness.diverging) return 'Écart important avec le plan';
+  const general = !!(readiness && readiness.scope === 'general');
+  if (overall >= 85) return general ? 'Volume général élevé' : 'Excellente préparation';
+  if (overall >= 60) return general ? 'Entraînement régulier' : 'Sur la bonne voie';
   return 'À renforcer';
 }
 
@@ -3480,22 +3963,34 @@ function getPlanInsights(plan, sessions) {
     if (bullets.length < 3) {
       const prep = computePrepStatus();
       if (prep) {
-        if (prep.level === 'low') bullets.push({ title: 'Volume', text: 'Le volume réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pct + '%).' });
-        else if (prep.level === 'high') bullets.push({ title: 'Volume', text: 'Le volume réalisé dépasse nettement la cible du plan sur les 4 dernières semaines (' + prep.pct + '%).' });
-        else if (prep.pctDplus != null && prep.pctDplus < 60) bullets.push({ title: 'Dénivelé', text: 'Le D+ réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pctDplus + '%).' });
+        // Le libellé suit désormais l'ALIGNEMENT (voir planAlignment) plutôt que le seul palier de
+        // pourcentage : « dépasse nettement » et « divergence » ne disent pas la même chose.
+        const al = prep.alignment;
+        if (al.state === 'far_under' || al.state === 'under')
+          bullets.push({ title: 'Volume', text: 'Le volume réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pct + ' %).' });
+        else if (al.diverging)
+          bullets.push({ title: 'Volume', text: "Le volume réalisé s'écarte fortement du plan sur les 4 dernières semaines (" + prep.pct + " %) : le plan ne décrit plus ce que tu fais." });
+        else if (al.state === 'over')
+          bullets.push({ title: 'Volume', text: 'Le volume réalisé dépasse la cible du plan sur les 4 dernières semaines (' + prep.pct + ' %).' });
+        else if (prep.pctDplus != null && prep.pctDplus < 60)
+          bullets.push({ title: 'Dénivelé', text: 'Le D+ réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pctDplus + ' %).' });
       }
     }
-  }
-  if (bullets.length < 3) {
-    const trend = getTrainingTrend();
-    if (trend) {
-      const texts = {
-        rising: 'Le volume hebdomadaire réalisé suit une progression régulière.',
-        rising_fast: 'La charge récente augmente rapidement — pense à surveiller la récupération.',
-        stable: 'Le volume hebdomadaire réalisé reste stable par rapport aux dernières semaines.',
-        falling: 'Le volume récent est en retrait par rapport aux semaines précédentes.',
-      };
-      bullets.push({ title: 'Dynamique', text: texts[trend.level] });
+    /* Audit P1-5 et §13 / UX-09 : ce bloc était HORS du garde `if (plan && plan.length)`. La page
+       Plan affichait donc une dynamique de charge alors même qu'aucun plan n'existait — un insight
+       de plan sans plan. Il est désormais à l'intérieur, et le conseil de récupération a disparu :
+       ELEV ne suit aucune donnée de récupération, il ne peut donc rien en conseiller. */
+    if (bullets.length < 3) {
+      const trend = getTrainingTrend();
+      if (trend && trend.available) {
+        const texts = {
+          rising: 'Le volume hebdomadaire réalisé suit une progression régulière.',
+          rising_fast: 'Le volume récent augmente rapidement par rapport à la moyenne des 4 dernières semaines.',
+          stable: 'Le volume hebdomadaire réalisé reste stable par rapport aux dernières semaines.',
+          falling: 'Le volume récent est en retrait par rapport aux semaines précédentes.',
+        };
+        bullets.push({ title: 'Dynamique', text: texts[trend.level] });
+      }
     }
   }
   return bullets.slice(0, 3);
@@ -3562,27 +4057,66 @@ const TREND_RISING_RATIO = 1.15;      // ratio au-dessus duquel la hausse de vol
 const TREND_RISING_FAST_RATIO = 1.5;  // ratio au-dessus duquel la hausse est jugée rapide, à surveiller
 const TREND_FALLING_RATIO = 0.75;     // ratio en-dessous duquel le volume est jugé en net repli
 const TREND_LABELS = { rising: 'En hausse', rising_fast: 'Hausse rapide', stable: 'Stable', falling: 'En baisse' };
+/* Tendance de charge. Audit P1-5 / CRED-08 : la fonction acceptait DEUX SÉANCES et produisait
+   déjà un ratio, si bien qu'un compte de deux jours recevait un signal de charge. Trois garde-fous
+   désormais, et ils retournent la RAISON du refus plutôt que null — pour que l'interface puisse
+   dire « pas encore assez d'historique » au lieu de faire disparaître un bloc sans explication :
+
+     - au moins 4 semaines réellement couvertes par l'historique (ELEV_TREND_MIN_WEEKS) ;
+     - au moins 3 de ces semaines non vides (ELEV_TREND_MIN_NON_EMPTY) ;
+     - une moyenne chronique strictement positive.
+
+   Limite de méthode assumée et conservée : la moyenne chronique inclut la fenêtre aiguë, comme
+   dans la formulation courante de l'acute:chronic workload ratio. L'audit le relève ; le corriger
+   changerait les seuils calibrés de tout le produit. Ce qui est corrigé ici, c'est le fait d'en
+   tirer une conclusion trop tôt, et de la présenter comme autre chose qu'une observation de
+   volume. Le ratio n'est JAMAIS une prédiction de blessure ni un état de récupération. */
 function getTrainingTrend() {
   const sessions = loadAllSessions();
-  if (sessions.length < 2) return null;
   const today = todayISO();
   const weeks = [];
   for (let i = 3; i >= 0; i--) {
-    const start = new Date(new Date(today).getTime() - (i+1)*7*86400000).toISOString().slice(0,10);
-    const end = new Date(new Date(today).getTime() - i*7*86400000).toISOString().slice(0,10);
-    const km = sessions.filter(s => s.date > start && s.date <= end).reduce((a,s) => a + (s.distanceKm||0), 0);
+    const start = addDaysIso(today, -(i + 1) * 7);
+    const end = addDaysIso(today, -i * 7);
+    const km = sessions.filter(s => s.date > start && s.date <= end).reduce((a, s) => a + (s.distanceKm || 0), 0);
     weeks.push(+km.toFixed(1));
   }
-  const acute = weeks[weeks.length-1];
-  const chronic = weeks.reduce((a,b)=>a+b,0) / weeks.length;
-  if (chronic <= 0) return null;
+
+  // Semaines réellement couvertes : celles postérieures à la toute première séance importée. Une
+  // semaine antérieure au premier import n'est pas une semaine à 0 km, elle n'existe pas.
+  const firstDate = sessions.length ? sessions[0].date : null;
+  const coveredWeeks = firstDate
+    ? weeks.filter((_, i) => addDaysIso(today, -(3 - i + 1) * 7) >= firstDate).length
+    : 0;
+  const history = elevHistoryCoverage(weeks.slice(4 - Math.max(0, coveredWeeks)));
+
+  if (!history.enoughForTrend) {
+    return {
+      available: false, level: null, label: null,
+      reason: history.reason || "Historique insuffisant pour établir une tendance de charge.",
+      coveredWeeks: history.covered, nonEmptyWeeks: history.nonEmpty,
+      minWeeks: ELEV_TREND_MIN_WEEKS, minNonEmpty: ELEV_TREND_MIN_NON_EMPTY,
+      weeks,
+    };
+  }
+
+  const acute = weeks[weeks.length - 1];
+  const chronic = weeks.reduce((a, b) => a + b, 0) / weeks.length;
+  if (chronic <= 0) {
+    return { available: false, level: null, label: null, reason: 'Aucun volume sur les 4 dernières semaines.', weeks };
+  }
   const ratio = +(acute / chronic).toFixed(2);
   let level;
   if (ratio >= TREND_RISING_FAST_RATIO) level = 'rising_fast';
   else if (ratio >= TREND_RISING_RATIO) level = 'rising';
   else if (ratio <= TREND_FALLING_RATIO) level = 'falling';
   else level = 'stable';
-  return { level, label: TREND_LABELS[level], ratio, acute, chronic: +chronic.toFixed(1), weeks };
+  return {
+    available: true, level, label: TREND_LABELS[level], ratio, acute, chronic: +chronic.toFixed(1), weeks,
+    coveredWeeks: history.covered, nonEmptyWeeks: history.nonEmpty,
+    method: 'Volume de la dernière semaine rapporté à la moyenne des 4 dernières semaines.',
+    limits: "Observation de volume uniquement. ELEV ne suit ni sommeil, ni variabilité cardiaque, ni fréquence cardiaque de repos dans le temps : ce ratio ne dit rien de ta récupération ni d'un risque de blessure.",
+  };
 }
 
 // Insight ELEV : traduit la tendance de charge en une observation textuelle, à partir de règles explicites
@@ -3618,20 +4152,29 @@ function weeklyTrend(values) {
    repos dans le temps, il n'y a donc rien à en dire. */
 function generateElevSideInsights() {
   const weeks = getRecentWeeklyVolumes(5);
-  if (!weeks || weeks.length < 3) return [];
+  const hist = elevHistoryCoverage(weeks.map(w => w.km));
+  // Même seuil que la tendance de charge : sans 4 semaines couvertes et 3 non vides, aucune de ces
+  // observations n'est publiable, puisque toutes comparent une semaine à une moyenne de semaines.
+  if (!hist.enoughForTrend) return [];
   const out = [];
 
   const dTrend = weeklyTrend(weeks.map(w => w.dplus));
   if (dTrend && dTrend.chronic >= 100) { // sous 100 m/sem. de moyenne, un ratio n'a pas de sens
     const signe = dTrend.deltaPct >= 0 ? '+' : '';
-    out.push({
-      key: 'dplus',
+    out.push(makeInsight({
+      id: 'home-dplus-' + dTrend.level,
+      family: 'terrain',
       title: dTrend.level === 'falling' ? 'Dénivelé en retrait'
         : (dTrend.level === 'stable' ? 'Dénivelé stable' : 'Dénivelé en hausse'),
-      text: Math.round(dTrend.acute) + ' m cette semaine, ' + signe + dTrend.deltaPct +
-            ' % par rapport à ta moyenne des ' + weeks.length + ' dernières semaines (' +
-            Math.round(dTrend.chronic) + ' m).',
-    });
+      observation: Math.round(dTrend.acute) + ' m de D+ cette semaine, ' + signe + dTrend.deltaPct + ' % par rapport à ta moyenne.',
+      reference: 'ta moyenne des ' + weeks.length + ' dernières semaines (' + Math.round(dTrend.chronic) + ' m)',
+      delta: dTrend.deltaPct,
+      confidence: hist.nonEmpty >= 4 ? 'high' : 'medium',
+      importance: dTrend.level === 'stable' ? 'context' : 'notable',
+      method: 'Somme du D+ des séances de la semaine, rapportée à la moyenne hebdomadaire de la fenêtre.',
+      window: weeks.length + ' dernières semaines',
+      limits: "Le D+ mesure une exposition au dénivelé, pas une aptitude en montée.",
+    }));
   }
 
   // Sortie longue : le maximum de la semaine face au meilleur des semaines précédentes.
@@ -3642,113 +4185,315 @@ function generateElevSideInsights() {
     s.date >= weeks[0].startISO).map(s => s.distanceKm || 0));
   if (longueSemaine > 0 && longuePrecedente > 0) {
     const ecart = Math.round((longueSemaine / longuePrecedente - 1) * 100);
-    out.push({
-      key: 'longue',
+    out.push(makeInsight({
+      id: 'home-longrun',
+      family: 'effort',
       title: ecart >= 0 ? 'Sortie longue en progression' : 'Sortie longue plus courte',
-      text: longueSemaine.toFixed(1) + ' km cette semaine, contre ' + longuePrecedente.toFixed(1) +
-            ' km au mieux sur les ' + (weeks.length - 1) + ' semaines précédentes.',
-    });
+      observation: 'Ta plus longue sortie de la semaine fait ' + longueSemaine.toFixed(1) + ' km.',
+      reference: 'ton meilleur des ' + (weeks.length - 1) + ' semaines précédentes (' + longuePrecedente.toFixed(1) + ' km)',
+      delta: ecart,
+      confidence: 'high',
+      importance: 'context',
+      method: 'Distance de la plus longue séance de chaque semaine.',
+      window: weeks.length + ' dernières semaines',
+    }));
   }
 
-  return out.slice(0, 2);
+  return out;
 }
 
+/* Observation de charge de l'Accueil. Audit P1-5 / CRED-09 : le texte « rising_fast » conseillait
+   de « surveiller la récupération » — or ELEV ne mesure aucune donnée de récupération. La phrase
+   décrivait donc une chose que le produit ne sait pas lire. Elle est remplacée par ce que les
+   données disent réellement : le volume monte vite par rapport à la moyenne récente.
+
+   Retourne désormais un insight au contrat commun (voir elev-insight.js), pas un objet libre. */
 function generateElevInsight() {
   const trend = getTrainingTrend();
-  if (!trend) return null;
-  const w = trend.weeks; // [S-3, S-2, S-1, S courante], km, du plus ancien au plus récent
-  const texts = {
+  if (!trend || !trend.available) return null;
+  const w = trend.weeks;
+  const textes = {
     rising: {
-      title: 'Progression régulière',
-      text: 'Ton volume augmente progressivement par rapport aux dernières semaines (' + w[0].toFixed(0) + ' → ' + trend.acute.toFixed(0) + ' km).',
+      title: 'Progression régulière du volume',
+      observation: 'Ton volume augmente progressivement : ' + w[0].toFixed(0) + ' km il y a 4 semaines, ' + trend.acute.toFixed(0) + ' km cette semaine.',
+      importance: 'progress',
     },
     rising_fast: {
-      title: 'Hausse importante du volume',
-      text: 'Ta charge récente augmente rapidement (' + trend.acute.toFixed(1) + ' km cette semaine, contre ' + trend.chronic.toFixed(1) + ' km en moyenne). Pense à surveiller la récupération avant d\'ajouter davantage de volume.',
+      title: 'Hausse rapide du volume',
+      observation: trend.acute.toFixed(1) + ' km cette semaine, contre ' + trend.chronic.toFixed(1) + ' km en moyenne sur 4 semaines, soit ' + Math.round((trend.ratio - 1) * 100) + ' % au-dessus.',
+      importance: 'attention',
+      why: "Une hausse de cette ampleur mérite d'être vue, ne serait-ce que pour savoir si elle était voulue.",
     },
     stable: {
-      title: 'Entraînement stable',
-      text: 'Ton volume reste proche de ta moyenne récente (autour de ' + trend.chronic.toFixed(0) + ' km/semaine).',
+      title: 'Volume stable',
+      observation: 'Ton volume reste proche de ta moyenne récente, autour de ' + trend.chronic.toFixed(0) + ' km par semaine.',
+      importance: 'context',
     },
     falling: {
       title: 'Volume en baisse',
-      text: 'Ton volume est inférieur aux semaines précédentes (' + trend.acute.toFixed(1) + ' km, contre ' + trend.chronic.toFixed(1) + ' km en moyenne).',
+      observation: trend.acute.toFixed(1) + ' km cette semaine, contre ' + trend.chronic.toFixed(1) + ' km en moyenne sur 4 semaines.',
+      importance: 'notable',
     },
   };
-  return Object.assign({ level: trend.level }, texts[trend.level]);
+  const t = textes[trend.level];
+  return makeInsight({
+    id: 'home-load-' + trend.level,
+    family: 'load',
+    title: t.title,
+    observation: t.observation,
+    reference: 'ta moyenne des 4 dernières semaines (' + trend.chronic.toFixed(1) + ' km)',
+    delta: trend.ratio != null ? Math.round((trend.ratio - 1) * 100) : null,
+    confidence: trend.nonEmptyWeeks >= 4 ? 'high' : 'medium',
+    importance: t.importance,
+    why: t.why || null,
+    method: trend.method,
+    window: '4 dernières semaines',
+    limits: trend.limits,
+  });
 }
 
-// Profil de performance à 6 axes, calculé à partir des séances des 12 dernières semaines (repères fixes
-// documentés ci-dessous, pas de comparaison à d'autres coureurs — juste une lecture de tes propres données).
-const RADAR_WEEKS = 12;
+/* --------------------------- PROFIL TRAIL — APTITUDE ET EXPOSITION ---------------------------
+   Audit ELEV 2.0, P0-3 / CRED-05 et CRED-06.
+
+   Ce qui n'allait pas : un unique radar « Profil de performance » à 6 axes mélangeait deux choses
+   incomparables. « Montée » et « Descente » notaient le D+ et le D− hebdomadaires face à un repère
+   de 2 200 m — c'est-à-dire un VOLUME d'exposition présenté comme une aptitude. Quelqu'un qui
+   marche lentement 2 200 m de D+ par semaine obtenait 100/100 en « Montée ».
+
+   Décision de l'utilisateur (2026-08-22), après mesure sur ses fichiers réels : séparer en deux
+   groupes explicitement nommés, plutôt que renommer l'ensemble ou tout supprimer.
+
+   GROUPE 1 — APTITUDE : ce que les données permettent RÉELLEMENT de mesurer comme une capacité,
+   c'est-à-dire une vitesse à terrain comparable. Trois axes seulement, et c'est volontaire :
+     · Montée    → VAM médiane sur les segments d'une même bande de pente
+     · Descente  → vitesse médiane sur les segments descendants d'une même bande de pente
+     · Vitesse   → meilleure allure sur terrain roulant
+   Chaque axe porte sa couverture, sa confiance et le nombre de segments qui le fondent. En dessous
+   du minimum de comparabilité (§6.3 : 3 références), l'axe est INDISPONIBLE — jamais 0, un 0
+   voulant dire « mesuré et mauvais », ce qui serait faux.
+
+   GROUPE 2 — EXPOSITION : du volume, nommé comme tel.
+     · Volume · Verticalité · Régularité
+
+   La « Résistance » de l'ancien radar disparaît des deux groupes. Elle comparait la FC moyenne des
+   deux moitiés d'une sortie longue sans aucun contrôle de l'effort externe (pente, vitesse,
+   chaleur) : la littérature citée par l'audit rend cette différence ininterprétable telle quelle.
+   Elle est remplacée, plus bas, par une dérive mesurée à effort externe comparable — publiée
+   uniquement quand ce contrôle est possible. */
+
+const TRAIL_PROFILE_WEEKS = 12;
+
+/* Repères des axes d'aptitude. Ce sont des repères GÉNÉRIQUES de trail, pas des normes : ils
+   servent à placer une valeur sur une échelle lisible, et le libellé de la page le dit. */
+const APTITUDE_BENCHMARKS = {
+  // VAM en montée soutenue : 1200 m/h = très bon niveau amateur, 300 m/h = marche d'ascension.
+  vamMh: { low: 300, high: 1200 },
+  // Vitesse en descente marquée : 4 km/h = descente prudente, 14 km/h = descente engagée.
+  descentKmh: { low: 4, high: 14 },
+  // Allure sur terrain roulant : 8:00/km = 0, 4:00/km = 100 (repère conservé de l'ancien axe).
+  flatPaceSecKm: { low: 480, high: 240 },
+};
+const APTITUDE_MIN_SEGMENTS = 3; // §6.3 — aucune comparaison sous 3 références comparables
+
+function _median(arr) {
+  if (!arr || !arr.length) return null;
+  const a = arr.slice().sort((x, y) => x - y);
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+function _scaleScore(value, low, high) {
+  if (value == null) return null;
+  return clampScore((value - low) / (high - low) * 100);
+}
+
+/* Axe indisponible : porte la RAISON. Sans elle, l'utilisateur ne peut pas savoir s'il lui manque
+   des données ou si le calcul a échoué. */
+function _unavailableAxis(key, label, why, unit) {
+  return { key, label, score: null, available: false, why, unit: unit || null, samples: 0, confidence: 'none', provenance: 'unavailable' };
+}
+
+/* GROUPE 1 — aptitude mesurée à terrain comparable. */
+function computeTrailAptitude(sessions) {
+  const windowStart = addDaysIso(todayISO(), -TRAIL_PROFILE_WEEKS * 7);
+  const recent = (sessions || []).filter(s => s.date >= windowStart);
+  const axes = [];
+
+  // Tous les segments homogènes des séances récentes, une seule fois.
+  const segs = [];
+  recent.forEach(s => { try { terrainSegments(s).forEach(seg => segs.push(seg)); } catch (e) {} });
+
+  // --- Montée : VAM sur les segments de montée soutenue (≥ 8 %), bande la plus représentée.
+  const climbSegs = segs.filter(x => x.dir === 'up' && x.gradePct >= 8 && x.vamMh != null);
+  if (climbSegs.length >= APTITUDE_MIN_SEGMENTS) {
+    const vam = _median(climbSegs.map(x => x.vamMh));
+    axes.push({
+      key: 'montee', label: 'Montée', unit: 'm/h',
+      value: Math.round(vam), score: _scaleScore(vam, APTITUDE_BENCHMARKS.vamMh.low, APTITUDE_BENCHMARKS.vamMh.high),
+      available: true, samples: climbSegs.length, provenance: 'computed',
+      confidence: climbSegs.length >= 6 ? 'high' : 'medium',
+      detail: 'VAM médiane de ' + Math.round(vam) + ' m/h sur ' + climbSegs.length + ' montées de plus de 8 % de pente.',
+      method: 'Vitesse ascensionnelle médiane, segments d\'au moins 3 minutes, pente lissée sur ' + TERRAIN_SMOOTH_DISTANCE_M + ' m.',
+    });
+  } else {
+    axes.push(_unavailableAxis('montee', 'Montée',
+      climbSegs.length ? ('Seulement ' + climbSegs.length + ' montée' + (climbSegs.length > 1 ? 's' : '') + ' exploitable' + (climbSegs.length > 1 ? 's' : '') + ' sur la période — il en faut ' + APTITUDE_MIN_SEGMENTS + '.')
+                       : 'Aucune montée soutenue détectée sur les ' + TRAIL_PROFILE_WEEKS + ' dernières semaines.', 'm/h'));
+  }
+
+  // --- Descente : vitesse sur les segments descendants marqués (≤ −8 %).
+  const downSegs = segs.filter(x => x.dir === 'down' && x.gradePct <= -8 && x.speedKmh != null);
+  if (downSegs.length >= APTITUDE_MIN_SEGMENTS) {
+    const kmh = _median(downSegs.map(x => x.speedKmh));
+    axes.push({
+      key: 'descente', label: 'Descente', unit: 'km/h',
+      value: +kmh.toFixed(1), score: _scaleScore(kmh, APTITUDE_BENCHMARKS.descentKmh.low, APTITUDE_BENCHMARKS.descentKmh.high),
+      available: true, samples: downSegs.length, provenance: 'computed',
+      confidence: downSegs.length >= 6 ? 'medium' : 'low', // jamais « haute » : voir limites ci-dessous
+      detail: 'Vitesse médiane de ' + kmh.toFixed(1) + ' km/h sur ' + downSegs.length + ' descentes de plus de 8 % de pente.',
+      method: 'Vitesse médiane, segments d\'au moins 3 minutes, pente lissée sur ' + TERRAIN_SMOOTH_DISTANCE_M + ' m.',
+      limits: 'La vitesse en descente dépend beaucoup de la technicité du terrain, que le fichier ne décrit pas.',
+    });
+  } else {
+    axes.push(_unavailableAxis('descente', 'Descente',
+      downSegs.length ? ('Seulement ' + downSegs.length + ' descente' + (downSegs.length > 1 ? 's' : '') + ' exploitable' + (downSegs.length > 1 ? 's' : '') + ' — il en faut ' + APTITUDE_MIN_SEGMENTS + '.')
+                      : 'Aucune descente marquée détectée sur les ' + TRAIL_PROFILE_WEEKS + ' dernières semaines.', 'km/h'));
+  }
+
+  // --- Vitesse : meilleure allure sur un tour réellement roulant (D+ et D− < 20 m/km).
+  let bestFlatPace = null, flatLaps = 0;
+  recent.forEach(s => {
+    (s.laps || []).forEach(l => {
+      if (!l.distanceKm || !l.avgPaceSecPerKm) return;
+      if ((l.ascent || 0) / l.distanceKm < 20 && (l.descent || 0) / l.distanceKm < 20) {
+        flatLaps++;
+        if (bestFlatPace == null || l.avgPaceSecPerKm < bestFlatPace) bestFlatPace = l.avgPaceSecPerKm;
+      }
+    });
+  });
+  if (bestFlatPace != null && flatLaps >= APTITUDE_MIN_SEGMENTS) {
+    axes.push({
+      // `unit` volontairement nul : fmtPace() renvoie déjà « 5:24 /km », suffixer l'unité
+      // produisait « 5:24 /km /km ».
+      key: 'vitesse', label: 'Vitesse', unit: null,
+      value: fmtPace(bestFlatPace), score: _scaleScore(bestFlatPace, APTITUDE_BENCHMARKS.flatPaceSecKm.low, APTITUDE_BENCHMARKS.flatPaceSecKm.high),
+      available: true, samples: flatLaps, provenance: 'computed', confidence: 'medium',
+      detail: 'Meilleure allure de ' + fmtPace(bestFlatPace) + ' sur ' + flatLaps + ' tours en terrain roulant.',
+      method: 'Meilleur tour dont le D+ et le D− restent sous 20 m par km.',
+    });
+  } else {
+    axes.push(_unavailableAxis('vitesse', 'Vitesse',
+      flatLaps ? ('Seulement ' + flatLaps + ' tour' + (flatLaps > 1 ? 's' : '') + ' en terrain roulant — il en faut ' + APTITUDE_MIN_SEGMENTS + '.')
+               : 'Aucun tour en terrain roulant identifié sur la période.', '/km'));
+  }
+
+  const available = axes.filter(a => a.available);
+  return {
+    axes, availableCount: available.length,
+    window: TRAIL_PROFILE_WEEKS + ' dernières semaines',
+    /* Un « profil » n'a de sens que si plusieurs axes existent : un seul axe n'est pas un profil,
+       c'est une mesure. Même logique que le seuil de dimensions de l'indice de préparation. */
+    usable: available.length >= 2,
+    unusableWhy: available.length >= 2 ? null
+      : "Il faut au moins deux aptitudes mesurables pour dessiner un profil. Importe des sorties avec du dénivelé pour les alimenter.",
+  };
+}
+
+/* GROUPE 2 — exposition. C'est bien du volume, et le nom le dit. */
+const EXPOSURE_VOL_BENCHMARK = 60;    // km/semaine — repère générique
+const EXPOSURE_DPLUS_BENCHMARK = 2200; // m D+/semaine — repère générique
+function computeTrailExposure(sessions) {
+  const windowStart = addDaysIso(todayISO(), -TRAIL_PROFILE_WEEKS * 7);
+  const recent = (sessions || []).filter(s => s.date >= windowStart);
+  const axes = [];
+
+  const weekKm = {}, weekDplus = {};
+  recent.forEach(s => {
+    const wk = isoWeek(s.date);
+    weekKm[wk] = (weekKm[wk] || 0) + (s.distanceKm || 0);
+    weekDplus[wk] = (weekDplus[wk] || 0) + (s.ascent || 0);
+  });
+  /* Moyenne sur les 12 semaines de la fenêtre, pas sur les seules semaines ACTIVES. L'ancien
+     calcul divisait par le nombre de semaines où l'utilisateur avait couru : s'entraîner une
+     semaine sur quatre donnait donc la même « endurance » que s'entraîner toutes les semaines.
+     Une semaine sans séance à l'intérieur de l'historique connu est une vraie semaine à zéro. */
+  const denom = Math.max(1, Math.min(TRAIL_PROFILE_WEEKS, countIsoWeeksBetween(floorToKnownHistory(windowStart, sessions || []), todayISO())));
+  const sumKm = Object.values(weekKm).reduce((a, b) => a + b, 0);
+  const sumDplus = Object.values(weekDplus).reduce((a, b) => a + b, 0);
+  const hasAny = recent.length > 0;
+
+  axes.push(hasAny
+    ? { key: 'volume', label: 'Volume', unit: 'km/sem.', value: Math.round(sumKm / denom), available: true,
+        score: clampScore((sumKm / denom) / EXPOSURE_VOL_BENCHMARK * 100), provenance: 'computed', confidence: 'high',
+        detail: Math.round(sumKm / denom) + ' km par semaine en moyenne, face à un repère générique de ' + EXPOSURE_VOL_BENCHMARK + ' km.' }
+    : _unavailableAxis('volume', 'Volume', 'Aucune séance sur la période.', 'km/sem.'));
+
+  axes.push(hasAny
+    ? { key: 'verticalite', label: 'Verticalité', unit: 'm/sem.', value: Math.round(sumDplus / denom), available: true,
+        score: clampScore((sumDplus / denom) / EXPOSURE_DPLUS_BENCHMARK * 100), provenance: 'computed', confidence: 'high',
+        detail: Math.round(sumDplus / denom) + ' m de D+ par semaine en moyenne, face à un repère générique de ' + EXPOSURE_DPLUS_BENCHMARK + ' m.' }
+    : _unavailableAxis('verticalite', 'Verticalité', 'Aucune séance sur la période.', 'm/sem.'));
+
+  // Une fenêtre de 12 semaines chevauche 13 semaines ISO selon le jour où elle commence : sans ce
+  // plafond, la page affichait « 13 semaines sur 12 ».
+  const weeksWithSession = Math.min(TRAIL_PROFILE_WEEKS, new Set(recent.map(s => isoWeek(s.date))).size);
+  axes.push((sessions && sessions.length)
+    ? { key: 'regularite', label: 'Régularité', unit: 'sem.', value: weeksWithSession, available: true,
+        score: clampScore(weeksWithSession / TRAIL_PROFILE_WEEKS * 100), provenance: 'computed', confidence: 'high',
+        detail: weeksWithSession + ' semaines sur ' + TRAIL_PROFILE_WEEKS + ' avec au moins une séance.' }
+    : _unavailableAxis('regularite', 'Régularité', 'Aucune séance importée.', 'sem.'));
+
+  return { axes, window: TRAIL_PROFILE_WEEKS + ' dernières semaines' };
+}
+
+/* Dérive cardiaque à EFFORT EXTERNE COMPARABLE — ce qui remplace l'ancienne « Résistance ».
+   Ne compare que des segments de même direction, de pente proche et de vitesse proche : sans ce
+   contrôle, une FC qui monte en fin de sortie peut simplement décrire un terrain devenu plus
+   raide. Publie sa couverture FC et n'est retournée que si le contrôle est réellement possible. */
+function computeEffortDrift(session) {
+  if (!session) return { available: false, why: 'Aucune séance.' };
+  const cov = elevSessionCoverage(session).signals.hr;
+  if (!cov || elevCoverageLevel(cov.ratio) === 'insufficient' || elevCoverageLevel(cov.ratio) === 'none')
+    return { available: false, coverage: cov ? cov.ratio : null, why: "Fréquence cardiaque trop incomplète sur cette séance pour mesurer une dérive." };
+  let segs;
+  try { segs = terrainSegments(session); } catch (e) { return { available: false, why: 'Série inexploitable.' }; }
+  const withHr = segs.filter(x => x.avgHr != null && x.hrCoverage != null && x.hrCoverage >= 0.6);
+  if (withHr.length < 2) return { available: false, coverage: cov.ratio, why: "Pas assez de segments avec une FC exploitable." };
+
+  // Apparie chaque segment de la 2e moitié avec un segment comparable de la 1re moitié.
+  const mid = withHr.length / 2;
+  const early = withHr.slice(0, Math.floor(mid)), late = withHr.slice(Math.ceil(mid));
+  const pairs = [];
+  late.forEach(l => {
+    const match = early.find(e => terrainSegmentsComparable(e, l).comparable &&
+      Math.abs(e.speedKmh - l.speedKmh) / Math.max(0.1, e.speedKmh) <= 0.15);
+    if (match) pairs.push({ early: match, late: l, driftPct: (l.avgHr - match.avgHr) / match.avgHr * 100 });
+  });
+  if (pairs.length < 2)
+    return { available: false, coverage: cov.ratio, why: "Aucune paire de segments réellement comparables (même direction, pente et vitesse proches) sur cette sortie." };
+
+  const drift = _median(pairs.map(p => p.driftPct));
+  return {
+    available: true, driftPct: +drift.toFixed(1), pairs: pairs.length, coverage: cov.ratio,
+    method: 'FC moyenne de segments de fin de sortie comparée à des segments de début de même direction, de pente proche (±4 points) et de vitesse proche (±15 %).',
+    limits: "La dérive dépend aussi de la chaleur, de l'hydratation et de la nutrition, qu'ELEV ne mesure pas. Elle décrit cette sortie, pas une aptitude.",
+  };
+}
+
+/* Compatibilité : `computePerformanceRadar` reste appelée par du code existant. Elle délègue
+   désormais aux deux groupes ci-dessus et n'invente plus de note d'aptitude à partir du volume.
+   L'ancien axe « resistance » n'est plus produit — le retourner à null serait mentir sur son
+   existence, et le retourner tel quel serait conserver le défaut. */
 const RADAR_AXES = [
-  { key:'endurance', label:'Endurance' },
-  { key:'montee', label:'Montée' },
-  { key:'descente', label:'Descente' },
-  { key:'vitesse', label:'Vitesse' },
-  { key:'resistance', label:'Résistance' },
-  { key:'regularite', label:'Régularité' },
+  { key: 'montee', label: 'Montée' },
+  { key: 'descente', label: 'Descente' },
+  { key: 'vitesse', label: 'Vitesse' },
 ];
 function clampScore(v) { return v == null ? null : Math.round(Math.max(0, Math.min(100, v))); }
 function computePerformanceRadar(sessions) {
-  const windowStart = addDaysIso(todayISO(), -RADAR_WEEKS * 7);
-  const recent = sessions.filter(s => s.date >= windowStart);
-  const notes = [];
-
-  // Endurance : volume hebdomadaire moyen sur les semaines actives. Repère : 60 km/semaine = 100.
-  const weekKm = {};
-  recent.forEach(s => { const wk = isoWeek(s.date); weekKm[wk] = (weekKm[wk]||0) + (s.distanceKm||0); });
-  const activeWeeks = Object.values(weekKm);
-  const endurance = activeWeeks.length ? clampScore((activeWeeks.reduce((a,b)=>a+b,0) / activeWeeks.length) / 60 * 100) : null;
-  if (endurance == null) notes.push('Endurance : pas assez de séances récentes.');
-
-  // Montée / Descente : dénivelé positif ou négatif hebdomadaire moyen. Repère : 2200 m/semaine = 100.
-  const weekDplus = {}, weekDmoins = {};
-  recent.forEach(s => {
-    const wk = isoWeek(s.date);
-    weekDplus[wk] = (weekDplus[wk]||0) + (s.ascent||0);
-    weekDmoins[wk] = (weekDmoins[wk]||0) + (s.descent||0);
-  });
-  const dplusVals = Object.values(weekDplus), dmoinsVals = Object.values(weekDmoins);
-  const montee = dplusVals.length ? clampScore((dplusVals.reduce((a,b)=>a+b,0) / dplusVals.length) / 2200 * 100) : null;
-  const descente = dmoinsVals.length ? clampScore((dmoinsVals.reduce((a,b)=>a+b,0) / dmoinsVals.length) / 2200 * 100) : null;
-  if (montee == null) notes.push('Montée : pas assez de séances récentes.');
-  if (descente == null) notes.push('Descente : pas assez de séances récentes.');
-
-  // Vitesse : meilleure allure atteinte sur un km roulant (D+ et D- < 20 m/km, seuil déjà utilisé
-  // pour distinguer terrain roulant/montée en page Activités). Repère : 4:00/km = 100, 8:00/km = 0.
-  let bestFlatPace = null;
-  recent.forEach(s => {
-    (s.laps||[]).forEach(l => {
-      if (!l.distanceKm || !l.avgPaceSecPerKm) return;
-      const dplusKm = (l.ascent||0)/l.distanceKm, dmoinsKm = (l.descent||0)/l.distanceKm;
-      if (dplusKm < 20 && dmoinsKm < 20) { if (bestFlatPace == null || l.avgPaceSecPerKm < bestFlatPace) bestFlatPace = l.avgPaceSecPerKm; }
-    });
-  });
-  const vitesse = bestFlatPace != null ? clampScore((480 - bestFlatPace) / (480 - 240) * 100) : null;
-  if (vitesse == null) notes.push('Vitesse : pas de split sur terrain roulant identifié récemment.');
-
-  // Résistance : dérive cardiaque sur les sorties longues (≥1h30, courbe FC disponible) — écart entre la FC
-  // moyenne de la 2e moitié et celle de la 1re moitié. Repère : 0% de dérive = 100, 15%+ = 0.
-  const drifts = [];
-  recent.forEach(s => {
-    if (!s.durationS || s.durationS < 5400 || !s.series || s.series.length < 20) return;
-    const withHr = s.series.filter(p => p.hr != null);
-    if (withHr.length < 20) return;
-    const mid = Math.floor(withHr.length/2);
-    const firstHalf = withHr.slice(0, mid), secondHalf = withHr.slice(mid);
-    const avg = arr => arr.reduce((a,p)=>a+p.hr,0) / arr.length;
-    const h1 = avg(firstHalf), h2 = avg(secondHalf);
-    if (h1 > 0) drifts.push((h2 - h1) / h1 * 100);
-  });
-  const resistance = drifts.length ? clampScore(100 - (drifts.reduce((a,b)=>a+b,0)/drifts.length) / 15 * 100) : null;
-  if (resistance == null) notes.push('Résistance : pas de sortie longue avec FC exploitable récemment.');
-
-  // Régularité : proportion des 12 dernières semaines avec au moins une séance enregistrée.
-  const weeksWithSession = new Set(recent.map(s => isoWeek(s.date))).size;
-  const regularite = clampScore(weeksWithSession / RADAR_WEEKS * 100);
-
-  return { scores: { endurance, montee, descente, vitesse, resistance, regularite }, notes };
+  const apt = computeTrailAptitude(sessions);
+  const scores = {};
+  apt.axes.forEach(a => { scores[a.key] = a.score; });
+  return { scores, notes: apt.axes.filter(a => !a.available).map(a => a.label + ' : ' + a.why), aptitude: apt };
 }
 
 // Volume et D+ par semaine sur une fenêtre récente, limitée à l'historique réellement disponible :
@@ -5139,51 +5884,136 @@ function groupedBarChartSvg(title, weeks, series, opts) {
   '</svg></div>';
 }
 
-function radarChartSvg(axes, scores) {
-  const id = 'radar' + (_elevChartId++);
-  const w = 340, h = 340, cx = w/2, cy = h/2, r = 120;
-  const n = axes.length;
-  const angle = i => -Math.PI/2 + i * (2*Math.PI/n);
-  const pt = (i, frac) => [cx + Math.cos(angle(i)) * r * frac, cy + Math.sin(angle(i)) * r * frac];
-  // Anneaux de repère à 25/50/75/100% — bandes alternées très discrètes entre chaque niveau pour
-  // donner de la profondeur (comme des courbes de niveau), plutôt que de simples traits plats.
-  // L'anneau extérieur (100%) est le seul à ressortir davantage : c'est la limite du repère.
-  let rings = '';
-  const levels = [0.25, 0.5, 0.75, 1];
-  levels.forEach((frac, li) => {
-    const poly = axes.map((_, i) => pt(i, frac).join(',')).join(' ');
-    if (li % 2 === 1) rings += '<polygon points="'+poly+'" fill="rgba(244,247,245,.015)" stroke="none"/>';
-    rings += '<polygon points="'+poly+'" fill="none" stroke="var(--border)" stroke-width="'+(frac===1?1.4:1)+'" opacity="'+(frac===1?0.9:0.55)+'"/>';
+/* Radar des aptitudes. Deux changements de fond par rapport à la version précédente :
+
+   1. UN AXE INDISPONIBLE N'EST PLUS TRACÉ À ZÉRO. Le code faisait `scores[ax.key] ?? 0`, si bien
+      qu'une aptitude jamais mesurée dessinait un sommet écrasé au centre — visuellement identique
+      à une aptitude mesurée et mauvaise. C'est l'inverse de la règle du produit : une donnée
+      absente n'est pas un résultat faible. Le polygone ne relie désormais que les axes réellement
+      disponibles, et les autres portent un rayon pointillé plus la mention « indisponible ».
+
+   2. LE TITRE EST FOURNI PAR L'APPELANT. « Profil de performance » était écrit en dur ici, alors
+      que l'audit (P0-3) demande la disparition de ce terme.
+
+   Accepte les axes riches de computeTrailAptitude (avec `available`, `score`, `value`, `unit`).
+   Signature rétrocompatible : `radarChartSvg(axes, scores)` fonctionne toujours. */
+function radarChartSvg(axes, scoresOrOpts, maybeOpts) {
+  const legacyScores = (scoresOrOpts && !scoresOrOpts.title && !scoresOrOpts.subtitle) ? scoresOrOpts : null;
+  const opts = maybeOpts || (legacyScores ? {} : (scoresOrOpts || {}));
+  const rich = axes.map(ax => {
+    if (legacyScores) {
+      const sc = legacyScores[ax.key];
+      return { key: ax.key, label: ax.label, score: sc == null ? null : sc, available: sc != null, unit: ax.unit || null, value: null, why: null };
+    }
+    return { key: ax.key, label: ax.label, score: ax.score, available: ax.available !== false && ax.score != null, unit: ax.unit || null, value: ax.value != null ? ax.value : null, why: ax.why || null };
   });
-  // Point le plus faible mis en évidence (même logique que "point faible" ailleurs sur le site) —
-  // jamais alarmant (accent-light, pas rouge), juste un repère visuel là où progresser en priorité.
+
+  const id = 'radar' + (_elevChartId++);
+  const w = 340, h = 340, cx = w / 2, cy = h / 2, r = 120;
+  const n = rich.length;
+  if (!n) return '';
+  const angle = i => -Math.PI / 2 + i * (2 * Math.PI / n);
+  const pt = (i, frac) => [cx + Math.cos(angle(i)) * r * frac, cy + Math.sin(angle(i)) * r * frac];
+
+  let rings = '';
+  [0.25, 0.5, 0.75, 1].forEach((frac, li) => {
+    const poly = rich.map((_, i) => pt(i, frac).join(',')).join(' ');
+    if (li % 2 === 1) rings += '<polygon points="' + poly + '" fill="rgba(244,247,245,.015)" stroke="none"/>';
+    rings += '<polygon points="' + poly + '" fill="none" stroke="var(--border)" stroke-width="' + (frac === 1 ? 1.4 : 1) + '" opacity="' + (frac === 1 ? 0.9 : 0.55) + '"/>';
+  });
+
+  // Point le plus faible mis en évidence — uniquement parmi les axes RÉELLEMENT mesurés.
   let weakKey = null, weakVal = Infinity;
-  axes.forEach(ax => { const v = scores[ax.key]; if (v != null && v < weakVal) { weakVal = v; weakKey = ax.key; } });
+  rich.forEach(ax => { if (ax.available && ax.score < weakVal) { weakVal = ax.score; weakKey = ax.key; } });
+
   let spokes = '', labels = '';
-  axes.forEach((ax, i) => {
+  rich.forEach((ax, i) => {
     const [x, y] = pt(i, 1);
     const isWeak = ax.key === weakKey;
-    spokes += '<line x1="'+cx+'" y1="'+cy+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--border)" stroke-width="1"/>';
+    spokes += '<line x1="' + cx + '" y1="' + cy + '" x2="' + x.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="var(--border)" stroke-width="1"' +
+      (ax.available ? '' : ' stroke-dasharray="3 4" opacity="0.6"') + '/>';
     const [lx, ly] = pt(i, 1.16);
-    const score = scores[ax.key];
-    labels += '<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" font-size="12" fill="'+(isWeak?'var(--warn)':'var(--text)')+'" font-weight="'+(isWeak?'700':'400')+'" text-anchor="middle" dominant-baseline="middle">'+ax.label+(score!=null?' ('+score+')':' (n/d)')+'</text>';
+    const suffix = ax.available
+      ? (ax.value != null ? ' (' + ax.value + (ax.unit ? ' ' + ax.unit : '') + ')' : ' (' + ax.score + ')')
+      : ' — indisponible';
+    labels += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" class="c-tick" fill="' +
+      (ax.available ? (isWeak ? 'var(--warn)' : 'var(--text)') : 'var(--muted)') + '" font-weight="' + (isWeak ? '700' : '400') +
+      '" text-anchor="middle" dominant-baseline="middle">' + escapeHtml(ax.label) + escapeHtml(suffix) + '</text>';
   });
-  const dataPts = axes.map((ax, i) => pt(i, (scores[ax.key] ?? 0) / 100));
-  const dataPoly = dataPts.map(p => p.join(',')).join(' ');
-  const dots = axes.map((ax, i) => {
-    const [x, y] = dataPts[i];
-    const score = scores[ax.key];
-    const tip = escapeHtml(ax.label + ' : ' + (score!=null ? score+'/100' : 'donnée insuffisante'));
-    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="10" fill="transparent" data-tooltip="'+tip+'"/>' +
-      '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="4" fill="var(--accent-light)" stroke="var(--panel)" stroke-width="1.5" style="pointer-events:none;"/>';
+
+  // Le tracé ne relie QUE les axes disponibles. Avec deux axes disponibles, c'est un segment —
+  // c'est visuellement pauvre, et c'est exactement ce que la donnée permet de dire.
+  const availIdx = rich.map((ax, i) => ax.available ? i : -1).filter(i => i >= 0);
+  const dataPts = availIdx.map(i => pt(i, (rich[i].score || 0) / 100));
+  const shape = dataPts.length >= 3
+    ? '<polygon points="' + dataPts.map(p2 => p2.join(',')).join(' ') + '" fill="url(#' + id + 'Fill)" stroke="var(--chart-line)" stroke-width="2.5"/>'
+    : (dataPts.length === 2
+      ? '<line x1="' + dataPts[0][0].toFixed(1) + '" y1="' + dataPts[0][1].toFixed(1) + '" x2="' + dataPts[1][0].toFixed(1) + '" y2="' + dataPts[1][1].toFixed(1) + '" stroke="var(--chart-line)" stroke-width="2.5"/>'
+      : '');
+
+  const dots = availIdx.map((i, k) => {
+    const [x, y] = dataPts[k];
+    const ax = rich[i];
+    const tip = escapeHtml(ax.label + ' : ' + (ax.value != null ? ax.value + (ax.unit ? ' ' + ax.unit : '') + ' (' + ax.score + '/100)' : ax.score + '/100'));
+    return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="10" fill="transparent" data-tooltip="' + tip + '"/>' +
+      '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="4" fill="var(--accent-light)" stroke="var(--panel)" stroke-width="1.5" style="pointer-events:none;"/>';
   }).join('');
-  return '<div class="chart-box radar-box"><h3>Profil de performance <small style="font-weight:400;">(estimé sur les '+RADAR_WEEKS+' dernières semaines)</small></h3>' +
-    '<svg viewBox="0 0 '+w+' '+h+'">' +
-    '<defs><radialGradient id="'+id+'Fill" cx="50%" cy="50%" r="65%"><stop offset="0%" stop-color="var(--accent-light)" stop-opacity="0.38"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0.08"/></radialGradient></defs>' +
-    rings + spokes +
-    '<polygon points="'+dataPoly+'" fill="url(#'+id+'Fill)" stroke="var(--chart-line)" stroke-width="2.5"/>' +
-    dots + labels +
+
+  // Alternative textuelle : le radar est une image, ses valeurs doivent exister en texte (A11Y-01).
+  const alt = rich.map(ax => ax.label + ' : ' + (ax.available ? (ax.value != null ? ax.value + (ax.unit ? ' ' + ax.unit : '') : ax.score + ' sur 100') : 'indisponible')).join('. ');
+
+  return '<div class="chart-box radar-box">' +
+    (opts.title ? '<h3>' + escapeHtml(opts.title) + (opts.subtitle ? ' <small style="font-weight:400;">' + escapeHtml(opts.subtitle) + '</small>' : '') + '</h3>' : '') +
+    '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + escapeHtml(alt) + '">' +
+    '<defs><radialGradient id="' + id + 'Fill" cx="50%" cy="50%" r="65%"><stop offset="0%" stop-color="var(--accent-light)" stop-opacity="0.38"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0.08"/></radialGradient></defs>' +
+    rings + spokes + shape + dots + labels +
     '</svg></div>';
+}
+
+/* --------------------------- PROFIL TRAIL (rendu complet) ---------------------------
+   Rend les deux groupes décidés avec l'utilisateur : aptitude mesurée d'un côté, exposition de
+   l'autre, chacun nommé pour ce qu'il est. Un seul point d'entrée, pour que le vocabulaire ne
+   puisse pas diverger entre deux pages si le composant est réutilisé plus tard. */
+function trailProfileHtml(sessions) {
+  const apt = computeTrailAptitude(sessions);
+  const exp = computeTrailExposure(sessions);
+
+  const aptBody = apt.usable
+    ? radarChartSvg(apt.axes, { title: null }) +
+      '<ul class="axis-list">' + apt.axes.map(a =>
+        '<li class="axis-item' + (a.available ? '' : ' axis-item--na') + '">' +
+          '<span class="axis-name">' + escapeHtml(a.label) + '</span>' +
+          (a.available
+            ? '<span class="axis-val">' + escapeHtml(String(a.value)) + (a.unit ? ' ' + escapeHtml(a.unit) : '') + '</span>' +
+              '<span class="axis-detail">' + escapeHtml(a.detail) + '</span>' +
+              elevQualityBadgeHtml({ provenance: a.provenance, confidence: a.confidence })
+            : '<span class="axis-val na"><span class="dq-sym" aria-hidden="true">—</span> Indisponible</span>' +
+              '<span class="axis-detail">' + escapeHtml(a.why) + '</span>') +
+        '</li>').join('') + '</ul>'
+    : '<div class="empty">' + escapeHtml(apt.unusableWhy) + '</div>' +
+      '<ul class="axis-list">' + apt.axes.map(a =>
+        '<li class="axis-item axis-item--na"><span class="axis-name">' + escapeHtml(a.label) + '</span>' +
+        '<span class="axis-val na"><span class="dq-sym" aria-hidden="true">—</span> Indisponible</span>' +
+        '<span class="axis-detail">' + escapeHtml(a.why || '') + '</span></li>').join('') + '</ul>';
+
+  return '<section class="card profile-block">' +
+      '<h2>Aptitude trail <small style="font-weight:400;">mesurée à terrain comparable · ' + escapeHtml(apt.window) + '</small></h2>' +
+      '<p class="hint">Ces trois mesures comparent ta <strong>vitesse à pente comparable</strong>. Elles ne dépendent pas du volume que tu as parcouru : courir davantage ne les fait pas monter.</p>' +
+      aptBody +
+    '</section>' +
+    '<section class="card profile-block">' +
+      '<h2>Exposition trail <small style="font-weight:400;">' + escapeHtml(exp.window) + '</small></h2>' +
+      '<p class="hint">Ces trois valeurs décrivent <strong>ce que tu as parcouru</strong>, pas ce dont tu es capable. Un volume élevé est une exposition élevée, pas une aptitude.</p>' +
+      '<ul class="axis-list">' + exp.axes.map(a =>
+        '<li class="axis-item' + (a.available ? '' : ' axis-item--na') + '">' +
+          '<span class="axis-name">' + escapeHtml(a.label) + '</span>' +
+          (a.available
+            ? '<span class="axis-val">' + escapeHtml(String(a.value)) + (a.unit ? ' ' + escapeHtml(a.unit) : '') + '</span>' +
+              '<span class="axis-detail">' + escapeHtml(a.detail) + '</span>'
+            : '<span class="axis-val na"><span class="dq-sym" aria-hidden="true">—</span> Indisponible</span>' +
+              '<span class="axis-detail">' + escapeHtml(a.why || '') + '</span>') +
+        '</li>').join('') + '</ul>' +
+    '</section>';
 }
 
 // Info-bulle interactive au survol pour les graphiques SVG (remplace les <title> natifs, peu lisibles

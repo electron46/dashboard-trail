@@ -19,6 +19,9 @@
      depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
      une empreinte non verifiee ici serait une fausse garantie. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 <style>
   body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
@@ -30,6 +33,7 @@
   .onboard-steps .dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:background var(--dur-base) var(--ease-standard),box-shadow var(--dur-base) var(--ease-standard);}
   .onboard-steps .dot.done{background:var(--accent);}
   .onboard-steps .dot.current{background:var(--accent-light);box-shadow:0 0 0 3px var(--accent-soft);}
+  .onboard-value{margin:0 0 8px;color:var(--text);font-size:var(--text-md);}
   .onboard-steps span{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-left:4px;}
   .onboard-eyebrow{font-size:.72rem;color:var(--accent-light);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:6px;}
   .onboard-title{font-family:var(--font-display);font-size:1.5rem;font-weight:700;margin:0 0 6px;letter-spacing:-.01em;}
@@ -50,7 +54,10 @@
 <body>
 
 <section class="card onboard-card">
-  <div class="onboard-steps" id="stepDots" aria-hidden="true"></div>
+  <!-- Audit §4.8 : les pastilles portaient l'étape ET un texte « Étape N sur 3 » le répétait
+       juste en dessous. Une seule indication demeure, et elle est désormais annoncée aux lecteurs
+       d'écran au lieu d'être masquée. -->
+  <div class="onboard-steps" id="stepDots" role="status" aria-live="polite"></div>
 
   <!-- Étape 1 : choix du mode -->
   <div id="step1">
@@ -76,7 +83,6 @@
 
   <!-- Étape 2 : profil minimum -->
   <div id="step2" style="display:none;">
-    <div class="onboard-eyebrow">Étape 2 sur 3</div>
     <h1 class="onboard-title">Comment veux-tu qu'on t'appelle ?</h1>
     <p class="onboard-sub">Facultatif — tu peux compléter le reste de ton profil plus tard.</p>
     <label class="field">Prénom ou nom
@@ -91,9 +97,11 @@
 
   <!-- Étape 3 : première activité -->
   <div id="step3" style="display:none;">
-    <div class="onboard-eyebrow">Étape 3 sur 3</div>
     <h1 class="onboard-title">Importe ta première activité</h1>
-    <p class="onboard-sub">Un fichier .fit exporté de ta montre suffit pour voir tes premières données. Tu peux aussi explorer l'app d'abord.</p>
+    <!-- Phrase de valeur demandée par l'audit (§4.8) : dire ce qu'ELEV FAIT de ce fichier avant de
+         le demander. Sans elle, l'étape se lit comme une formalité administrative. -->
+    <p class="onboard-value">ELEV lit le terrain de ta sortie et en tire quelques observations liées à ton objectif — pas un mur de graphiques.</p>
+    <p class="onboard-sub">Un fichier .fit exporté de ta montre suffit. Tu peux aussi explorer l'app d'abord.</p>
     <div class="onboard-actions">
       <a class="btn primary" href="historique.html?openImport=1" id="step3Import">Importer un fichier .fit</a>
       <button type="button" class="btn ghost" id="step3Skip">Découvrir sans importer</button>
@@ -117,8 +125,10 @@ function currentStep() {
 function showStep(n) {
   [1, 2, 3].forEach(i => { document.getElementById('step' + i).style.display = (i === n) ? 'block' : 'none'; });
   try { localStorage.setItem(STEP_KEY, String(n)); } catch (e) {}
+  // Les pastilles sont décoratives, le texte porte l'information — d'où aria-hidden sur les unes
+  // et pas sur l'autre, dans un conteneur annoncé en aria-live.
   document.getElementById('stepDots').innerHTML = [1, 2, 3].map(i =>
-    '<span class="dot ' + (i < n ? 'done' : (i === n ? 'current' : '')) + '"></span>'
+    '<span class="dot ' + (i < n ? 'done' : (i === n ? 'current' : '')) + '" aria-hidden="true"></span>'
   ).join('') + '<span>Étape ' + n + ' sur 3</span>';
 }
 
