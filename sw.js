@@ -24,11 +24,18 @@
 
    STRATÉGIE DE CACHE — délibérément simple, un défaut de cache étant plus
    coûteux qu'un défaut d'optimisation :
-     - navigations (documents HTML) : RÉSEAU D'ABORD, cache en secours. C'est ce
-       qui évite le piège classique d'une PWA figée sur une version ancienne :
-       tant qu'il y a du réseau, l'utilisateur voit toujours le code à jour.
-     - ressources internes (CSS, JS, images, manifeste) : CACHE D'ABORD, avec
-       mise à jour en arrière-plan. Elles sont versionnées par CACHE_NAME.
+     - navigations (documents HTML) : RÉSEAU D'ABORD, cache en secours.
+     - CODE APPLICATIF (.js, .css) : RÉSEAU D'ABORD également, cache en secours.
+       C'était initialement du cache-d'abord, et c'était une erreur : le cache
+       n'étant rafraîchi qu'APRÈS avoir servi, toute modification d'app.js ou de
+       style.css laissait le premier chargement exécuter l'ANCIENNE version. Il
+       fallait recharger deux fois pour voir un correctif — et dans un projet sans
+       build, où CACHE_NAME se met à jour à la main, cette version finit par être
+       oubliée et l'utilisateur reste sur du code périmé sans comprendre pourquoi.
+       Le coût est nul hors ligne (le cache prend le relais) et se limite en ligne
+       à une requête conditionnelle par fichier.
+     - médias et manifeste (images, icônes, .webp) : CACHE D'ABORD. Ceux-là ne
+       changent pas silencieusement et pèsent lourd.
      - tout le reste (tuiles OSM, Supabase, CDN, polices Google) : RÉSEAU SEUL,
        jamais mis en cache.
 
@@ -36,7 +43,7 @@
    l'activation, et `clients.claim()` fait prendre la main immédiatement.
    ============================================================================= */
 
-const CACHE_NAME = 'elev-v1';
+const CACHE_NAME = 'elev-v2';
 
 /* Coquille applicative. Volontairement explicite plutôt que découverte
    dynamiquement : on sait exactement ce qui est stocké. */
@@ -130,7 +137,26 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // --- Ressources internes : cache d'abord, rafraîchi en arrière-plan.
+  /* --- Code applicatif : réseau d'abord, cache en secours.
+     Un fichier .js ou .css périmé ne dégrade pas l'application, il la CASSE — et de façon
+     invisible, puisque la page s'affiche normalement en exécutant l'ancienne logique. */
+  const estCodeApplicatif = /\.(?:js|css)$/i.test(url.pathname);
+  if (estCodeApplicatif) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      try {
+        const frais = await fetch(req);
+        if (frais && frais.status === 200) cache.put(req, frais.clone());
+        return frais;
+      } catch (e) {
+        const enCache = await cache.match(req);
+        return enCache || new Response('', { status: 504 });
+      }
+    })());
+    return;
+  }
+
+  // --- Médias et manifeste : cache d'abord, rafraîchi en arrière-plan.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
     const enCache = await cache.match(req);

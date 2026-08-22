@@ -2322,12 +2322,20 @@ html[data-theme="light"] .map-subdued .leaflet-tile-pane{filter:none;}
   display:flex;align-items:center;justify-content:center;
   color:var(--data-unavailable);font-size:var(--text-xl);
 }
-/* Sous-score indisponible : une trame, jamais une barre à zéro. */
-.goal-subscore-fill--na{
-  width:100%;opacity:.25;
-  background:repeating-linear-gradient(135deg,var(--border-strong) 0 4px,transparent 4px 8px);
+/* Sous-score indisponible : PAS de barre du tout.
+   La règle précédente posait une trame sur 100 % de la piste — elle se lisait donc comme un score
+   maximal, ce qui est le contresens exact d'une donnée absente. Une barre à zéro serait tout aussi
+   faux (« mesuré et mauvais »). La ligne cesse d'être une jauge et devient une phrase. */
+.goal-subscore-row--na{
+  grid-template-columns:minmax(90px,auto) 1fr;
+  align-items:baseline;
 }
-.goal-subscore-val.na{font-family:var(--font-sans);font-size:var(--text-2xs);color:var(--data-unavailable);}
+.goal-subscore-na{
+  display:flex;gap:6px;align-items:baseline;
+  font-size:var(--text-xs);color:var(--data-unavailable);
+  min-width:0;
+}
+.goal-subscore-na .dq-sym{flex:0 0 auto;}
 .goal-scope-note{margin-top:12px;display:grid;gap:8px;}
 .goal-scope-note .partial-note{margin:0;}
 .goal-scope-note [data-divergence]{color:var(--warn);}
@@ -2373,3 +2381,20 @@ html[data-theme="light"] .map-subdued .leaflet-tile-pane{filter:none;}
   font-size:var(--text-sm);color:var(--text);
 }
 .watch-list .dq-sym{color:var(--warn);flex:0 0 auto;}
+
+/* Sous-score non calculable, repli de l'Accueil : une phrase, pas une jauge (ni 0 %, ni 100 %). */
+.obj-sub-row--na{grid-template-columns:minmax(80px,auto) 1fr;align-items:baseline;}
+.obj-sub-na{
+  display:flex;gap:6px;align-items:baseline;min-width:0;
+  font-size:var(--text-2xs);color:var(--data-unavailable);
+}
+.obj-sub-na .dq-sym{flex:0 0 auto;}
+
+/* Hero de l'objectif quand l'indice n'est pas calculable : on garde la place et la hiérarchie du
+   bloc chiffré, sans afficher de chiffre. Le libellé fort remplace la valeur dominante. */
+.objective-readiness--na{display:flex;flex-direction:column;gap:2px;margin-top:8px;}
+.objective-readiness--na .l-strong{
+  font-family:var(--font-display);font-size:var(--text-lg);font-weight:700;color:var(--warn);
+  line-height:1.2;
+}
+.objective-readiness--na .l{font-size:var(--text-xs);color:var(--muted);}

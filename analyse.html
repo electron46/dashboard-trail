@@ -227,9 +227,14 @@ function arrowFor(pct) { return pct == null ? '' : '<span class="arrow">' + (pct
 // nombre exact (3) est un seuil raisonnable, pas une règle statistique stricte.
 const TREND_MIN_WEEKS = 3;
 
-function kpiComparisonSub(deltaPct, previous, suffix) {
-  if (!previous) return 'Comparaison indisponible';
-  if (deltaPct == null) return 'Comparaison indisponible';
+/* Quand la référence n'est pas comparable, le bandeau au-dessus de la rangée l'explique UNE fois,
+   avec son chiffre. Répéter « Comparaison indisponible » sous chacune des six tuiles ajoutait six
+   fois le même signal — et sous deux formulations différentes pour une cause identique, ce qui
+   laissait croire à deux problèmes distincts. Les tuiles se taisent donc et laissent lire la
+   valeur, qui reste exacte. */
+function kpiComparisonSub(deltaPct, previous, suffix, comparable) {
+  if (comparable === false) return '';
+  if (!previous || deltaPct == null) return 'Comparaison indisponible';
   return arrowFor(deltaPct) + fmtPctDelta(deltaPct) + ' ' + suffix;
 }
 
@@ -254,22 +259,22 @@ function renderKpis(cmp) {
   const countDelta = cmp.comparable && prev ? (c.count - prev.count) : null;
   const cards = [
     { icon:'route', label:'Distance totale', value: fmtNum(c.distanceKm,' km',1),
-      sub: kpiComparisonSub(d.distanceKm, prev, 'vs période précédente'),
+      sub: kpiComparisonSub(d.distanceKm, prev, 'vs période précédente', cmp.comparable),
       status: d.distanceKm!=null && d.distanceKm>=0 ? 'ok' : null },
     { icon:'mountain-snow', label:'D+', value: fmtNum(c.ascent,' m',0),
-      sub: kpiComparisonSub(d.ascent, prev, 'vs période précédente'),
+      sub: kpiComparisonSub(d.ascent, prev, 'vs période précédente', cmp.comparable),
       status: d.ascent!=null && d.ascent>=0 ? 'ok' : null },
     { icon:'clock', label:'Durée totale', value: fmtDuration(c.durationS),
-      sub: kpiComparisonSub(d.durationS, prev, 'vs période précédente'),
+      sub: kpiComparisonSub(d.durationS, prev, 'vs période précédente', cmp.comparable),
       status: d.durationS!=null && d.durationS>=0 ? 'ok' : null },
     { icon:'trending-up', label:'VAM moyenne', value: c.vamAvg!=null ? c.vamAvg+' m/h' : null,
-      sub: c.vamAvg!=null ? kpiComparisonSub(d.vamAvg, prev, 'vs période précédente') : 'Aucune montée fiable détectée',
+      sub: c.vamAvg!=null ? kpiComparisonSub(d.vamAvg, prev, 'vs période précédente', cmp.comparable) : 'Aucune montée fiable détectée',
       status: d.vamAvg!=null && d.vamAvg>=0 ? 'ok' : null },
     { icon:'heart-pulse', label:'FC moyenne', value: c.avgHr!=null ? c.avgHr+' bpm' : null,
-      sub: c.avgHr!=null ? (hrDelta!=null ? ((hrDelta>=0?'+':'')+hrDelta+' bpm vs période précédente') : 'Historique précédent incomplet') : 'Non disponible',
+      sub: c.avgHr!=null ? (hrDelta!=null ? ((hrDelta>=0?'+':'')+hrDelta+' bpm vs période précédente') : '') : 'Non disponible',
       status: null },
     { icon:'flag', label:'Séances', value: String(c.count),
-      sub: countDelta!=null ? ((countDelta>=0?'+':'')+countDelta+' vs période précédente') : 'Historique précédent incomplet',
+      sub: countDelta!=null ? ((countDelta>=0?'+':'')+countDelta+' vs période précédente') : '',
       status: countDelta!=null && countDelta>=0 ? 'ok' : null },
   ];
   grid.innerHTML = cards.map(cd => '<div class="kpi-card">' +
