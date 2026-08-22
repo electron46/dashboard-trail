@@ -61,7 +61,7 @@
     <a href="#navigation">Navigation</a>
     <a href="#surfaces">Surfaces</a>
     <a href="#donnees">Données</a>
-    <a href="#etats">États applicatifs</a>
+    <a href="#etats">États applicatifs</a><a href="#confiance">Confiance</a><a href="#insight">Insight</a><a href="#terrain">Terrain</a>
     <a href="#formulaires">Formulaires</a>
     <a href="#regles">Règles transversales</a>
   </nav>
@@ -268,6 +268,114 @@
   </section>
 
   <!-- ============================== FORMULAIRES ============================== -->
+  <!-- ============================================================================================
+       CONFIANCE ET TERRAIN — vocabulaire ajouté par ELEV 2.0 (audit du 22 août 2026, §10).
+       Ces composants existent parce que le produit affichait des conclusions sans jamais dire sur
+       quoi elles reposaient. Ils sont donc moins une nouveauté visuelle qu'un contrat.
+       ============================================================================================ -->
+  <section class="doc-block" id="confiance">
+    <h2>Confiance et qualité de la donnée</h2>
+    <p class="doc-lede">
+      Trois échelles <strong>distinctes</strong>, qu'il ne faut pas confondre :
+      la <strong>provenance</strong> (d'où sort le nombre), la <strong>couverture</strong> (sur quelle part
+      de la séance il est défini) et la <strong>confiance</strong> (quel crédit accorder à la conclusion).
+      Une donnée mesurée à 100&nbsp;% peut porter une conclusion à confiance faible si la comparaison manque
+      de références. L'inverse n'existe pas : une couverture insuffisante plafonne toujours la confiance.
+      Défini dans <code>assets/elev-data-quality.js</code>.
+    </p>
+
+    <p class="doc-label">Badge de qualité — <code>elevQualityBadgeHtml()</code></p>
+    <div class="doc-demo stack"><div id="docQuality"></div></div>
+
+    <p class="doc-label">Donnée indisponible — <code>elevUnavailableHtml()</code></p>
+    <div class="doc-demo stack"><div id="docUnavailable"></div></div>
+
+    <div class="doc-note">
+      <strong>Le statut n'est jamais porté par la seule couleur.</strong> Chaque état affiche un symbole
+      (<code>●</code> mesuré, <code>▲</code> calculé, <code>◆</code> estimation, <code>—</code> indisponible)
+      et son libellé en toutes lettres. Quelqu'un qui ne distingue pas le vert de l'ambre lit exactement
+      la même information.
+    </div>
+    <div class="doc-note">
+      <strong>Une absence n'est pas un mauvais résultat.</strong> Un axe, un score ou une comparaison qui
+      manque de données affiche « indisponible » et sa raison — jamais <code>0</code>, jamais une barre vide,
+      qui se liraient comme une mesure défavorable.
+    </div>
+  </section>
+
+  <section class="doc-block" id="insight">
+    <h2>InsightCard</h2>
+    <p class="doc-lede">
+      Rendu unique de toute observation du produit. La <strong>référence</strong>, la <strong>fenêtre</strong>
+      et la <strong>confiance</strong> font partie du composant, pas du texte : un écran ne peut donc pas les
+      « oublier ». Le détail de méthode et les preuves vivent dans un <code>&lt;details&gt;</code> — présents
+      pour qui veut vérifier, absents du premier coup d'œil.
+      Contrat et garde-fous dans <code>assets/elev-insight.js</code>.
+    </p>
+
+    <p class="doc-label">Insight principal — <code>insightCardHtml(ins, {primary:true})</code></p>
+    <div class="doc-demo stack"><div id="docInsightPrimary"></div></div>
+
+    <p class="doc-label">Insight secondaire</p>
+    <div class="doc-demo stack"><div id="docInsightSecondary"></div></div>
+
+    <p class="doc-label">Rien de publiable — <code>insightBlockHtml(null)</code></p>
+    <div class="doc-demo stack"><div id="docInsightEmpty"></div></div>
+
+    <div class="doc-note">
+      <strong>Un écran porte au plus un insight principal et deux secondaires</strong>, jamais deux de la
+      même famille. C'est <code>prioritizeInsights()</code> qui tranche, pas la page : une page propose des
+      observations, elle ne décide pas de ce qu'elle a le droit d'en conclure.
+    </div>
+    <div class="doc-note">
+      <strong>Garde-fous centralisés.</strong> Sont refusés avant tout affichage : une tendance sous quatre
+      semaines couvertes, une comparaison sous trois références comparables, un écart annoncé sans référence,
+      un conseil de récupération (rien ne mesure la récupération dans ELEV), une estimation qui ne se nomme
+      pas, et tout langage de prédiction de blessure ou de diagnostic.
+    </div>
+  </section>
+
+  <section class="doc-block" id="terrain">
+    <h2>Terrain</h2>
+    <p class="doc-lede">
+      Montée, descente et roulant sont trois choses différentes et ne partagent donc plus ni bande de pente
+      ni couleur. La pente est calculée sur une altitude lissée sur 30&nbsp;m : point à point, le bruit d'un
+      baromètre grand public suffit à fabriquer des pentes de 25&nbsp;%.
+      Défini dans <code>assets/elev-terrain.js</code>.
+    </p>
+
+    <p class="doc-label">Répartition par direction — <code>.terrain-dir-row</code></p>
+    <div class="doc-demo stack">
+      <div class="terrain-dir-row">
+        <div class="terrain-dir" data-dir="up"><span class="td-label">Montée</span><span class="td-pct">43&nbsp;%</span><span class="td-time">31 h 05</span></div>
+        <div class="terrain-dir" data-dir="down"><span class="td-label">Descente</span><span class="td-pct">43&nbsp;%</span><span class="td-time">30 h 57</span></div>
+        <div class="terrain-dir" data-dir="flat"><span class="td-label">Roulant</span><span class="td-pct">15&nbsp;%</span><span class="td-time">10 h 44</span></div>
+      </div>
+    </div>
+
+    <p class="doc-label">Segment de terrain — <code>.terrain-seg</code></p>
+    <div class="doc-demo stack">
+      <div class="terrain-seg" data-dir="up">
+        <span class="ts-dir">Montée</span>
+        <span><span class="ts-main">658 m/h</span> <span class="ts-sub">1,4 km · +186 m · 13,4 % · 4 min 29</span></span>
+      </div>
+      <div class="terrain-seg" data-dir="down">
+        <span class="ts-dir">Descente</span>
+        <span><span class="ts-main">6,3 km/h</span> <span class="ts-sub">0,7 km · −130 m · −19,4 % · 6 min 22</span></span>
+      </div>
+    </div>
+
+    <div class="doc-note">
+      <strong>La VAM n'existe qu'en montée.</strong> Une « vitesse ascensionnelle » en descente n'a pas de
+      sens : un segment descendant porte une vitesse, pas une VAM.
+    </div>
+    <div class="doc-note">
+      <strong>Comparable ne veut pas dire identique.</strong> Deux segments sont déclarés comparables s'ils
+      partagent la direction, une pente à ±4 points, une durée et une longueur du même ordre. ELEV ne fait
+      aucune reconnaissance géographique : il ne prétend jamais que c'est « la même montée ».
+    </div>
+  </section>
+
   <section class="doc-block" id="formulaires">
     <h2>Formulaires</h2>
     <p class="doc-lede">
@@ -331,6 +439,9 @@
 
 </main>
 
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 <script>
 /* Extraction des règles RÉELLES depuis la feuille de style chargée. C'est ce qui rend cette page
@@ -357,6 +468,42 @@ document.querySelectorAll('[data-rules]').forEach(el => { el.innerHTML = reglesD
 document.getElementById('docSkeleton').innerHTML = skeletonHtml('row', 2);
 document.getElementById('docError').innerHTML = errorStateHtml('Impossible de récupérer tes séances depuis le cloud.');
 document.getElementById('docPartial').innerHTML = partialNoteHtml('Le plan ne couvre que 2 des 4 semaines affichées.');
+
+/* Confiance et terrain — rendus par les VRAIES fabriques, jamais par du balisage recopié : c'est ce
+   qui garantit que cette page ne peut pas décrire autre chose que ce que fait le produit. */
+document.getElementById('docQuality').innerHTML =
+  elevQualityBadgeHtml({ provenance: 'observed', coveragePct: 94, confidence: 'high' }) +
+  elevQualityBadgeHtml({ provenance: 'computed', coveragePct: 71, confidence: 'medium' }) +
+  elevQualityBadgeHtml({ provenance: 'inferred', coveragePct: 84, confidence: 'low' });
+
+document.getElementById('docUnavailable').innerHTML =
+  elevUnavailableHtml('Aptitude en descente indisponible', 'Aucune descente marquée sur les 12 dernières semaines.');
+
+document.getElementById('docInsightPrimary').innerHTML = insightCardHtml(makeInsight({
+  id: 'demo-primary', family: 'terrain',
+  title: 'Le terrain raide est devenu ton principal facteur de ralentissement',
+  observation: 'En montée de plus de 15 %, tu marches 98 % du temps.',
+  reference: '5 sorties comparables des 4 dernières semaines',
+  delta: null, coverage: 0.84, confidence: 'medium', importance: 'attention',
+  why: "C'est ce qui explique l'essentiel de l'écart d'allure avec tes sorties roulantes.",
+  action: 'À explorer : comparer une montée de durée proche sur les quatre dernières semaines.',
+  method: 'Estimation ELEV basée sur la cadence, pente positive uniquement, altitude lissée sur 30 m.',
+  window: '4 dernières semaines',
+  limits: 'Les descentes sont exclues. Marcher en forte pente est un choix courant et souvent plus efficace que courir.',
+  evidence: ['a1', 'a2', 'a3', 'a4', 'a5'],
+}), { primary: true, headingLevel: 3 });
+
+document.getElementById('docInsightSecondary').innerHTML = insightCardHtml(makeInsight({
+  id: 'demo-secondary', family: 'data',
+  title: 'Cadence trop incomplète pour analyser ta locomotion',
+  observation: 'La cadence est disponible sur 38 % du temps seulement sur cette période.',
+  reference: "le seuil de 60 % en dessous duquel ELEV ne conclut pas",
+  coverage: 1, confidence: 'high', importance: 'attention',
+  window: '12 dernières semaines',
+  method: 'Part du temps de déplacement où la cadence est présente dans les fichiers importés.',
+}), { headingLevel: 3 });
+
+document.getElementById('docInsightEmpty').innerHTML = insightBlockHtml(null);
 
 // Échelles lues dans les tokens, pas recopiées.
 (function () {

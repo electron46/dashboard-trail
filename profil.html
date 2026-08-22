@@ -19,6 +19,9 @@
      depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
      une empreinte non verifiee ici serait une fausse garantie. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -73,13 +76,22 @@
     <section class="card" id="seuilsCard"></section>
   </div>
 
-  <!-- ============ PROFIL SPORTIF ELEV (radar) ============ -->
-  <section class="card" style="margin-top:14px;">
-    <h2>Profil sportif ELEV <small>calculé à partir de tes séances importées</small></h2>
-    <div id="radarBox"></div>
-    <p class="hint">Chaque axe est calculé à partir de repères fixes documentés (volume, dénivelé, allure sur terrain roulant, dérive cardiaque, régularité) — pas une comparaison à d'autres coureurs, juste une lecture de ton propre historique. Réimporte tes séances récentes en page <a href="historique.html">Activités</a> si un axe indique "n/d" (donnée insuffisante).</p>
-    <div id="radarNotes" class="hint"></div>
-  </section>
+  <!-- ============ PROFIL TRAIL : APTITUDE ET EXPOSITION ============
+       Audit ELEV 2.0, P0-3. Un seul radar « Profil sportif ELEV » notait auparavant la montée et la
+       descente d'après le D+ et le D− hebdomadaires : c'était du VOLUME présenté comme une capacité.
+       Les deux notions sont désormais séparées et nommées, et une aptitude non mesurable s'affiche
+       « indisponible » — jamais à zéro, qui se lirait comme un résultat faible. -->
+  <div class="section-head" style="margin-top:14px;">
+    <div>
+      <h2>Profil trail</h2>
+      <p class="section-sub">Ce dont tes données témoignent, et ce qu'elles ne disent pas.</p>
+    </div>
+  </div>
+  <div id="trailProfileBox"></div>
+  <p class="hint">Lecture de ton propre historique, jamais une comparaison à d'autres coureurs. Les repères
+    servent seulement d'échelle : ils ne sont pas calibrés sur toi. Si une aptitude reste indisponible, c'est
+    qu'il manque des segments comparables — importe des sorties avec du dénivelé en page
+    <a href="historique.html">Activités</a>.</p>
 
   <!-- 3. MES REGLAGES — separes des reperes sportifs : ce sont des choix d'application,
           pas des donnees de coureur. -->
@@ -506,20 +518,18 @@ function renderContextAccordions() {
   }));
 }
 
-/* --------------------------- PROFIL SPORTIF ELEV (radar) --------------------------- */
+/* --------------------------- PROFIL TRAIL (aptitude + exposition) --------------------------- */
 function renderRadar() {
-  const box = document.getElementById('radarBox');
-  const notesBox = document.getElementById('radarNotes');
+  const box = document.getElementById('trailProfileBox');
   const sessions = loadAllSessions();
-  if (sessions.length < 2) {
-    box.innerHTML = '<div class="empty">Pas encore assez de séances importées pour calculer un profil de performance (2 minimum, idéalement des séances récentes).</div>';
-    notesBox.textContent = '';
+  if (!sessions.length) {
+    box.innerHTML = '<section class="card"><div class="empty-state"><div class="empty-title">Aucune séance importée</div>' +
+      '<p>Ton profil trail se construit à partir de tes sorties : ELEV y cherche des montées et des descentes comparables entre elles.</p>' +
+      '<a class="btn small accent" href="historique.html">Importer une activité</a></div></section>';
     return;
   }
-  const { scores, notes } = computePerformanceRadar(sessions);
-  box.innerHTML = radarChartSvg(RADAR_AXES, scores);
+  box.innerHTML = trailProfileHtml(sessions);
   initChartTooltips(box);
-  notesBox.textContent = notes.length ? notes.join(' ') : '';
 }
 
 /* --------------------------- INIT --------------------------- */

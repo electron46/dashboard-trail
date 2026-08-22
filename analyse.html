@@ -19,6 +19,9 @@
      depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
      une empreinte non verifiee ici serait une fausse garantie. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -83,6 +86,7 @@
 
   <!-- 1. RESUME de la periode -->
   <section class="kpi-grid" aria-label="Indicateurs principaux" id="kpiGrid"></section>
+  <div id="baselineNote"></div>
 
   <!-- 2. SENS : ce que ces chiffres disent, avant tout graphique -->
   <div id="insightRow"></div>
@@ -129,11 +133,11 @@
       <div id="locomotionBox"></div>
     </section>
     <section class="card card-compact">
-      <h2>Répartition par pente <small>(% du temps en mouvement)</small></h2>
+      <h2>Montée, descente et roulant <small>(% du temps en mouvement)</small></h2>
       <div id="gradeBucketsBox"></div>
     </section>
     <section class="card card-compact">
-      <h2>Course / marche par pente</h2>
+      <h2>Course / marche selon la pente</h2>
       <div id="runWalkGradeBox"></div>
     </section>
   </div>
@@ -231,10 +235,23 @@ function kpiComparisonSub(deltaPct, previous, suffix) {
 
 function renderKpis(cmp) {
   const grid = document.getElementById('kpiGrid');
-  if (!cmp) { grid.innerHTML = '<div class="empty">Pas de séance sur cette période.</div>'; return; }
+  const note = document.getElementById('baselineNote');
+  if (!cmp) {
+    grid.innerHTML = '<div class="empty">Pas de séance sur cette période.</div>';
+    if (note) note.innerHTML = '';
+    return;
+  }
+  /* Quand la référence est jugée non comparable, la valeur brute reste affichée — elle est vraie —
+     mais aucun pourcentage n'apparaît, et la raison est écrite une fois pour toute la rangée
+     plutôt que répétée six fois sous chaque tuile. */
+  if (note) {
+    note.innerHTML = (cmp.comparable || !cmp.baseline || !cmp.baseline.reason) ? ''
+      : '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> ' + escapeHtml(cmp.baseline.reason) +
+        ' Les valeurs ci-dessous restent exactes, mais ELEV n\'affiche pas de comparaison.</p>';
+  }
   const c = cmp.current, d = cmp.deltas, prev = cmp.previous;
-  const hrDelta = (c.avgHr != null && prev && prev.avgHr != null) ? Math.round(c.avgHr - prev.avgHr) : null;
-  const countDelta = prev ? (c.count - prev.count) : null;
+  const hrDelta = (cmp.comparable && c.avgHr != null && prev && prev.avgHr != null) ? Math.round(c.avgHr - prev.avgHr) : null;
+  const countDelta = cmp.comparable && prev ? (c.count - prev.count) : null;
   const cards = [
     { icon:'route', label:'Distance totale', value: fmtNum(c.distanceKm,' km',1),
       sub: kpiComparisonSub(d.distanceKm, prev, 'vs période précédente'),
@@ -249,10 +266,10 @@ function renderKpis(cmp) {
       sub: c.vamAvg!=null ? kpiComparisonSub(d.vamAvg, prev, 'vs période précédente') : 'Aucune montée fiable détectée',
       status: d.vamAvg!=null && d.vamAvg>=0 ? 'ok' : null },
     { icon:'heart-pulse', label:'FC moyenne', value: c.avgHr!=null ? c.avgHr+' bpm' : null,
-      sub: c.avgHr!=null ? (hrDelta!=null ? ((hrDelta>=0?'+':'')+hrDelta+' bpm vs période précédente') : 'Comparaison indisponible') : 'Non disponible',
+      sub: c.avgHr!=null ? (hrDelta!=null ? ((hrDelta>=0?'+':'')+hrDelta+' bpm vs période précédente') : 'Historique précédent incomplet') : 'Non disponible',
       status: null },
     { icon:'flag', label:'Séances', value: String(c.count),
-      sub: countDelta!=null ? ((countDelta>=0?'+':'')+countDelta+' vs période précédente') : 'Comparaison indisponible',
+      sub: countDelta!=null ? ((countDelta>=0?'+':'')+countDelta+' vs période précédente') : 'Historique précédent incomplet',
       status: countDelta!=null && countDelta>=0 ? 'ok' : null },
   ];
   grid.innerHTML = cards.map(cd => '<div class="kpi-card">' +
@@ -376,19 +393,40 @@ function renderZones(zones, dist) {
   ).join('') + '</div>';
 }
 
-function renderGradeBuckets(buckets) {
+/* Audit ELEV 2.0, P1-8 / TER-01. La répartition prenait la VALEUR ABSOLUE de la pente : « 15 % »
+   pouvait donc désigner une ascension ou une descente technique, deux contraintes physiologiquement
+   et biomécaniquement distinctes. Le calcul (terrainGradeDistribution) porte désormais le signe, et
+   l'affichage commence par la synthèse qui se lit d'un coup d'œil : combien de temps en montée, en
+   descente, sur le plat. Chaque direction a sa couleur de terrain, et son libellé la nomme — la
+   couleur ne porte jamais seule l'information. */
+function renderGradeBuckets(dist) {
   const box = document.getElementById('gradeBucketsBox');
-  if (!buckets) { box.innerHTML = '<div class="empty">Pas assez de données GPS/altitude sur cette période.</div>'; return; }
-  box.innerHTML = '<div class="zone-bars">' + buckets.map(b =>
-    '<div class="zone-row"><span class="zone-label">'+escapeHtml(b.label)+'</span>' +
-    '<div class="zone-track"><div class="zone-fill" style="width:'+b.pct+'%;background:var(--accent)"></div></div>' +
-    '<span class="zone-pct">'+b.pct+'%</span><span class="zone-time">'+fmtDuration(b.sec)+'</span></div>'
-  ).join('') + '</div>';
+  if (!dist) { box.innerHTML = '<div class="empty">Pas assez de données d\'altitude sur cette période pour analyser la pente.</div>'; return; }
+  const dirRow = dist.byDir.map(d =>
+    '<div class="terrain-dir" data-dir="' + d.dir + '">' +
+      '<span class="td-label">' + escapeHtml(d.label) + '</span>' +
+      '<span class="td-pct">' + d.pct + '&nbsp;%</span>' +
+      '<span class="td-time">' + fmtDuration(d.sec) + '</span>' +
+    '</div>').join('');
+  box.innerHTML = '<div class="terrain-dir-row">' + dirRow + '</div>' +
+    '<div class="zone-bars">' + dist.bands.filter(b => b.pct > 0).map(b =>
+      '<div class="zone-row"><span class="zone-label">' + escapeHtml(b.label) + '</span>' +
+      '<div class="zone-track"><div class="zone-fill" style="width:' + b.pct + '%;background:var(--terrain-' + b.dir + ')"></div></div>' +
+      '<span class="zone-pct">' + b.pct + '%</span><span class="zone-time">' + fmtDuration(b.sec) + '</span></div>'
+    ).join('') + '</div>' +
+    '<p class="provenance-tag">' + escapeHtml(dist.method) + '</p>';
 }
 
-function renderRunWalkByGrade(buckets) {
+/* TER-03 : la couverture cadence est désormais PUBLIÉE, et son insuffisance explique ce qui manque
+   au lieu d'afficher un message générique. Sans ce chiffre, « marche majoritaire au-dessus de 15 % »
+   est invérifiable. */
+function renderRunWalkByGrade(rw) {
   const box = document.getElementById('runWalkGradeBox');
-  if (!buckets || !buckets.length) { box.innerHTML = '<div class="empty">Cadence insuffisante sur cette période pour cette analyse.</div>'; return; }
+  if (!rw || !rw.available) {
+    box.innerHTML = '<div class="empty">' + escapeHtml((rw && rw.reason) || 'Cadence insuffisante sur cette période pour cette analyse.') + '</div>';
+    return;
+  }
+  const buckets = rw.bands;
   box.innerHTML = '<div class="rw-grade-list">' + buckets.map(b =>
     '<div class="rw-grade-row"><span class="rw-grade-label">'+escapeHtml(b.label)+'</span>' +
     '<div class="rw-grade-bars">' +
@@ -396,21 +434,24 @@ function renderRunWalkByGrade(buckets) {
       '<div class="rw-grade-bar-line"><span class="rw-tag">Marche</span><div class="rw-grade-track"><div class="rw-grade-fill walk" style="width:'+(b.walkPct||0)+'%"></div></div><span class="rw-grade-pct">'+(b.walkPct!=null?b.walkPct+'%':'—')+'</span></div>' +
     '</div></div>'
   ).join('') + '</div>' +
-  '<p class="provenance-tag">Estimation ELEV basée sur cadence — pas une donnée Garmin native.</p>';
+  '<p class="provenance-tag">Estimation ELEV basée sur la cadence — pas une donnée Garmin native. ' +
+    'Cadence disponible sur ' + rw.coveragePct + '&nbsp;% du temps. Montée et descente sont séparées.</p>';
 }
 
 /* --------------------------- INSIGHT ELEV --------------------------- */
-function renderInsight(deltas, runWalkByGrade, gradeBuckets, zoneDist) {
+/* Passe par le contrat commun : la page ne décide plus de ce qui a le droit de s'afficher, elle
+   propose des observations et prioritizeInsights() tranche (§6.4 / INS-03, INS-04). */
+function renderInsight(deltas, runWalkByGrade, gradeBuckets, zoneDist, ctx) {
   const row = document.getElementById('insightRow');
-  const bullets = generateGlobalAnalysisInsight(deltas || {}, runWalkByGrade, gradeBuckets, zoneDist);
-  if (!bullets.length) { row.innerHTML = ''; return; }
-  row.innerHTML = '<div class="insight-card">' +
-    '<h2 class="insight-eyebrow"><img src="'+ICON('zap')+'" alt="">Insight ELEV</h2>' +
-    bullets.map(b => '<div class="insight-item"><h3>'+escapeHtml(b.title)+'</h3><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+  const candidats = generateGlobalAnalysisInsight(deltas || {}, runWalkByGrade, gradeBuckets, zoneDist, ctx || {});
+  const res = prioritizeInsights(candidats, { hasRecoveryData: false, history: (ctx && ctx.history) || null });
+  if (!res.primary && !res.secondary.length) { row.innerHTML = ''; return; }
+  row.innerHTML = '<div class="insight-card-wrap">' +
+    '<h2 class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</h2>' +
+    insightBlockHtml(res, { headingLevel: 3 }) +
   '</div>';
 }
 
-/* --------------------------- DERNIÈRES ACTIVITÉS / MEILLEURS PERSONNELS --------------------------- */
 function renderRecentActivities(sessions) {
   const box = document.getElementById('recentActivitiesBox');
   const list = [...sessions].sort((a,b) => b.date.localeCompare(a.date)).slice(0,5);
@@ -465,8 +506,16 @@ function renderAnalysis() {
     ? ('Synthèse du ' + fmtDate(fromISO) + ' au ' + fmtDate(toISO) + ' — ' + current.length + ' séance' + (current.length>1?'s':'') + '.')
     : 'Synthèse de tes performances et de ta progression.';
 
+  /* Audit P1-4 / CRED-07 : un delta n'est calculé que si la période de RÉFÉRENCE est réellement
+     documentée. Comparer 12 semaines pleines à 12 semaines dont 2 seulement portent des séances
+     produisait des variations de +400 % qui dominaient l'écran sans rien vouloir dire. On mesure
+     donc la profondeur d'historique de la période précédente, pas sa largeur calendaire. */
   const curAgg = aggregatePeriod(current);
-  const cmp = comparePeriods(curAgg, aggregatePeriod(previous));
+  const currentDays = Math.round((new Date(toISO) - new Date(fromISO)) / 86400000) + 1;
+  const cmp = comparePeriods(curAgg, aggregatePeriod(previous), {
+    currentDays,
+    previousCoveredDays: periodCoveredDays(previous),
+  });
   renderKpis(cmp);
 
   // Semaines à zéro comblées uniquement à l'intérieur de l'historique réellement connu (jamais
@@ -490,12 +539,17 @@ function renderAnalysis() {
   const zoneDist = zones ? aggregateZones(current, zones) : null;
   renderLocomotion(current);
   renderZones(zones, zoneDist);
-  const gradeBuckets = aggregateGradeBuckets(current);
+  const gradeBuckets = terrainGradeDistribution(current);
   renderGradeBuckets(gradeBuckets);
-  const rwByGrade = aggregateRunWalkByGrade(current);
+  const rwByGrade = terrainRunWalkByGrade(current);
   renderRunWalkByGrade(rwByGrade);
 
-  renderInsight(cmp ? cmp.deltas : {}, rwByGrade, gradeBuckets, zoneDist);
+  renderInsight(cmp ? cmp.deltas : {}, rwByGrade, gradeBuckets, zoneDist, {
+    comparable: !!(cmp && cmp.comparable),
+    windowLabel: 'la période du ' + fmtDate(fromISO) + ' au ' + fmtDate(toISO),
+    baselineLabel: 'la période précédente de même durée',
+    history: elevHistoryCoverage(weeks.map(w => w.km)),
+  });
   renderRecentActivities(current);
   renderBests(current);
 }

@@ -21,6 +21,9 @@
      une empreinte non verifiee ici serait une fausse garantie. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="assets/elev-data-quality.js"></script>
+<script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-insight.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -50,15 +53,33 @@
        branche « activite introuvable », qui remplace tout le contenu de <main>. -->
   <div id="syncStateActivite"></div>
 
+  <!-- 1. IDENTITÉ — ce qu'est cette sortie, en une rangée. -->
   <div class="kpi-strip" id="kpiRow"></div>
+  <div id="coverageStrip"></div>
+
+  <!-- 2. À RETENIR — audit P1-6 / §8 : la conclusion AVANT les graphiques. La page répondait
+       d'abord « quelles valeurs ? » (carte, profil, résumé occupaient tout le premier écran) et
+       reléguait l'interprétation plus bas ; l'utilisateur devait donc analyser sa séance lui-même.
+       Trois observations au maximum, une par famille, chacune avec sa référence et sa confiance. -->
+  <section class="card" id="takeawaysCard" aria-labelledby="takeawaysTitle">
+    <h2 id="takeawaysTitle" class="insight-eyebrow"><img src="" alt="" id="takeawaysIcon">À retenir de cette sortie</h2>
+    <div id="sessionInsightBox"></div>
+  </section>
+
+  <!-- 3. RÉCIT DU TERRAIN — le profil devient la scène centrale, la carte une couche de contexte
+       (décision utilisateur D-3). Le profil passe donc AVANT la carte et occupe toute la largeur. -->
+  <section class="card" id="profileSection">
+    <h2>Récit du terrain</h2>
+    <div class="profile-header-stats" id="profileHeaderStats"></div>
+    <div id="altitudeProfileHost"></div>
+    <div id="terrainDirBox"></div>
+  </section>
 
   <div class="activity-detail-grid">
     <div class="map-profile-col">
-      <div class="altitude-profile-box" id="mapCard" style="padding:0;overflow:hidden;height:340px;"></div>
-      <section class="card" id="profileSection">
-        <h2>Profil altimétrique</h2>
-        <div class="profile-header-stats" id="profileHeaderStats"></div>
-        <div id="altitudeProfileHost"></div>
+      <section class="card card-compact" id="mapSection">
+        <h2>Carte du parcours <small style="font-weight:400;">contexte</small></h2>
+        <div class="altitude-profile-box" id="mapCard" style="padding:0;overflow:hidden;height:300px;"></div>
       </section>
     </div>
     <div class="analysis-col">
@@ -70,7 +91,6 @@
         <h2>Répartition des zones FC</h2>
         <div id="zonesDonutHost"></div>
       </div>
-      <div class="insight-card" id="sessionInsightBox"></div>
     </div>
   </div>
 
@@ -170,6 +190,7 @@ function initActivityPage(s) {
   document.getElementById('pageSubtitle').textContent = fmtDayMonth(s.date) + ' ' + s.date.slice(0, 4) + (s.dateApprox ? ' (date approximative, non trouvée dans le fichier)' : '');
 
   renderKpiRow(s);
+  renderCoverageStrip(s);
   renderResumeMini(s);
   renderMap(s);
 
@@ -185,6 +206,7 @@ function initActivityPage(s) {
   const altHost = document.getElementById('altitudeProfileHost');
   altHost.innerHTML = altHtml || '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
   if (altHtml) initElevChart(altHost.firstElementChild, chartPoints, p => moveMapCursor(p.lat, p.lon));
+  renderTerrainDir(s);
 
   const zones = getActiveHrZones(getProfile());
   const zoneDist = computeSessionZoneDistribution(s, zones);
@@ -404,6 +426,19 @@ function renderMap(s) {
     mapEl.innerHTML = '<div class="empty">Pas de tracé GPS pour cette activité.</div>';
     return;
   }
+  /* Décision utilisateur D-3 (audit §8) : la carte devient une couche de CONTEXTE subordonnée au
+     profil altimétrique, et ses tuiles sont désaturées pour ne plus trancher avec l'identité
+     sombre. Filtre CSS mesuré, pas d'inversion, et surtout aucun changement de fournisseur de
+     tuiles : la zone de la séance n'est transmise à personne de plus qu'avant. */
+  /* Hors ligne, les tuiles OpenStreetMap ne peuvent pas être chargées (elles ne sont volontairement
+     pas mises en cache par le service worker — voir sw.js). On le DIT, au lieu de laisser un cadre
+     gris que l'utilisateur prendrait pour un bug. */
+  if (!elevIsOnline()) {
+    mapEl.style.display = 'flex'; mapEl.style.alignItems = 'center'; mapEl.style.justifyContent = 'center';
+    mapEl.innerHTML = elevOfflineNoticeHtml('La carte du parcours');
+    return;
+  }
+  mapEl.classList.add('map-subdued');
   detailMap = L.map(mapEl, { attributionControl: true });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -676,13 +711,61 @@ function renderSplitsTab(s) {
 /* --------------------------- INSIGHT ELEV DE LA SÉANCE --------------------------- */
 function renderInsight(s, zoneDist, climbs) {
   const box = document.getElementById('sessionInsightBox');
-  const bullets = generateSessionInsight(s, zoneDist, climbs);
-  if (!bullets.length) {
-    box.innerHTML = '<h2 class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</h2><p>Pas assez de données sur cette activité pour dégager une observation fiable.</p>';
-    return;
-  }
-  box.innerHTML = '<h2 class="insight-eyebrow"><img src="' + ICON('zap') + '" alt="">Insight ELEV</h2>' +
-    bullets.map(b => '<div class="insight-item"><h3>' + escapeHtml(b.title) + '</h3><p>' + escapeHtml(b.text) + '</p></div>').join('');
+  const icon = document.getElementById('takeawaysIcon');
+  if (icon && !icon.src) icon.src = ICON('zap');
+  /* L'historique est passé au générateur : sans lui, aucune COMPARAISON n'est possible, et une
+     comparaison sans références comparables est précisément ce que l'audit interdit (§6.3). */
+  const historique = loadAllSessions().filter(x => x.id !== s.id && x.date <= s.date);
+  const res = prioritizeInsights(generateSessionInsight(s, zoneDist, climbs, historique), { hasRecoveryData: false });
+  box.innerHTML = insightBlockHtml(res, {
+    headingLevel: 3,
+    emptyText: "Pas encore assez de données sur cette sortie pour une observation fiable. ELEV préfère se taire plutôt qu'avancer une conclusion que le fichier ne soutient pas.",
+  });
+}
+
+/* Matrice de couverture de la séance (audit §5.2 / DATA-01). Elle ne s'affiche que si un signal
+   manque réellement : afficher « 100 % » cinq fois sur une séance parfaite serait du bruit. */
+function renderCoverageStrip(s) {
+  const host = document.getElementById('coverageStrip');
+  if (!host) return;
+  const cov = elevSessionCoverage(s);
+  /* Deux cas seulement méritent d'être signalés :
+       - un signal PARTIELLEMENT présent (il existe, mais troué : l'analyse qui s'y appuie est
+         incomplète sans que rien ne le dise) ;
+       - un signal ESSENTIEL totalement absent (altitude, FC, cadence, GPS).
+     L'absence complète de puissance n'est pas une anomalie : la plupart des coureurs n'ont pas de
+     capteur. L'annoncer à chaque séance serait du bruit, et le bruit finit par masquer les vrais
+     manques. */
+  const ESSENTIELS = ['alt', 'hr', 'cadence', 'gps'];
+  const manquants = ELEV_SIGNALS.map(sig => cov.signals[sig.key]).filter(c => {
+    if (!c) return false;
+    if (c.ratio == null || c.ratio === 0) return ESSENTIELS.indexOf(c.key) >= 0;
+    return elevCoverageLevel(c.ratio) !== 'high';
+  });
+  if (!manquants.length || cov.points < 10) { host.innerHTML = ''; return; }
+  host.innerHTML = '<p class="data-quality">' +
+    '<span>Données de cette sortie&nbsp;:</span>' +
+    manquants.map(c => '<span class="dq-prov" data-prov="' + (c.ratio ? 'computed' : 'unavailable') + '">' +
+      '<span class="dq-sym" aria-hidden="true">' + (c.ratio ? '▲' : '—') + '</span>' +
+      escapeHtml(c.label) + ' ' + (c.ratio == null ? 'absente' : c.pct + '&nbsp;%') + '</span>').join('<span class="dq-sep" aria-hidden="true">·</span>') +
+  '</p>';
+}
+
+/* Répartition montée / descente / roulant sous le profil — le « récit du terrain » de l'audit §8.
+   Même composant visuel que la page Progression, même calcul : une seule définition de la pente. */
+function renderTerrainDir(s) {
+  const host = document.getElementById('terrainDirBox');
+  if (!host) return;
+  let dist = null;
+  try { dist = terrainGradeDistribution(s); } catch (e) { dist = null; }
+  if (!dist) { host.innerHTML = ''; return; }
+  host.innerHTML = '<div class="terrain-dir-row">' + dist.byDir.map(d =>
+    '<div class="terrain-dir" data-dir="' + d.dir + '">' +
+      '<span class="td-label">' + escapeHtml(d.label) + '</span>' +
+      '<span class="td-pct">' + d.pct + '&nbsp;%</span>' +
+      '<span class="td-time">' + fmtDuration(d.sec) + '</span>' +
+    '</div>').join('') + '</div>' +
+    '<p class="provenance-tag">' + escapeHtml(dist.method) + '</p>';
 }
 
 /* --------------------------- ONGLETS --------------------------- */

@@ -82,6 +82,31 @@
      changeant ces cinq valeurs, et un seul endroit à changer désormais. */
   --zone-1:#2F5D3A; --zone-2:#3D7A48; --zone-3:#4F9857; --zone-4:#66B76A; --zone-5:#8AD489;
 
+  /* ---- RÔLES SÉMANTIQUES ELEV 2.0 (audit §10).
+     Trois familles qui n'existaient pas et que le produit rendait donc par des couleurs choisies
+     au cas par cas : l'importance d'un signal, la confiance qu'on lui accorde, et la nature du
+     terrain. Règle qui les gouverne toutes : la couleur RENFORCE le statut, elle ne le PORTE
+     jamais seule — chaque composant qui les emploie affiche aussi un texte et un symbole. */
+
+  /* Signal : la donnée réelle la plus importante d'un écran, puis les séries secondaires. */
+  --signal-primary:#9BBD7E; --signal-secondary:#6F8FD8;
+
+  /* Confiance. Volontairement peu saturées : ce sont des métadonnées, elles ne doivent pas
+     concurrencer la donnée elle-même. */
+  --confidence-high:#8AD489; --confidence-medium:#C9B072; --confidence-low:#9AA6A0;
+
+  /* Provenance de la donnée. « inferred » partage la teinte d'avertissement parce qu'une
+     estimation demande une réserve de lecture ; « unavailable » est volontairement éteinte. */
+  --data-observed:#8AD489; --data-inferred:#C9B072; --data-unavailable:#7C8A83;
+
+  /* Terrain. Montée et descente ne sont plus la même chose (audit P1-8) : elles ne peuvent donc
+     plus partager une couleur. Le bleu de la descente reprend --signal-secondary, déjà validé
+     contre le vert pour la vision normale comme pour la déficience de perception des couleurs. */
+  --terrain-up:#9BBD7E; --terrain-down:#6F8FD8; --terrain-flat:#8E9B95;
+
+  /* Baseline : une comparaison est-elle adossée à un historique complet ? */
+  --baseline-known:#8AD489; --baseline-partial:#C9B072;
+
   /* ---- RAIL DE NAVIGATION (sidebar desktop + barre mobile).
      Ces surfaces restent SOMBRES dans les deux thèmes : c'est un choix de composition (un rail
      sombre encadre le contenu), pas un oubli. Elles ne peuvent donc pas consommer --text/--muted,
@@ -228,6 +253,21 @@ html[data-theme="light"]{
   --border-default:#C9CDD5; --border-strong:rgba(15,23,32,.16);
   --border-soft:rgba(15,23,32,.06); --edge-highlight:rgba(15,23,32,.05);
   --text-muted:#6B7382; --text-disabled:#9AA2B0;
+
+  /* Rôles sémantiques ELEV 2.0 — assombris pour ce thème, comme les accents l'ont été en phase 16 :
+     ces teintes servent ici de texte ou de petit aplat sur des surfaces CLAIRES, où les valeurs du
+     thème sombre tombent sous le seuil AA. */
+  --signal-primary:#4A6832; --signal-secondary:#3F5BA8;
+  /* Valeurs vérifiées au ratio, pas choisies à l'œil : ces teintes servent de TEXTE de petite
+     taille (11 px) sur le canvas clair #E5E7EB et sur les surfaces blanches. Les premières valeurs
+     retenues échouaient AA de peu (4,16 et 3,96 pour 4,5 exigé), ce qu'une mesure page par page a
+     révélé — le vert de confiance haute était le seul visible à l'écran au moment du test, l'ambre
+     serait passé inaperçu jusqu'à ce qu'un insight à confiance moyenne s'affiche.
+     Ratios mesurés sur #E5E7EB / #FFFFFF : 4,90 / 6,07 · 4,65 / 5,76 · 4,78 / 5,91. */
+  --confidence-high:#376E3E; --confidence-medium:#7E6215; --confidence-low:#5C6570;
+  --data-observed:#376E3E; --data-inferred:#7E6215; --data-unavailable:#5C6570;
+  --terrain-up:#4A6832; --terrain-down:#3F5BA8; --terrain-flat:#5C6570;
+  --baseline-known:#376E3E; --baseline-partial:#7E6215;
 }
 *{box-sizing:border-box;}
 /* Canvas — halo atmosphérique très diffus (relief/altitude évoqué, jamais une photo). Fixe (n'affecte
@@ -2126,3 +2166,210 @@ section.card .goal-hero-identity h2::before{display:none;}
   .kpi-card .kpi-value{font-size:1.5rem;}
   .kpi-card .kpi-value-row{margin-top:8px;}
 }
+
+
+/* ============================================================================================
+   ELEV 2.0 — COMPOSANTS DE CONFIANCE ET DE TERRAIN
+   Audit §10. Cinq composants nommés (InsightCard, MetricWithBaseline, DataQualityBadge,
+   TerrainSegment, EmptyState) plus le vocabulaire de qualité de donnée qui les traverse.
+
+   Invariant de toute cette section : AUCUN statut n'est porté par la seule couleur. Chaque état
+   affiche un symbole (●▲◆—) et son libellé en toutes lettres. Un lecteur qui ne distingue pas le
+   vert de l'ambre lit exactement la même information.
+   ============================================================================================ */
+
+/* ---- Qualité de donnée (DataQualityBadge) --------------------------------------------------- */
+.data-quality{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  margin:6px 0 0;font-size:var(--text-2xs);color:var(--muted);
+}
+.data-quality .dq-sep{color:var(--border-strong);}
+.dq-sym{margin-right:4px;font-size:.9em;letter-spacing:.5px;}
+.dq-prov[data-prov="observed"]{color:var(--data-observed);}
+.dq-prov[data-prov="computed"]{color:var(--muted);}
+.dq-prov[data-prov="inferred"]{color:var(--data-inferred);}
+.dq-prov[data-prov="unavailable"]{color:var(--data-unavailable);}
+.dq-conf[data-conf="high"]{color:var(--confidence-high);}
+.dq-conf[data-conf="medium"]{color:var(--confidence-medium);}
+.dq-conf[data-conf="low"],.dq-conf[data-conf="none"]{color:var(--confidence-low);}
+
+/* Donnée indisponible : jamais un zéro, jamais un tiret muet. */
+.data-unavailable{
+  display:flex;align-items:baseline;gap:6px;margin:4px 0 0;
+  font-size:var(--text-xs);color:var(--data-unavailable);
+}
+.data-unavailable .du-why{color:var(--muted);}
+
+/* ---- InsightCard ---------------------------------------------------------------------------- */
+.insight-card{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:16px;margin:0 0 12px;
+}
+.insight-card--primary{
+  border-radius:var(--radius-xl);padding:20px;
+  background:linear-gradient(180deg,var(--surface-3),var(--surface-2));
+  border-color:var(--border-strong);
+}
+.insight-card .ins-eyebrow{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 8px;
+  font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+}
+.insight-card .ins-imp{
+  padding:2px 8px;border-radius:999px;border:1px solid currentColor;font-weight:600;
+}
+.insight-card .ins-imp[data-imp="critical"],
+.insight-card .ins-imp[data-imp="attention"]{color:var(--warn);}
+.insight-card .ins-title{
+  margin:0 0 6px;font-family:var(--font-display);font-size:var(--text-lg);line-height:1.25;color:var(--text);
+}
+.insight-card--primary .ins-title{font-size:var(--text-xl);}
+.insight-card .ins-title::before{content:none;}
+.insight-card .ins-obs{margin:0 0 8px;color:var(--text);font-size:var(--text-sm);}
+.insight-card .ins-ref{margin:0 0 8px;color:var(--muted);font-size:var(--text-xs);}
+.insight-card .ins-action{
+  margin:8px 0 0;padding:8px 10px;border-left:2px solid var(--signal-primary);
+  background:var(--surface-1);border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  font-size:var(--text-sm);color:var(--text);
+}
+.insight-card .ins-meta{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  margin:10px 0 0;font-size:var(--text-2xs);color:var(--muted);
+}
+.insight-card .ins-conf[data-conf="high"]{color:var(--confidence-high);}
+.insight-card .ins-conf[data-conf="medium"]{color:var(--confidence-medium);}
+.insight-card .ins-conf[data-conf="low"],
+.insight-card .ins-conf[data-conf="none"]{color:var(--confidence-low);}
+.insight-card .ins-detail{margin-top:10px;}
+.insight-card .ins-detail summary{
+  cursor:pointer;font-size:var(--text-xs);color:var(--muted);padding:4px 0;min-height:24px;
+}
+.insight-card .ins-detail summary:hover{color:var(--text);}
+.insight-card .ins-detail p{margin:6px 0 0;font-size:var(--text-xs);color:var(--muted);}
+.insight-secondary{display:grid;gap:10px;}
+@media(min-width:900px){.insight-secondary{grid-template-columns:1fr 1fr;}}
+.insight-empty{
+  padding:16px;border:1px dashed var(--border);border-radius:var(--radius-lg);
+  color:var(--muted);font-size:var(--text-sm);
+}
+.insight-empty p{margin:0;}
+
+/* ---- MetricWithBaseline --------------------------------------------------------------------- */
+.metric-baseline{display:flex;flex-direction:column;gap:2px;}
+.metric-baseline .mb-value{font-family:var(--font-mono);font-weight:600;font-size:var(--text-xl);color:var(--text);}
+.metric-baseline .mb-period{font-size:var(--text-2xs);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.metric-baseline .mb-ref{font-size:var(--text-xs);color:var(--muted);}
+.metric-baseline .mb-delta[data-baseline="partial"]{color:var(--baseline-partial);}
+.metric-baseline .mb-delta[data-baseline="known"]{color:var(--baseline-known);}
+
+/* ---- TerrainSegment et répartition par direction --------------------------------------------- */
+.terrain-dir-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px;}
+.terrain-dir{
+  display:flex;flex-direction:column;gap:2px;padding:8px 10px;
+  border-radius:var(--radius-md);background:var(--surface-1);
+  border-left:3px solid var(--terrain-flat);
+}
+.terrain-dir[data-dir="up"]{border-left-color:var(--terrain-up);}
+.terrain-dir[data-dir="down"]{border-left-color:var(--terrain-down);}
+.terrain-dir .td-label{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.terrain-dir .td-pct{font-family:var(--font-mono);font-weight:600;font-size:var(--text-lg);color:var(--text);}
+.terrain-dir .td-time{font-size:var(--text-2xs);color:var(--muted);}
+@media(max-width:520px){.terrain-dir-row{grid-template-columns:1fr;}}
+
+.terrain-seg{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;
+  border-radius:var(--radius-md);background:var(--surface-1);
+  border-left:3px solid var(--terrain-flat);
+}
+.terrain-seg[data-dir="up"]{border-left-color:var(--terrain-up);}
+.terrain-seg[data-dir="down"]{border-left-color:var(--terrain-down);}
+.terrain-seg .ts-dir{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);min-width:74px;}
+.terrain-seg .ts-main{font-family:var(--font-mono);font-weight:600;color:var(--text);}
+.terrain-seg .ts-sub{font-size:var(--text-xs);color:var(--muted);}
+
+/* ---- Liste d'axes (profil trail) -------------------------------------------------------------- */
+.axis-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px;}
+.axis-item{
+  display:grid;grid-template-columns:minmax(90px,auto) auto;gap:2px 12px;
+  padding:10px 12px;border-radius:var(--radius-md);background:var(--surface-1);
+}
+.axis-item .axis-name{font-weight:600;color:var(--text);}
+.axis-item .axis-val{font-family:var(--font-mono);font-weight:600;color:var(--text);text-align:right;}
+.axis-item .axis-val.na{font-family:var(--font-sans);font-weight:400;color:var(--data-unavailable);}
+.axis-item .axis-detail{grid-column:1/-1;font-size:var(--text-xs);color:var(--muted);}
+.axis-item .data-quality{grid-column:1/-1;}
+.axis-item--na{opacity:.85;}
+
+/* ---- EmptyState : rien d'analytique ne survit derrière ---------------------------------------- */
+.analysis-hidden-when-empty[hidden]{display:none !important;}
+
+/* ---- Carte GPS subordonnée au profil (audit §8, décision utilisateur D-3) ----------------------
+   Les tuiles OpenStreetMap sont claires et rompaient avec l'identité sombre. Filtre volontairement
+   MESURÉ — désaturation partielle et légère baisse de luminosité, jamais une inversion : inverser
+   rend le relief et les sentiers illisibles, ce qui coûterait plus que le gain esthétique.
+   Aucun changement de fournisseur, donc aucune donnée supplémentaire transmise à un tiers. */
+.map-subdued .leaflet-tile-pane{
+  filter:saturate(.55) brightness(.72) contrast(1.06);
+}
+html[data-theme="light"] .map-subdued .leaflet-tile-pane{filter:none;}
+@media(prefers-reduced-motion:reduce){
+  .map-subdued .leaflet-tile-pane{filter:saturate(.65) brightness(.8);}
+}
+
+/* Anneau non calculable : on ne dessine PAS un anneau vide, qui se lirait comme 0 %. */
+.ring-unavailable{
+  width:96px;height:96px;border-radius:50%;
+  border:2px dashed var(--border-strong);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--data-unavailable);font-size:var(--text-xl);
+}
+/* Sous-score indisponible : une trame, jamais une barre à zéro. */
+.goal-subscore-fill--na{
+  width:100%;opacity:.25;
+  background:repeating-linear-gradient(135deg,var(--border-strong) 0 4px,transparent 4px 8px);
+}
+.goal-subscore-val.na{font-family:var(--font-sans);font-size:var(--text-2xs);color:var(--data-unavailable);}
+.goal-scope-note{margin-top:12px;display:grid;gap:8px;}
+.goal-scope-note .partial-note{margin:0;}
+.goal-scope-note [data-divergence]{color:var(--warn);}
+
+
+/* ---- Onglets responsives (audit P1-7 / MOB-01) ------------------------------------------------
+   Le select remplace le ruban sous 640 px : le contenu principal cesse d'exiger un geste latéral,
+   et la liste complète des sections devient visible d'un coup. Au-dessus, il n'existe pas. */
+.tabs-select-wrap{display:none;}
+@media(max-width:640px){
+  .tabs-select-wrap{
+    display:flex;align-items:center;gap:10px;
+    margin:0 0 12px;padding:0;
+  }
+  .tabs-select-label{
+    font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+    flex:0 0 auto;
+  }
+  .tabs-select{
+    flex:1 1 auto;min-height:44px;
+    font:inherit;font-size:var(--text-sm);color:var(--text);
+    background:var(--surface-2);border:1px solid var(--border-strong);
+    border-radius:var(--radius-md);padding:8px 10px;
+  }
+  /* Le ruban disparaît : le garder en plus du select afficherait deux navigations concurrentes
+     pour la même chose. Les boutons restent dans le DOM — ils portent l'état actif et le select
+     les pilote — mais ne sont plus une cible de lecture ni de clic. */
+  .tabs{
+    position:absolute;width:1px;height:1px;overflow:hidden;
+    clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;padding:0;margin:-1px;
+  }
+}
+
+/* `hidden` doit l'emporter : plusieurs composants forcent leur display (flex/grid), ce qui neutralise
+   le comportement par défaut de l'attribut. Sert aux états vides, qui ne doivent laisser aucune
+   structure analytique derrière eux (audit §4.7). */
+[hidden]{display:none !important;}
+
+/* Liste « À surveiller » (Accueil) — chaque entrée porte son symbole, jamais la seule couleur. */
+.watch-list{list-style:none;margin:0;padding:0;display:grid;gap:10px;}
+.watch-list li{
+  display:flex;gap:8px;align-items:baseline;
+  font-size:var(--text-sm);color:var(--text);
+}
+.watch-list .dq-sym{color:var(--warn);flex:0 0 auto;}

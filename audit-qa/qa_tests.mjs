@@ -21,6 +21,10 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const root = path.resolve(import.meta.dirname, '..');
+/* Modules ELEV 2.0 chargés avant app.js, dans le même ordre que les pages HTML :
+   la couverture et le contrat d'insight sont des dépendances d'app.js, pas l'inverse. */
+const moduleSources = ['elev-data-quality.js', 'elev-terrain.js', 'elev-insight.js']
+  .map(f => fs.readFileSync(path.join(root, 'assets', f), 'utf8'));
 const source = fs.readFileSync(path.join(root, 'assets', 'app.js'), 'utf8');
 const settingsSource = fs.readFileSync(path.join(root, 'parametres.html'), 'utf8');
 const historySource = fs.readFileSync(path.join(root, 'historique.html'), 'utf8');
@@ -141,6 +145,7 @@ function loadApp(opts) {
   };
   context.window = context;
   vm.createContext(context);
+  moduleSources.forEach((src, i) => vm.runInContext(src, context, { filename: 'assets/module-' + i + '.js' }));
   vm.runInContext(source, context, { filename: 'assets/app.js' });
   return context;
 }
@@ -1205,12 +1210,318 @@ await test('OK-5', 'Le payload de synchronisation ne contient plus les séances 
   return { clesSync: Object.keys(sync).sort(), seancesExport: exp.sessions.length };
 });
 
-await test('OK-6', 'PWA : toujours aucun service worker (constat de l\'audit, non traité)', () => {
-  const files = fs.readdirSync(root).filter(name => /\.(html|js)$/i.test(name));
-  const all = files.map(name => fs.readFileSync(path.join(root, name), 'utf8')).join('\n') + '\n' + source;
-  const present = /serviceWorker\.register|navigator\.serviceWorker/.test(all);
-  assert(!present, 'un service worker a été ajouté : mettre ce constat à jour');
-  return { offlineCache: false };
+/* Ce test affirmait l'inverse jusqu'au 22 août 2026 : il constatait l'ABSENCE de service worker,
+   défaut P2-10 de l'audit produit, et portait la mention « mettre ce constat à jour » une fois
+   traité. Décision utilisateur : tenir la promesse d'application installable. L'invariant est donc
+   retourné — c'est désormais la disparition du mode hors ligne qui doit faire échouer la suite. */
+await test('OK-6', 'PWA : le mode hors ligne existe réellement (service worker enregistré)', () => {
+  const swPath = path.join(root, 'sw.js');
+  assert(fs.existsSync(swPath), 'sw.js a disparu : la promesse « application installable » redevient creuse');
+  const sw = fs.readFileSync(swPath, 'utf8');
+  assert(/CACHE_NAME/.test(sw) && /addEventListener\('fetch'/.test(sw), 'le service worker ne gère pas les requêtes');
+  assert(/mode === 'navigate'/.test(sw), 'les navigations doivent être traitées à part (réseau d\'abord)');
+  assert(/serviceWorker\.register/.test(source), 'plus personne n\'enregistre le service worker');
+  // Les tuiles de carte ne doivent JAMAIS être mises en cache : ce sont des données tierces que
+  // l'utilisateur n'a pas demandé de stocker.
+  assert(/estInterne/.test(sw), 'le service worker ne distingue plus les ressources internes des tierces');
+  return { offlineCache: true, cacheName: (sw.match(/CACHE_NAME = '([^']+)'/) || [])[1] };
+});
+
+/* =========================================================================
+   SUITE ELEV 2.0 — les quinze garde-fous exigés par l'audit produit
+   (AUDIT-PRODUIT-ELEV-2-0-2026-08-22.md, §12 « tests à ajouter » et §6.3).
+
+   Chaque test énonce une propriété que le produit doit tenir. Il échoue si le
+   défaut correspondant réapparaît. Un test qui ne peut pas être exécuté ici
+   (réseau réel) reste absent plutôt que simulé en vert.
+   ========================================================================= */
+
+/* Jeu de séances déterministe : douze semaines, une séance par semaine, avec altitude,
+   FC et cadence. Sert de base commune aux tests de tendance et de couverture. */
+function seedHistorique(iso, opts) {
+  opts = opts || {};
+  const semaines = opts.semaines != null ? opts.semaines : 12;
+  const aujourdhui = iso.todayISO();
+  for (let i = semaines - 1; i >= 0; i--) {
+    const date = iso.addDaysIso(aujourdhui, -i * 7);
+    const series = [];
+    for (let t = 0; t <= 60; t++) {
+      series.push({
+        t: t * 30, distKm: t * 0.1, alt: 200 + t * 5,
+        hr: opts.sansFc ? null : 140,
+        cadenceSpm: opts.sansCadence ? null : 160,
+      });
+    }
+    seedSession(iso, {
+      id: 'h' + i, date, sport: 'Trail',
+      distanceKm: opts.km != null ? opts.km : 30,
+      ascent: 800, descent: 800, durationS: 1800, avgHr: 140, series,
+    });
+  }
+}
+
+await test('E20-1', 'Deux courses ne partagent pas automatiquement la même préparation spécifique', () => {
+  const iso = loadApp();
+  seedHistorique(iso);
+  const aujourdhui = iso.todayISO();
+  iso.saveRaces([
+    { id: 'a', name: 'Course A', date: iso.addDaysIso(aujourdhui, 60), distanceKm: 50, denivele: 3000, statut: 'principal' },
+    { id: 'b', name: 'Course B', date: iso.addDaysIso(aujourdhui, 90), distanceKm: 30, denivele: 1500, statut: 'secondaire' },
+  ]);
+  iso.savePlan([{ date: iso.addDaysIso(aujourdhui, -7), distanceKm: 30, deniveleM: 800 }]);
+  iso.savePlanGoalId('a');
+  const a = iso.computeRaceReadiness(iso.getRaces()[0]);
+  const b = iso.computeRaceReadiness(iso.getRaces()[1]);
+  assert(a.scope === 'race', 'la course à laquelle le plan est lié doit recevoir une préparation spécifique');
+  assert(b.scope === 'general', "une course SANS plan lié ne doit jamais être présentée comme spécifiquement préparée");
+  assert(/générale/i.test(b.scopeLabel), 'la portée générale doit être dite en toutes lettres');
+  return { a: a.scope, b: b.scope, labelB: b.scopeLabel };
+});
+
+await test('E20-2', 'Un dépassement du plan ne produit pas une préparation parfaite', () => {
+  const iso = loadApp();
+  // 152 % de la cible : c'est le chiffre relevé par l'audit (P0-2).
+  const aligne = iso.planAlignment(100);
+  const depassement = iso.planAlignment(120);
+  const divergence = iso.planAlignment(152);
+  assert(aligne.score === 100, 'atteindre la cible doit valoir 100');
+  assert(depassement.score < 100, 'dépasser la cible ne peut pas valoir autant que l\'atteindre');
+  assert(divergence.score === null, 'au-delà du seuil de divergence, l\'adéquation ne doit plus être notée du tout');
+  assert(divergence.diverging === true, 'la divergence doit être signalée explicitement');
+  // Et le libellé ne peut pas annoncer une excellente préparation pendant ce temps.
+  const libelle = iso.readinessLevelLabel(95, { diverging: true, scope: 'race' });
+  assert(!/excellente/i.test(libelle), 'jamais « Excellente préparation » en même temps qu\'une divergence');
+  return { aligne: aligne.score, depassement: depassement.score, divergence: divergence.score, libelle };
+});
+
+await test('E20-3', 'Deux séances ne suffisent pas à établir une tendance', () => {
+  const iso = loadApp();
+  seedSession(iso, { id: 'x1', date: iso.addDaysIso(iso.todayISO(), -3), sport: 'Trail', distanceKm: 10 });
+  seedSession(iso, { id: 'x2', date: iso.todayISO(), sport: 'Trail', distanceKm: 12 });
+  const t = iso.getTrainingTrend();
+  assert(t && t.available === false, 'une tendance ne doit pas être produite à partir de deux séances');
+  assert(typeof t.reason === 'string' && t.reason.length > 0, 'le refus doit porter sa raison, pas disparaître en silence');
+  return { available: t.available, reason: t.reason };
+});
+
+await test('E20-4', 'Moins de quatre semaines couvertes bloque la tendance', () => {
+  const iso = loadApp();
+  seedHistorique(iso, { semaines: 3 });
+  const t = iso.getTrainingTrend();
+  assert(t.available === false, 'trois semaines ne suffisent pas');
+  const hist = iso.elevHistoryCoverage([10, 10, 10]);
+  assert(hist.enoughForTrend === false, 'elevHistoryCoverage doit refuser 3 semaines');
+  const ok = iso.elevHistoryCoverage([10, 10, 10, 10]);
+  assert(ok.enoughForTrend === true, 'quatre semaines non vides doivent suffire');
+  return { troisSemaines: t.reason };
+});
+
+await test('E20-5', 'Une référence incomplète bloque les deltas trompeurs', () => {
+  const iso = loadApp();
+  const courant = { distanceKm: 200, ascent: 6000, durationS: 72000, vamAvg: 700, count: 12 };
+  const precedent = { distanceKm: 20, ascent: 400, durationS: 7200, vamAvg: 600, count: 1 };
+  // 84 jours de période courante, mais seulement 10 jours réellement documentés avant.
+  const bloque = iso.comparePeriods(courant, precedent, { currentDays: 84, previousCoveredDays: 10 });
+  assert(bloque.comparable === false, 'une référence couvrant 12 % de la période ne doit pas produire de delta');
+  assert(bloque.deltas.distanceKm === null, 'aucun pourcentage ne doit être calculé sur une référence incomplète');
+  assert(/incomplet/i.test(bloque.baseline.reason), 'la raison doit nommer l\'historique incomplet');
+  // Avec une couverture suffisante, la comparaison redevient légitime.
+  const ok = iso.comparePeriods(courant, precedent, { currentDays: 84, previousCoveredDays: 80 });
+  assert(ok.comparable === true && ok.deltas.distanceKm !== null, 'une référence complète doit rester comparable');
+  return { bloque: bloque.baseline.reason, deltaOk: ok.deltas.distanceKm };
+});
+
+await test('E20-6', 'Montée et descente sont distinctes (fin de la valeur absolue)', () => {
+  const iso = loadApp();
+  const bandes = iso.TERRAIN_GRADE_BANDS;
+  const dirs = new Set(bandes.map(b => b.dir));
+  assert(dirs.has('up') && dirs.has('down') && dirs.has('flat'), 'les trois directions doivent exister');
+  // Une pente de -12 % et une pente de +12 % ne peuvent pas tomber dans la même bande.
+  const iDown = iso.terrainBandIndex(-12), iUp = iso.terrainBandIndex(12);
+  assert(iDown !== iUp, 'une descente et une montée de même inclinaison ne doivent pas partager une bande');
+  assert(bandes[iDown].dir === 'down' && bandes[iUp].dir === 'up', 'le signe doit décider de la direction');
+  // Et sur une vraie séance : la répartition porte une synthèse par direction.
+  const session = { id: 'seg', date: iso.todayISO(), series: [] };
+  for (let t = 0; t <= 200; t++) {
+    session.series.push({ t: t * 10, distKm: t * 0.02, alt: t < 100 ? 200 + t * 4 : 600 - (t - 100) * 4, hr: 150, cadenceSpm: 150 });
+  }
+  const dist = iso.terrainGradeDistribution(session);
+  const up = dist.byDir.find(d => d.dir === 'up'), down = dist.byDir.find(d => d.dir === 'down');
+  assert(up.pct > 0 && down.pct > 0, 'une sortie qui monte puis descend doit montrer les deux directions');
+  return { bandes: bandes.length, up: up.pct, down: down.pct };
+});
+
+await test('E20-7', 'Une couverture cadence insuffisante bloque l\'insight de locomotion', () => {
+  const iso = loadApp();
+  const faire = avecCadence => {
+    const s = { id: 'c', date: iso.todayISO(), series: [] };
+    for (let t = 0; t <= 200; t++) {
+      s.series.push({
+        t: t * 10, distKm: t * 0.02, alt: 200 + t * 4, hr: 150,
+        // cadence présente sur 20 % du temps seulement dans le cas dégradé
+        cadenceSpm: avecCadence ? 150 : (t < 40 ? 150 : null),
+      });
+    }
+    return iso.terrainRunWalkByGrade(s);
+  };
+  const degrade = faire(false);
+  assert(degrade.available === false, 'aucune conclusion course/marche sous 60 % de couverture cadence');
+  assert(typeof degrade.coveragePct === 'number', 'la couverture doit être publiée, pas seulement le refus');
+  assert(/cadence/i.test(degrade.reason), 'la raison doit nommer la cadence');
+  const bon = faire(true);
+  assert(bon.available === true && bon.coveragePct >= 60, 'une couverture suffisante doit débloquer l\'analyse');
+  return { couvertureDegradee: degrade.coveragePct, couvertureBonne: bon.coveragePct };
+});
+
+await test('E20-8', 'Aucune pseudo-résistance physiologique sans comparaison d\'effort adaptée', () => {
+  const iso = loadApp();
+  // Sortie longue dont la FC monte, mais dont la vitesse et la pente varient : l'ancien calcul
+  // (moyenne de FC de la 2e moitié vs la 1re) aurait produit une « résistance ». Le nouveau exige
+  // des segments réellement comparables.
+  const s = { id: 'd', date: iso.todayISO(), durationS: 7200, series: [] };
+  for (let t = 0; t <= 400; t++) {
+    const monte = t < 200;
+    s.series.push({ t: t * 18, distKm: t * (monte ? 0.01 : 0.03), alt: monte ? 200 + t * 3 : 800 - (t - 200) * 3, hr: 130 + t * 0.15, cadenceSpm: 150 });
+  }
+  const d = iso.computeEffortDrift(s);
+  if (d.available) {
+    assert(typeof d.pairs === 'number' && d.pairs >= 2, 'une dérive publiée doit reposer sur au moins deux paires comparables');
+    assert(typeof d.method === 'string' && /pente/i.test(d.method), 'la méthode doit dire qu\'elle contrôle la pente');
+    assert(typeof d.limits === 'string' && d.limits.length > 0, 'les limites doivent être portées');
+  } else {
+    assert(typeof d.why === 'string' && d.why.length > 0, 'un refus doit être expliqué');
+  }
+  // Dans tous les cas, aucun axe « Résistance » ne subsiste dans le profil.
+  /* Lu via computeTrailAptitude() plutôt que via la constante RADAR_AXES : un `const` de premier
+     niveau n'appartient pas à l'objet global, il est donc invisible depuis ce contexte isolé. */
+  const axes = iso.computeTrailAptitude([]).axes.map(a => a.key);
+  assert(axes.indexOf('resistance') < 0, 'l\'axe « Résistance » à deux moyennes de FC ne doit pas revenir');
+  return { available: d.available, why: d.why || null, pairs: d.pairs || null, axes };
+});
+
+await test('E20-9', 'Aucun conseil de récupération sans donnée de récupération', () => {
+  const iso = loadApp();
+  seedHistorique(iso);
+  const ins = iso.generateElevInsight();
+  if (ins && ins.action) {
+    assert(!/r[ée]cup[ée]ration/i.test(ins.action), 'aucune action ne doit conseiller la récupération');
+  }
+  // Le garde-fou doit aussi refuser un insight fabriqué exprès.
+  const interdit = iso.makeInsight({
+    id: 'faux', family: 'load', observation: 'Charge en hausse.',
+    action: 'Pense à surveiller ta récupération.', importance: 'attention', confidence: 'high',
+  });
+  const raison = iso.insightRejectionReason(interdit, { hasRecoveryData: false });
+  assert(raison !== null, 'un conseil de récupération doit être refusé quand rien ne mesure la récupération');
+  // Et aucun langage de prédiction de blessure ne doit passer.
+  const blessure = iso.makeInsight({
+    id: 'faux2', family: 'load', observation: 'Charge en hausse.',
+    why: 'Cela augmente ton risque de blessure.', importance: 'attention', confidence: 'high',
+  });
+  assert(iso.insightRejectionReason(blessure, {}) !== null, 'aucune prédiction de blessure ne doit passer');
+  return { raison, insightAction: ins && ins.action };
+});
+
+await test('E20-10', 'Aucun score global sous le minimum de dimensions fiables', () => {
+  const iso = loadApp();
+  // Compte quasiment vierge : une seule séance, pas de plan, pas de zones FC.
+  seedSession(iso, { id: 'seul', date: iso.todayISO(), sport: 'Trail', distanceKm: 8 });
+  iso.saveRaces([{ id: 'r', name: 'Course', date: iso.addDaysIso(iso.todayISO(), 60), distanceKm: 50, denivele: 3000, statut: 'principal' }]);
+  const r = iso.computeRaceReadiness(iso.getRaces()[0]);
+  if (r.dimensions < r.minDimensions) {
+    assert(r.overall === null, 'aucun indice global ne doit être publié sous ' + r.minDimensions + ' dimensions fiables');
+    assert(typeof r.unscoredWhy === 'string' && r.unscoredWhy.length > 0, 'le non-calcul doit être expliqué');
+  }
+  assert(r.subs.some(x => x.score === null), 'les sous-scores non calculables restent nuls, jamais des zéros');
+  return { dimensions: r.dimensions, minimum: r.minDimensions, overall: r.overall, why: r.unscoredWhy };
+});
+
+await test('E20-11', 'Aucun insight de plan quand aucun plan n\'existe', () => {
+  const iso = loadApp();
+  seedHistorique(iso);
+  iso.clearPlan();
+  const bullets = iso.getPlanInsights(iso.getPlan(), iso.loadAllSessions());
+  assert(Array.isArray(bullets) && bullets.length === 0,
+    'la page Plan ne doit produire aucune observation sans plan (elle affichait une dynamique de charge)');
+  // Avec un plan, les observations redeviennent possibles.
+  iso.savePlan([{ date: iso.addDaysIso(iso.todayISO(), -3), distanceKm: 20, deniveleM: 600 }]);
+  const avec = iso.getPlanInsights(iso.getPlan(), iso.loadAllSessions());
+  assert(Array.isArray(avec), 'getPlanInsights doit rester utilisable avec un plan');
+  return { sansPlan: bullets.length, avecPlan: avec.length };
+});
+
+await test('E20-12', 'Une donnée absente reste indisponible, jamais un zéro', () => {
+  const iso = loadApp();
+  // Séance sans cadence ni FC : les signaux concernés doivent être « indisponibles ».
+  const s = { id: 'nu', date: iso.todayISO(), series: [] };
+  for (let t = 0; t <= 60; t++) s.series.push({ t: t * 30, distKm: t * 0.1, alt: 200 + t * 5 });
+  const cov = iso.elevSessionCoverage(s);
+  assert(cov.signals.hr.provenance === 'unavailable', 'une FC absente doit être marquée indisponible');
+  assert(cov.signals.hr.pct === null || cov.signals.hr.pct === 0, 'une FC absente ne doit pas produire de pourcentage inventé');
+  assert(cov.signals.alt.level === 'high', 'une altitude complète doit être reconnue comme telle');
+  // Un axe d'aptitude sans données doit être « indisponible », pas noté zéro.
+  const apt = iso.computeTrailAptitude([]);
+  assert(apt.axes.every(a => a.available === false && a.score === null),
+    'sans séance, aucun axe ne doit porter de score — surtout pas 0');
+  assert(apt.axes.every(a => typeof a.why === 'string' && a.why.length > 0), 'chaque axe indisponible doit dire pourquoi');
+  return { hr: cov.signals.hr.provenance, alt: cov.signals.alt.level, axes: apt.axes.map(a => a.label + ':' + a.score) };
+});
+
+await test('E20-13', 'Une estimation est explicitement nommée « estimation »', () => {
+  const iso = loadApp();
+  assert(iso.ELEV_PROVENANCE.inferred.label === 'Estimation', 'la provenance estimée doit porter ce mot');
+  // Le garde-fou refuse une estimation qui ne se nomme pas.
+  const muet = iso.makeInsight({
+    id: 'muet', family: 'terrain', observation: 'Tu marches surtout en montée.',
+    importance: 'context', confidence: 'medium',
+  });
+  muet.provenance = 'inferred';
+  assert(iso.insightRejectionReason(muet, {}) !== null, 'une estimation anonyme doit être refusée');
+  const nomme = iso.makeInsight({
+    id: 'nomme', family: 'terrain', observation: 'Tu marches surtout en montée.',
+    importance: 'context', confidence: 'medium', method: 'Estimation ELEV basée sur la cadence.',
+  });
+  nomme.provenance = 'inferred';
+  assert(iso.insightRejectionReason(nomme, {}) === null, 'une estimation nommée doit passer');
+  // Et le run/walk, qui EST une estimation, le dit dans sa méthode.
+  const s = { id: 'e', date: iso.todayISO(), series: [] };
+  for (let t = 0; t <= 200; t++) s.series.push({ t: t * 10, distKm: t * 0.02, alt: 200 + t * 4, cadenceSpm: 150 });
+  const rw = iso.terrainRunWalkByGrade(s);
+  assert(/estimation/i.test(rw.method), 'la locomotion doit se présenter comme une estimation');
+  return { methode: rw.method };
+});
+
+await test('E20-14', 'Les états vides ne laissent aucune structure analytique derrière eux', () => {
+  const plan = fs.readFileSync(path.join(root, 'plan.html'), 'utf8');
+  // La rangée d'onglets et les panneaux doivent être masqués quand aucun plan n'existe.
+  assert(/tabs\.hidden = !aPlan/.test(plan), 'la rangée d\'onglets doit être masquée sans plan');
+  assert(/tab-panel'\)\.forEach\(p2 => \{ p2\.hidden = !aPlan; \}\)/.test(plan), 'les panneaux d\'analyse doivent être masqués sans plan');
+  assert(/if \(aPlan\) renderPlanInsightCompact\(\)/.test(plan), 'aucun insight de plan ne doit être rendu sans plan');
+  const css = fs.readFileSync(path.join(root, 'assets', 'style.css'), 'utf8');
+  assert(/\[hidden\]\{display:none !important;\}/.test(css), 'l\'attribut hidden doit réellement masquer');
+  return { ok: true };
+});
+
+await test('E20-15', 'Tout insight porte les métadonnées exigées par le contrat', () => {
+  const iso = loadApp();
+  seedHistorique(iso);
+  const candidats = [iso.generateElevInsight()].concat(iso.generateElevSideInsights()).filter(Boolean);
+  assert(candidats.length > 0, 'le jeu de test doit produire au moins une observation');
+  candidats.forEach(i => {
+    assert(typeof i.id === 'string' && i.id, 'chaque insight doit porter un identifiant stable');
+    assert(iso.INSIGHT_FAMILIES[i.family], 'chaque insight doit appartenir à une famille connue : ' + i.family);
+    assert(typeof i.observation === 'string' && i.observation, 'chaque insight doit porter une observation');
+    assert(iso.INSIGHT_IMPORTANCE[i.importance], 'chaque insight doit porter une importance connue');
+    assert(['high', 'medium', 'low', 'none'].indexOf(i.confidence) >= 0, 'chaque insight doit porter une confiance');
+    assert(typeof i.window === 'string' && i.window, 'chaque insight doit dire sur quelle fenêtre il porte');
+    if (i.delta != null) assert(i.reference, 'un écart sans référence n\'est pas interprétable');
+  });
+  // La priorisation respecte le plafond d'écran et l'unicité de famille.
+  const res = iso.prioritizeInsights(candidats, { hasRecoveryData: false });
+  assert(res.secondary.length <= 2, 'au plus deux insights secondaires par écran');
+  const familles = [res.primary].concat(res.secondary).filter(Boolean).map(i => i.family);
+  assert(new Set(familles).size === familles.length, 'jamais deux insights de la même famille sur un écran');
+  return { candidats: candidats.length, principal: res.primary && res.primary.id, secondaires: res.secondary.map(i => i.id) };
 });
 
 /* --------------------------- rapport --------------------------- */
