@@ -31,21 +31,35 @@ Connectivité, et sur les deux boutons IA) au lieu d'échouer en cours d'appel.
 
 ## Étapes
 
-Toutes les commandes se lancent depuis le dossier du projet (celui qui contient `index.html`).
-
-**1. Relier le dossier à ton projet Supabase**
+Toutes les commandes se lancent **depuis le dossier du projet** (celui qui contient `index.html`).
+Si ton chemin contient des espaces, mets-le entre guillemets :
 
 ```bash
-supabase link --project-ref TON_REF_DE_PROJET
+cd "C:\Users\...\Dashboard Trail html"
 ```
 
-`TON_REF_DE_PROJET` est la chaîne visible dans l'URL de ton tableau de bord Supabase
-(`https://supabase.com/dashboard/project/XXXXXXXX` → `XXXXXXXX`).
+> **Le piège, rencontré pour de bon le 2026-08-22.** La CLI trouve la racine du projet en cherchant
+> `supabase/config.toml`, et **se rabat silencieusement sur ton dossier personnel** si elle ne le
+> trouve pas. L'erreur affichée est alors `entrypoint path does not exist (/Users/toi/supabase/…)`,
+> qui laisse croire à un problème de chemin de fichier. Ce `config.toml` est désormais versionné dans
+> le dépôt : un clone fonctionne directement, et `supabase link` n'est pas nécessaire.
+
+**1. Se connecter à ton compte Supabase**
+
+```bash
+supabase login
+```
+
+Ouvre ton navigateur pour valider. À faire une seule fois par machine.
 
 **2. Déposer la clé Anthropic comme secret du projet**
 
+`TA_REFERENCE` est la chaîne visible dans l'URL de ton tableau de bord Supabase
+(`https://supabase.com/dashboard/project/XXXXXXXX` → `XXXXXXXX`). Tu la retrouves aussi dans ELEV,
+page **Paramètres → Synchronisation**, dans l'URL `https://XXXXXXXX.supabase.co`.
+
 ```bash
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-ta-cle-ici
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-ta-cle-ici --project-ref TA_REFERENCE
 ```
 
 C'est le seul endroit où la clé existe. Elle n'est ni dans le dépôt Git, ni dans le site, ni dans
@@ -54,14 +68,19 @@ tes exports. Tu peux la retirer à tout moment avec `supabase secrets unset ANTH
 **3. Déployer la fonction**
 
 ```bash
-supabase functions deploy ai-proxy
+supabase functions deploy ai-proxy --project-ref TA_REFERENCE
 ```
 
 **4. Vérifier depuis ELEV**
 
-Ouvre la page **Paramètres → Connectivité & appareils** : la ligne « Fonctions IA » doit indiquer
-*Prête (via ton projet Supabase)*. Ouvre ensuite une séance et lance « Générer le retour Coach
-ELEV ».
+Page **Paramètres → Connectivité**, bouton **« Tester les fonctions IA »**. Il fait un appel réel
+minimal (quelques jetons) et rend un verdict sur toute la chaîne : fonction joignable, compte
+authentifié, clé valide. En cas d'échec, le motif technique est affiché entre crochets et renvoie
+directement au tableau ci-dessous.
+
+La ligne « Fonctions IA » qui indique *Prête* ne dit, elle, qu'une chose : que Supabase est
+configuré sur cet appareil. Elle ne prouve ni le déploiement ni la validité de la clé — c'est
+précisément pour ça que le bouton de test existe.
 
 ---
 
@@ -88,10 +107,23 @@ d'entraînement. Seuls le type d'usage, l'identifiant du compte et le code d'err
 - **Aucun quota par utilisateur.** La fonction ne compte pas les appels : cela demanderait une table
   de comptage et une politique de facturation qui n'existent pas dans ce projet personnel. Tant que
   le projet Supabase n'a qu'un seul compte, le risque se limite à ta propre consommation.
-- **Non vérifié de bout en bout dans l'environnement de développement** : aucun projet Supabase
-  n'était configuré au moment d'écrire cette fonction. Le code client et la fonction ont été relus
-  et testés par simulation (voir `audit-qa/regression.mjs`, section « Appels IA »), mais le
-  déploiement réel et l'appel réel restent à constater à l'usage.
-- La fonction relaie un seul modèle (`claude-sonnet-5`) et deux usages. Ajouter un usage demande de
+- La fonction relaie un seul modèle (`claude-sonnet-5`) et trois usages. Ajouter un usage demande de
   l'inscrire dans la table `TASKS` d'`index.ts` — c'est volontaire : sans cette liste fermée, la
   fonction serait un accès Anthropic générique ouvert à tout compte du projet.
+
+## État de vérification
+
+Déployée sur le projet **ELEV** le 2026-08-22 (version 2, `verify_jwt` actif) et **validée en
+conditions réelles** : un appel IA aboutit depuis le produit.
+
+| Contrôle | Comment | Résultat |
+|---|---|---|
+| Fonction déployée | `supabase functions list` | `ACTIVE`, `verify_jwt: true` |
+| Appel anonyme refusé | POST sans en-tête d'autorisation | **401** (et non 404 : elle existe bien) |
+| Préflight CORS | OPTIONS depuis `electron46.github.io` | **204** |
+| Chaîne complète | Bouton « Tester les fonctions IA », puis usage réel | **fonctionnelle** |
+
+Le comportement du client face aux échecs (délai dépassé, 401, 404, 429, 5xx, réseau coupé, réponse
+vide) est couvert par la suite de non-régression : `node audit-qa/qa_tests.mjs`, tests `R3-a` à
+`R3-d`. Ces cas-là sont simulés, pas rejoués contre le vrai service — ce serait provoquer des pannes
+réelles pour vérifier qu'on sait les afficher.

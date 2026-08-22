@@ -624,7 +624,8 @@ Décisions importantes :
   - **Contrôle d'intégrité enrichi, et jamais destructeur.** `checkDataIntegrity()` voit désormais les identifiants d'index sans séance, les séances stockées hors index (invisibles partout), les doublons d'index, les collisions d'identité et une version de schéma non reconnue. `repairDataIntegrity()` **réintègre** les séances hors index et dédoublonne l'index ; une collision d'identité ou une référence d'équipement orpheline est SIGNALÉE, jamais « corrigée » par une suppression.
   - **Deux défauts trouvés en vérifiant le rendu, absents du rapport d'audit.** (1) Une **auto-référence** `const todayISO = todayISO();` créée par le remplacement mécanique des dates sur Objectifs et Plan : erreur de zone morte temporelle, syntaxe valide, `node --check` muet, et les deux pages restaient à moitié rendues. Un contrôle statique de cette classe d'erreur est entré dans la suite (P1-13e). (2) Douze erreurs `<rect> attribute width: A negative value is not valid` **à chaque chargement de l'Accueil** — défaut PRÉEXISTANT, confirmé en rejouant la version d'origine sur la même origine et les mêmes données : le premier dessin d'un graphique a lieu avant que les scènes pleine largeur ne soient dimensionnées, le conteneur y mesure ~24 px et la géométrie des barres devient négative. Seuil de 200 px avant de dessiner, plus un plancher sur la largeur de barre.
   - **Recadrage du plan de mission fourni** : il supposait un typecheck, un lint et un build. **Rien de tout cela n'existe dans ce dépôt** (HTML/CSS/JS natifs, sans `package.json`). La vérification repose sur `node --check`, l'extraction et le contrôle syntaxique des 13 scripts inline, l'exécution réelle des fonctions dans un contexte VM, le pilotage des parcours dans un vrai navigateur et le harnais `_audit.html`.
-  - **Non vérifiable ici, et signalé comme tel** : le déploiement et l'appel réels de la fonction Edge, l'authentification Supabase réelle, la synchronisation entre deux appareils réels, un appel Anthropic réel. Aucun projet Supabase n'est configuré dans l'environnement de travail et aucune clé réelle n'a été lue ni utilisée.
+  - **Façade IA déployée et VALIDÉE EN CONDITIONS RÉELLES le 2026-08-22.** La fonction `ai-proxy` a été déployée sur le projet Supabase de l'utilisateur (version 2, `verify_jwt` actif), puis il a confirmé qu'un appel IA aboutit depuis le produit. Ce que cela démontre, et qu'aucune mesure locale ne pouvait remplacer : la fonction est joignable, l'authentification Supabase réelle fonctionne depuis le navigateur, le secret est présent et valide, et surtout **l'invariant RISK-002 tient en production** — la fonctionnalité marche alors que le navigateur n'a jamais vu la clé. Contrôles faits en plus depuis la ligne de commande : appel sans authentification refusé en 401 (donc bien déployée, pas un 404) et préflight CORS depuis `electron46.github.io` en 204.
+  - **Ce qui reste non vérifié**, et qu'un appel IA réussi ne prouve PAS : la synchronisation entre deux appareils réels, et le chemin de LECTURE du Storage (`downloadFitFile`, `reanalyzeSessionFromFit`, suppression distante). Aucune clé Anthropic réelle n'a été lue ni utilisée pendant la remédiation : la seule qui existe a été posée par l'utilisateur comme secret du projet Supabase, jamais dans une conversation ni dans le dépôt.
 
 Choix refusés :
 - Métriques génériques « état de forme », « récupération », « charge sur 100 » vues sur des maquettes de référence : non implémentées telles quelles, faute de données réelles pour les calculer honnêtement (voir décisions ci-dessus)
@@ -658,10 +659,12 @@ ouvert n'est pas barré.
 - ~~SDK Supabase chargé en bloquant, version non figée~~ — **à moitié résolu** : la version est figée
   (`@2.112.3`). Le chargement reste bloquant, et le passer en `defer` reste écarté pour la même raison
   qu'en phase 17 : un écart d'ordre avec `authgate.js` désactiverait silencieusement la synchronisation.
-- **NOUVEAU — la clé Anthropic ne vit plus dans le navigateur.** Les fonctions IA exigent désormais un
-  projet Supabase configuré, un compte connecté et la fonction `ai-proxy` déployée
-  (`supabase/functions/README.md`). **Le chemin réseau réel n'a jamais été exécuté** : aucun projet
-  Supabase n'était configuré dans l'environnement de travail. À constater au premier usage.
+- ~~**NOUVEAU — la clé Anthropic ne vit plus dans le navigateur**, chemin réseau jamais exécuté~~ —
+  **validé le 2026-08-22.** La fonction `ai-proxy` est déployée sur le projet ELEV et l'utilisateur a
+  confirmé qu'un appel IA aboutit depuis le produit. Reste vrai, et c'est un choix assumé : les
+  fonctions IA exigent un projet Supabase configuré, un compte connecté et la fonction déployée
+  (`supabase/functions/README.md`) ; tout le reste d'ELEV fonctionne sans compte. Le bouton
+  « Tester les fonctions IA » (Paramètres → Connectivité) rejoue cette vérification en un clic.
 - **NOUVEAU — aucun quota par utilisateur sur la façade IA.** Cela demanderait une table de comptage
   et une politique de facturation qui n'existent pas ici. Tant que le projet n'a qu'un compte, le
   risque se limite à sa propre consommation. À rouvrir si le site s'ouvrait à d'autres traileurs.
