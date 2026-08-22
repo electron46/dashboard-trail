@@ -21,7 +21,13 @@ Décisions actées par l'utilisateur (le document stratégique laissait ces poin
 > |---|---|---|
 > | **`../composants.html`** | les **composants réels**, rendus depuis `assets/style.css` | ✅ **fait foi** |
 > | **`readme.md`** (ce fichier) | l'identité **telle qu'appliquée** dans `assets/style.css` | ✅ **fait foi** |
-> | `tokens/*.css`, `guidelines/*.html`, `components/`, `SKILL.md`, `uploads/` | la **proposition initiale** de charte | ❌ jamais implémentée |
+> | `tokens/*.css`, `guidelines/*.html` | **alignés sur le produit** depuis le 2026-08-22 | ✅ à jour |
+> | `SKILL.md`, `_ds_manifest.json`, `ui_kits/`, `uploads/` | reste de la **proposition initiale** | ⚠️ périmé |
+>
+> `components/` a été **supprimé le 2026-08-22** : 53 fichiers React décrivant un produit sans
+> existence ici. `_ds_manifest.json` est un index **généré** : ses renvois vers les fichiers
+> supprimés ont été retirés, mais sa palette et ses échelles décrivent toujours la charte
+> d'origine — le régénérer demande l'outil qui l'a produit, pas une réécriture à la main.
 >
 > **La documentation des composants vit désormais dans `composants.html`** (accessible depuis
 > Paramètres → À propos), ajoutée le 2026-08-22. C'est une page **vivante** : elle charge la vraie
@@ -87,17 +93,14 @@ Aucun set d'icônes n'a été fourni dans les sources. La charte recommande expl
   Les trois premiers sont alignés sur `assets/style.css` : la typographie et l'espacement ont été
   **ré-ancrés sur des relevés du produit** le 2026-08-22 (échelle en `rem`, rythme d'espacement à
   2px), les valeurs précédentes en décrivant un autre.
-- `tokens/_legacy-vocabulaire.css` — **non importé par `styles.css`, et c'est voulu.** Les anciens
-  noms de la charte d'origine (`--color-anthracite`, `--surface-page`…) n'y subsistent que pour
-  `components/`. Toutes les fiches spécimen ont été réécrites dans le vocabulaire réel le
-  2026-08-22, ce qui a permis de sortir cette couche des vrais tokens. Ne pas la réimporter :
-  ce serait réintroduire deux vocabulaires concurrents.
 - `guidelines/` — 15 fiches spécimen (Colors, Type, Spacing, Brand), toutes dans le vocabulaire du
-  produit depuis le 2026-08-22.
-- `components/` — primitives **React**, groupées par usage. ⚠️ **Ce projet n'utilise aucun
-  framework** : ces fichiers décrivent un produit sans existence ici, et sont le seul reste du
-  vocabulaire hérité. La documentation des composants réels vit dans **`../composants.html`**.
-  Leur suppression reste à décider.
+  produit depuis le 2026-08-22. **Plus aucun fichier de ce dossier n'emploie l'ancien vocabulaire**,
+  la couche de correspondances transitoire a donc pu être retirée.
+- ~~`components/`~~ — **supprimé le 2026-08-22** (53 fichiers : 16 primitives React, leurs types,
+  leurs prompts et leurs 5 fiches de démo). Elles décrivaient un produit sans existence dans ce
+  dépôt — ce projet n'utilise aucun framework — et étaient le dernier reste du vocabulaire hérité.
+  La documentation des composants **réels** vit dans **`../composants.html`**, qui les rend depuis
+  `assets/style.css` et ne peut donc pas dériver.
   - `core/` — Button, IconButton, Card, Badge, Tag
   - `forms/` — Input, Select, Switch, Checkbox
   - `data/` — MetricCard, DataValue, Table
