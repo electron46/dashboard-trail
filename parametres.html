@@ -452,8 +452,10 @@ function renderCardAbout() {
   const box = document.getElementById('cardAbout');
   box.innerHTML =
     settingsRow('Version', "Version actuelle de l'application", 'v' + APP_VERSION) +
-    settingsRow('Outils de développement', 'Diagnostic détaillé d\'un fichier .fit', '', { id:'goInspector', onClick:true });
+    settingsRow('Inspecteur .fit', 'Diagnostic détaillé d\'un fichier .fit', '', { id:'goInspector', onClick:true }) +
+    settingsRow('Composants', 'Documentation vivante du design system', '', { id:'goComposants', onClick:true });
   document.getElementById('goInspector').addEventListener('click', () => location.href = 'inspecteur.html');
+  document.getElementById('goComposants').addEventListener('click', () => location.href = 'composants.html');
 }
 
 /* --------------------------- PLAN CSV (inchangé) --------------------------- */

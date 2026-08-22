@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Composants — ELEV Dashboard Trail</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0B0F0E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  /* Styles PROPRES A CETTE PAGE, jamais repris dans le produit : elle documente le design system,
+     elle n'en fait pas partie. Aucune de ces règles ne doit finir dans assets/style.css. */
+  .doc-main{max-width:1100px;margin:0 auto;padding:24px 20px 80px;}
+  .doc-toc{position:sticky;top:0;z-index:20;background:var(--bg);padding:12px 0;border-bottom:1px solid var(--border);
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .doc-toc a{font-size:var(--text-xs);color:var(--muted);text-decoration:none;padding:6px 10px;
+    border:1px solid var(--border);border-radius:var(--radius-pill);}
+  .doc-toc a:hover{color:var(--text);border-color:var(--border-strong);}
+  .doc-block{margin:38px 0;padding-top:8px;}
+  .doc-block > h2{font-family:var(--font-display);font-size:var(--text-xl);margin:0 0 4px;}
+  .doc-lede{color:var(--muted);font-size:var(--text-base);margin:0 0 16px;max-width:70ch;}
+  .doc-demo{border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;background:var(--panel);
+    display:flex;flex-wrap:wrap;gap:12px;align-items:center;}
+  .doc-demo.stack{display:block;}
+  .doc-label{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    font-weight:700;margin:18px 0 8px;}
+  .doc-rules{margin-top:10px;font-family:var(--font-mono);font-size:var(--text-xs);line-height:1.7;
+    color:var(--muted);background:var(--surface-2);border-radius:var(--radius-md);padding:12px 14px;
+    overflow-x:auto;white-space:pre;}
+  .doc-rules b{color:var(--text);font-weight:600;}
+  .doc-note{border-left:3px solid var(--accent);padding:8px 0 8px 14px;margin:14px 0;
+    font-size:var(--text-base);color:var(--muted);max-width:74ch;}
+  .doc-note strong{color:var(--text);}
+  .doc-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+  @media (max-width:640px){ .doc-main{padding:16px 14px 80px;} }
+</style>
+</head>
+<body>
+
+<main class="doc-main" id="contenu">
+
+  <h1>Composants ELEV</h1>
+  <p class="doc-lede">
+    Documentation <strong>vivante</strong> : cette page charge <code>assets/style.css</code>, rend les vrais
+    composants et extrait leurs règles réelles à l'exécution. Elle ne peut donc pas décrire autre chose que
+    ce que fait le produit — contrairement à une description écrite à la main, qui dérive.
+    Survole et tabule dans les exemples : ce sont les composants eux-mêmes, pas des captures.
+  </p>
+  <div class="doc-note">
+    <strong>Ne pas confondre avec <code>design-system/</code></strong>, qui décrit une proposition initiale
+    jamais implémentée, en composants React que ce projet n'utilise pas. Son <code>readme.md</code> le dit
+    lui-même. La référence pour le produit réel, c'est cette page et <code>assets/style.css</code>.
+  </div>
+
+  <nav class="doc-toc" aria-label="Sommaire des composants">
+    <button class="btn small" type="button" id="docTheme">Basculer le thème</button>
+    <a href="#actions">Actions</a>
+    <a href="#navigation">Navigation</a>
+    <a href="#surfaces">Surfaces</a>
+    <a href="#donnees">Données</a>
+    <a href="#etats">États applicatifs</a>
+    <a href="#formulaires">Formulaires</a>
+    <a href="#regles">Règles transversales</a>
+  </nav>
+
+  <!-- ============================== ACTIONS ============================== -->
+  <section class="doc-block" id="actions">
+    <h2>Actions</h2>
+    <p class="doc-lede">
+      Une seule action principale par page, placée dans la barre de titre — motif tenu par toutes les pages.
+      Le vert de marque est rare : il signale l'action principale et le repère « où je suis », rien d'autre.
+    </p>
+
+    <p class="doc-label">Variantes</p>
+    <div class="doc-demo">
+      <button class="btn primary" type="button">Action principale</button>
+      <button class="btn" type="button">Action neutre</button>
+      <button class="btn secondary" type="button">Secondaire</button>
+      <button class="btn ghost" type="button">Fantôme</button>
+      <button class="btn danger" type="button">Destructive</button>
+      <button class="btn small" type="button">Petite</button>
+    </div>
+
+    <p class="doc-label">États — survole, tabule, clique pour les voir</p>
+    <div class="doc-demo">
+      <button class="btn primary" type="button">Au repos</button>
+      <button class="btn primary" type="button" disabled>Désactivée</button>
+      <button class="btn" type="button" aria-disabled="true">Indisponible (aria-disabled)</button>
+    </div>
+    <div class="doc-note">
+      <strong>Désactivée ou indisponible ?</strong> <code>disabled</code> retire l'élément du parcours clavier :
+      la raison de son indisponibilité n'est alors annoncée à personne. <code>aria-disabled="true"</code> le
+      laisse atteignable tout en le rendant inopérant — à préférer dès qu'une explication accompagne le
+      contrôle (voir « Vider le cache local » en Paramètres). Les deux partagent le même style.
+    </div>
+    <div class="doc-rules" data-rules=".btn,.btn.primary,.btn:not(:disabled):hover,.btn:disabled"></div>
+  </section>
+
+  <!-- ============================== NAVIGATION ============================== -->
+  <section class="doc-block" id="navigation">
+    <h2>Navigation</h2>
+    <p class="doc-lede">
+      Trois familles pour trois portées : les onglets à l'intérieur d'une page, les puces de filtre sur une
+      liste, et le rail principal (barre latérale et barre mobile), qui reste volontairement sombre dans les
+      deux thèmes et possède ses propres tokens <code>--rail-*</code>.
+    </p>
+
+    <p class="doc-label">Onglets d'une page</p>
+    <div class="doc-demo stack">
+      <div class="tabs">
+        <button type="button" class="active">Aperçu</button>
+        <button type="button">Charge &amp; Volume</button>
+        <button type="button">Intensité</button>
+      </div>
+    </div>
+
+    <p class="doc-label">Puces de filtre</p>
+    <div class="doc-demo">
+      <button type="button" class="chip-btn active">Toutes</button>
+      <button type="button" class="chip-btn">30 jours</button>
+      <button type="button" class="chip-btn">3 mois</button>
+    </div>
+
+    <p class="doc-label">Lien de contenu</p>
+    <div class="doc-demo">
+      <a class="link-arrow" href="#navigation">Voir toutes les activités →</a>
+    </div>
+    <div class="doc-note">
+      <strong>Le rail ne suit pas le thème.</strong> Migrer ses couleurs vers <code>--text</code> /
+      <code>--muted</code> le rendrait illisible en thème clair, où ces tokens s'inversent alors que le rail
+      reste sombre. C'est pourquoi <code>--rail-*</code> existe séparément.
+    </div>
+  </section>
+
+  <!-- ============================== SURFACES ============================== -->
+  <section class="doc-block" id="surfaces">
+    <h2>Surfaces</h2>
+    <p class="doc-lede">
+      La carte est l'unité de base. <code>.card-compact</code> densifie son titre pour les blocs secondaires.
+      <code>.insight-card</code> est la surface la plus travaillée du produit : elle porte l'interprétation
+      des données, pas les données elles-mêmes, et son étiquette « Insight ELEV » est un vrai titre de région.
+    </p>
+
+    <div class="doc-grid2">
+      <section class="card">
+        <h2>Titre de carte</h2>
+        <p class="hint">Carte standard. Son titre porte le filet vert de section.</p>
+      </section>
+      <section class="card card-compact">
+        <h2>Carte compacte</h2>
+        <p class="hint">Titre en capitales discrètes, pour un bloc secondaire.</p>
+      </section>
+    </div>
+
+    <p class="doc-label">Carte Insight</p>
+    <div class="insight-card">
+      <h2 class="insight-eyebrow">Insight ELEV</h2>
+      <div class="insight-item"><h3>Volume en progression</h3><p>Un constat quantifié, toujours accompagné de sa référence.</p></div>
+      <div class="insight-item"><h3>Verticalité</h3><p>Un pourcentage sans référence n'est pas interprétable.</p></div>
+    </div>
+
+    <p class="doc-label">Groupe de cartes</p>
+    <div class="section-head"><h2>Progression</h2></div>
+    <div class="doc-note">
+      <strong><code>.section-head</code> titre un GROUPE de cartes</strong>, à ne pas confondre avec
+      <code>section.card h2</code>, qui titre UNE carte. La confusion a déjà produit des titres au mauvais
+      niveau. Rangées disponibles : <code>.card-row-2</code>, <code>.card-row-3</code>, et
+      <code>.card-row-3--charts</code> réservée aux vraies rangées de courbes (3 colonnes seulement à
+      partir de 1280 px, sinon les graphiques tombent à ~110 px de large).
+    </div>
+    <div class="doc-rules" data-rules="section.card,.card-compact,.insight-card,.section-head h2"></div>
+  </section>
+
+  <!-- ============================== DONNÉES ============================== -->
+  <section class="doc-block" id="donnees">
+    <h2>Données</h2>
+    <p class="doc-lede">
+      Toute valeur chiffrée se compose en IBM Plex Mono (<code>--font-mono</code>) : distances, allures,
+      dénivelés, temps, dates. Jamais le texte courant. Les libellés clé/valeur qui portent aussi du texte
+      (« Français », un nom de course) restent en Inter — une mono y serait un contresens.
+    </p>
+
+    <p class="doc-label">Badges de statut</p>
+    <div class="doc-demo">
+      <span class="badge principal">Objectif principal</span>
+      <span class="badge secondaire">Secondaire</span>
+      <span class="badge status-ok">Dans les temps</span>
+      <span class="badge status-late">En retard</span>
+      <span class="badge status-ahead">Au-dessus du plan</span>
+      <span class="badge status-done">Terminé</span>
+      <span class="badge status-missed">Manqué</span>
+      <span class="badge status-todo">À faire</span>
+      <span class="badge ok-badge">Bon</span>
+      <span class="badge warn-badge">À surveiller</span>
+      <span class="badge danger-badge">À remplacer</span>
+      <span class="badge na">Non disponible</span>
+    </div>
+    <div class="doc-note">
+      <strong>Un statut ne repose jamais sur la seule couleur.</strong> Chaque badge porte un libellé
+      explicite, lisible sans percevoir la teinte. C'est la règle qui a fait renommer les indicateurs en
+      « Dans les temps / En retard / Au-dessus du plan » plutôt qu'un code vert/orange/rouge.
+    </div>
+
+    <p class="doc-label">Zones de fréquence cardiaque</p>
+    <div class="doc-demo">
+      <span><span class="zone-dot z1"></span> Z1</span>
+      <span><span class="zone-dot z2"></span> Z2</span>
+      <span><span class="zone-dot z3"></span> Z3</span>
+      <span><span class="zone-dot z4"></span> Z4</span>
+      <span><span class="zone-dot z5"></span> Z5</span>
+    </div>
+    <div class="doc-note">
+      Rampe <strong>ordinale à teinte unique</strong> : ce sont des catégories ordonnées, pas des identités
+      indépendantes. Source unique <code>--zone-1</code> à <code>--zone-5</code>, consommée par le CSS
+      <em>et</em> par le JavaScript des graphiques — trois systèmes concurrents ont déjà coexisté ici.
+      Écart assumé avec la convention Garmin où Z5 est rouge.
+    </div>
+    <div class="doc-rules" data-rules=".badge,.badge.principal,.badge.status-late,.zone-dot"></div>
+  </section>
+
+  <!-- ============================== ÉTATS APPLICATIFS ============================== -->
+  <section class="doc-block" id="etats">
+    <h2>États applicatifs</h2>
+    <p class="doc-lede">
+      Le produit doit savoir dire autre chose que « vide ». Une lecture qui échoue, des données partielles
+      et une absence réelle sont trois situations différentes : les confondre laisse croire à une perte de
+      données. Fabriques partagées dans <code>assets/app.js</code>.
+    </p>
+
+    <p class="doc-label">Chargement — <code>skeletonHtml()</code></p>
+    <div class="doc-demo stack"><div id="docSkeleton"></div></div>
+
+    <p class="doc-label">Échec — <code>errorStateHtml()</code></p>
+    <div class="doc-demo stack"><div id="docError"></div></div>
+
+    <p class="doc-label">Données partielles — <code>partialNoteHtml()</code></p>
+    <div class="doc-demo stack"><div id="docPartial"></div></div>
+
+    <p class="doc-label">Absence réelle — <code>.empty-state</code></p>
+    <div class="doc-demo stack">
+      <div class="empty-state">
+        <div class="empty-title">Commence ton suivi</div>
+        <p>Importe une première activité pour voir tes tendances.</p>
+        <button class="btn primary" type="button">Importer une activité</button>
+      </div>
+    </div>
+    <div class="doc-note">
+      <strong>Un état vide doit offrir une issue.</strong> Une charpente complète parsemée de messages
+      « aucune donnée » sans aucune action est un défaut, pas un état vide.
+      Et <strong>ne jamais fabriquer une valeur pour combler une absence</strong> : un sous-score renvoyant
+      <code>0</code> au lieu de <code>null</code> a déjà fait tomber tout l'indice de préparation à 0 % sur
+      un compte vierge.
+    </div>
+
+    <p class="doc-label">Messages — <code>showMsg()</code></p>
+    <div class="doc-demo stack">
+      <div class="msg ok" role="status">Enregistré.</div>
+      <div class="msg err" role="status">Le stockage de ce navigateur est plein.</div>
+      <div class="msg info" role="status">Lecture de 3 fichiers…</div>
+    </div>
+    <div class="doc-note">
+      Chaque message injecté porte <code>role="status"</code> et <code>aria-live="polite"</code> : un lecteur
+      d'écran l'annonce même si le focus est ailleurs.
+    </div>
+  </section>
+
+  <!-- ============================== FORMULAIRES ============================== -->
+  <section class="doc-block" id="formulaires">
+    <h2>Formulaires</h2>
+    <p class="doc-lede">
+      Le libellé enveloppe le champ (<code>&lt;label class="field"&gt;</code>) : c'est ce qui lui donne son
+      nom accessible, sans avoir à gérer des <code>id</code> uniques. Un <code>placeholder</code> n'est
+      jamais un nom accessible — il disparaît dès la saisie.
+    </p>
+    <div class="doc-demo stack">
+      <div class="row">
+        <label class="field" style="flex:1 1 220px;">Distance (km)
+          <input type="number" placeholder="ex. 31">
+        </label>
+        <label class="field" style="flex:1 1 220px;">Statut
+          <select><option>Objectif principal</option><option>Objectif secondaire</option></select>
+        </label>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <select class="filter-select" aria-label="Filtrer par sport"><option>Tous sports</option></select>
+        <input type="text" class="filter-search" placeholder="Rechercher…" aria-label="Rechercher une activité">
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== RÈGLES TRANSVERSALES ============================== -->
+  <section class="doc-block" id="regles">
+    <h2>Règles transversales</h2>
+
+    <p class="doc-label">Accessibilité — vérifiée par mesure, pas supposée</p>
+    <ul class="doc-lede">
+      <li>Un lien d'évitement est posé sur chaque page par <code>renderAppNav()</code>. Sans lui, il fallait
+        11 tabulations pour atteindre le contenu.</li>
+      <li>Le repère de focus est une règle unique et partagée. <code>&lt;summary&gt;</code> y figure : il est
+        focalisable nativement, sans <code>tabindex</code>, et avait donc été oublié.</li>
+      <li>Cible tactile de 44 px minimum en mobile, densité desktop inchangée.</li>
+      <li>Contraste AA vérifié dans les <strong>deux</strong> thèmes. Le thème clair assombrit ses tokens
+        d'accent : le vert de marque y est posé sur des surfaces claires.</li>
+      <li><code>--muted-2</code> est réservé au <strong>décoratif</strong>. Un libellé à lire prend
+        <code>--muted</code>. Un marqueur purement décoratif prend <code>aria-hidden="true"</code>, ce qui
+        l'exempte légitimement du seuil de contraste.</li>
+    </ul>
+
+    <p class="doc-label">Échelles</p>
+    <div id="docScales"></div>
+    <div class="doc-note">
+      Les deux échelles sont <strong>ré-ancrées sur des relevés</strong>, pas décrétées. La typographie est
+      en <code>rem</code> et non en pixels : le produit ne fixe aucune taille de base, ses tailles suivent
+      donc le réglage du navigateur. L'espacement suit un rythme à <strong>2 px</strong>, pas 4 —
+      c'est ce que fait le produit. Resserrer sur un rythme à 4 px déplacerait visiblement toutes les pages :
+      c'est un choix de design, pas un nettoyage.
+    </div>
+
+    <p class="doc-label">Ce que cette page ne documente pas</p>
+    <p class="doc-lede">
+      Les composants propres à une seule page (profil altimétrique, scènes pleine largeur de l'Accueil,
+      radar de performance, cockpits d'objectif et de plan). Ils n'ont qu'un lieu d'emploi : leur
+      documentation est leur code, et les dupliquer ici les ferait diverger.
+    </p>
+  </section>
+
+</main>
+
+<script src="assets/app.js"></script>
+<script>
+/* Extraction des règles RÉELLES depuis la feuille de style chargée. C'est ce qui rend cette page
+   incapable de mentir : si quelqu'un modifie assets/style.css, ce bloc suit automatiquement. */
+function reglesDe(selecteurs) {
+  const voulus = selecteurs.split(',').map(s => s.trim());
+  const sortie = [];
+  for (const feuille of document.styleSheets) {
+    let regles; try { regles = feuille.cssRules; } catch (e) { continue; }
+    for (const r of regles) {
+      if (!r.selectorText || !r.style) continue;
+      const normalise = r.selectorText.replace(/\s+/g, ' ').trim();
+      if (voulus.some(v => normalise === v || normalise.split(',').map(x => x.trim()).includes(v))) {
+        sortie.push('<b>' + normalise + '</b> {\n  ' + r.style.cssText.replace(/; /g, ';\n  ') + '\n}');
+      }
+    }
+  }
+  return sortie.length ? sortie.join('\n\n') : 'Aucune règle trouvée pour : ' + selecteurs;
+}
+document.querySelectorAll('[data-rules]').forEach(el => { el.innerHTML = reglesDe(el.dataset.rules); });
+
+// Les fabriques d'états viennent d'app.js : on les rend telles quelles plutôt que d'en recopier
+// le balisage, qui divergerait au premier changement.
+document.getElementById('docSkeleton').innerHTML = skeletonHtml('row', 2);
+document.getElementById('docError').innerHTML = errorStateHtml('Impossible de récupérer tes séances depuis le cloud.');
+document.getElementById('docPartial').innerHTML = partialNoteHtml('Le plan ne couvre que 2 des 4 semaines affichées.');
+
+// Échelles lues dans les tokens, pas recopiées.
+(function () {
+  const cs = getComputedStyle(document.documentElement);
+  const typo = [['--text-2xs','micro-étiquette'],['--text-xs','légende'],['--text-sm','texte secondaire'],
+                ['--text-base','texte courant'],['--text-md','texte large'],['--text-lg','titre de carte'],
+                ['--text-xl','titre de groupe'],['--text-2xl','métrique dominante'],['--text-3xl','affichage']];
+  const esp = ['--space-2','--space-4','--space-6','--space-8','--space-10','--space-12','--space-14',
+               '--space-16','--space-18','--space-20','--space-24','--space-28','--space-32','--space-40',
+               '--space-48','--space-64'];
+  let html = '<div class="doc-demo stack">';
+  typo.forEach(([tok, role]) => {
+    const v = cs.getPropertyValue(tok).trim();
+    // flex-wrap + min-width:0 : sans eux, les grands paliers (metrique dominante, affichage)
+    // poussaient la page au-dela du viewport en mobile — mesure a 375px, 28px de debordement.
+    html += '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;margin-bottom:6px;min-width:0;">' +
+      '<code style="min-width:120px;color:var(--muted);font-size:var(--text-xs);">' + tok + '</code>' +
+      '<span style="min-width:70px;font-family:var(--font-mono);font-size:var(--text-xs);color:var(--muted);">' + v + '</span>' +
+      '<span style="font-size:' + v + ';min-width:0;">' + role + '</span></div>';
+  });
+  html += '<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">';
+  esp.forEach(tok => {
+    const v = cs.getPropertyValue(tok).trim();
+    html += '<div style="text-align:center;">' +
+      '<div style="width:' + v + ';height:' + v + ';background:var(--accent);border-radius:2px;"></div>' +
+      '<div style="font-size:var(--text-2xs);color:var(--muted);margin-top:4px;font-family:var(--font-mono);">' + v + '</div></div>';
+  });
+  html += '</div></div>';
+  document.getElementById('docScales').innerHTML = html;
+})();
+
+// toggleTheme() est la fonction partagee du produit : on la reutilise plutot que de reimplementer
+// une bascule qui pourrait diverger de celle des 9 pages.
+document.getElementById('docTheme').addEventListener('click', toggleTheme);
+</script>
+</body>
+</html>

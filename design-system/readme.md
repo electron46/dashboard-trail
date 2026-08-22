@@ -19,8 +19,16 @@ Décisions actées par l'utilisateur (le document stratégique laissait ces poin
 >
 > | | Contenu | Statut |
 > |---|---|---|
+> | **`../composants.html`** | les **composants réels**, rendus depuis `assets/style.css` | ✅ **fait foi** |
 > | **`readme.md`** (ce fichier) | l'identité **telle qu'appliquée** dans `assets/style.css` | ✅ **fait foi** |
 > | `tokens/*.css`, `guidelines/*.html`, `components/`, `SKILL.md`, `uploads/` | la **proposition initiale** de charte | ❌ jamais implémentée |
+>
+> **La documentation des composants vit désormais dans `composants.html`** (accessible depuis
+> Paramètres → À propos), ajoutée le 2026-08-22. C'est une page **vivante** : elle charge la vraie
+> feuille de style, rend les vrais composants et extrait leurs règles à l'exécution — elle ne peut
+> donc pas dériver, contrairement à une description écrite à la main. Elle a été créée là plutôt
+> qu'ici parce que `components/` de ce dossier décrit des composants **React**, que ce projet
+> n'utilise pas : y écrire la documentation réelle aurait ajouté un troisième récit contradictoire.
 >
 > L'écart n'est pas une dérive de maintenance : la proposition décrit **un autre produit**. Thème
 > clair (page `#F2F1EE`, cartes blanches), **aucune couleur d'accent** (décision explicite : « no
