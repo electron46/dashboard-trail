@@ -92,6 +92,15 @@
   --rail-bg-top:#0A0E0C; --rail-bg-bottom:#090C0B;
   --rail-text:#F0F3F0; --rail-text-muted:#8E9B95; --rail-text-dim:#7C8A83;
   --rail-border:rgba(244,247,245,.07); --rail-hover:rgba(244,247,245,.05);
+  /* Survol d'une surface de contenu (ligne de liste, carte cliquable, bouton neutre).
+     Créé en phase 15 (cohérence interactionnelle, 2026-08-22) : le survol s'appuyait jusque-là
+     sur --panel-raised, qui vaut EXACTEMENT --panel en thème clair (#FFFFFF dans les deux cas).
+     Résultat mesuré : écart de 1.000, c'est-à-dire aucun retour visuel au survol en thème clair
+     sur les lignes d'Activités, d'Équipements, de montées, les lignes de tableau et les boutons
+     neutres. Trois autres valeurs concurrentes existaient pour le même rôle (une opacité écrite
+     en dur, --bg, et --rail-hover employé hors du rail). Une seule ici, définie par thème.
+     --panel-raised garde son rôle de surface élevée de base, il n'est pas touché. */
+  --surface-hover:#232A26;
   /* Échelles nommées reprises de la charte (divergences 7 et 8, tranchées le 2026-08-21 en sa
      faveur : le produit n'en avait aucune, c'était une dette et non un choix esthétique).
      Aucun effet visuel à l'ajout — ce sont des définitions. La migration des valeurs en dur vers
@@ -163,6 +172,10 @@ html[data-theme="light"]{
      en anthracite sur fond clair, sur toutes les pages ; les bordures translucides blanches
      (--border-strong/--border-soft/--edge-highlight) y étaient invisibles. Aucune page n'aurait pu
      corriger cela seule : c'est une lacune de la couche de tokens. */
+  /* Voir --surface-hover en thème sombre : ici --panel est déjà blanc, la surface de survol ne
+     peut donc qu'aller vers un gris très léger. Écart mesuré : 1.11 face au blanc des cartes ET
+     1.11 face au gris de la page, pour rester distinguable des deux. */
+  --surface-hover:#F1F3F6;
   --surface-elevated:#F3F4F6; --surface-4:#FFFFFF;
   --border-default:#C9CDD5; --border-strong:rgba(15,23,32,.16);
   --border-soft:rgba(15,23,32,.06); --edge-highlight:rgba(15,23,32,.05);
@@ -265,8 +278,8 @@ header.app-topbar .page-sub{margin:3px 0 0;font-size:.82rem;color:var(--muted);l
 header.app-topbar .topbar-back{margin-bottom:8px;}
 header.app-topbar .app-topbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px;}
 #themeToggle{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:50%;font-size:.95rem;cursor:pointer;transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),transform var(--dur-micro) var(--ease-standard);}
-#themeToggle:hover{background:var(--bg);color:var(--text);}
-#themeToggle:active{transform:scale(.92);}
+#themeToggle:not(:disabled):hover{background:var(--surface-hover);color:var(--text);}
+
 
 /* Navigation mobile : barre fixe en bas d'écran, masquée sur desktop (voir media query) */
 .mobile-nav{display:none;}
@@ -477,7 +490,7 @@ section.card.card-compact h2::before{display:none;}
 .equip-table-head{display:none;}
 .equip-list{display:flex;flex-direction:column;gap:8px;}
 .equip-row{display:grid;grid-template-columns:44px 1.6fr .9fr 1.3fr 1fr .9fr 20px;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel);cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:border-color var(--dur-fast) var(--ease-standard),background var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-standard);}
-.equip-row:hover{border-color:var(--border-strong);background:var(--panel-raised,var(--panel));transform:translateY(-1px);}
+.equip-row:hover{border-color:var(--border-strong);background:var(--surface-hover);transform:translateY(-1px);}
 .equip-row .equip-icon{width:36px;height:36px;border-radius:var(--radius-md);background:var(--panel-raised,var(--panel));display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;transition:background var(--dur-fast) var(--ease-standard);}
 .equip-row:hover .equip-icon{background:var(--surface-4);}
 .equip-row .equip-icon img.photo{width:100%;height:100%;object-fit:cover;}
@@ -529,7 +542,7 @@ section.card.card-compact h2::before{display:none;}
   .settings-nav{position:sticky;top:88px;flex-direction:column;overflow:visible;gap:2px;}
   .settings-nav button{width:100%;text-align:left;border-radius:var(--radius-md);border-color:transparent;
     background:transparent;min-height:auto;padding:10px 12px;}
-  .settings-nav button:hover{background:var(--rail-hover);border-color:transparent;}
+  .settings-nav button:hover{background:var(--surface-hover);border-color:transparent;}
   /* Même langage que la sidebar principale : capsule discrète + filet lumineux, pas un aplat
      plein — le vert de marque reste rare et réservé au repère « où je suis ». */
   .settings-nav button.active{position:relative;background:rgba(107,142,78,.13);border-color:transparent;
@@ -541,7 +554,7 @@ section.card.card-compact h2::before{display:none;}
 .settings-row{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--border);background:none;border-left:none;border-right:none;border-top:none;cursor:default;font:inherit;color:inherit;}
 .settings-row:last-child{border-bottom:none;}
 button.settings-row{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard);border-radius:var(--radius-sm);}
-button.settings-row:hover{background:rgba(244,247,245,.03);}
+button.settings-row:not(:disabled):hover{background:var(--surface-hover);}
 .settings-row-label{font-weight:600;font-size:.86rem;display:block;}
 .settings-row.danger .settings-row-label{color:var(--danger);}
 .settings-row-sub{font-size:.72rem;color:var(--muted);display:block;margin-top:1px;}
@@ -600,7 +613,7 @@ button.settings-row:hover{background:rgba(244,247,245,.03);}
 /* Filtres rapides (chips) — page Activités */
 .chip-filters{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;}
 .chip-btn{font:inherit;font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-pill);padding:5px 12px;cursor:pointer;}
-.chip-btn:hover{color:var(--text);border-color:var(--muted-2);}
+.chip-btn:not(:disabled):hover{color:var(--text);border-color:var(--border-strong);}
 .chip-btn.active{background:var(--accent);border-color:var(--accent);color:var(--accent-text);}
 
 #dropzone{border:2px dashed var(--border);border-radius:var(--radius-md);padding:26px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color 120ms,background 120ms;}
@@ -609,24 +622,49 @@ button.settings-row:hover{background:rgba(244,247,245,.03);}
 input[type=file]{display:none;}
 
 .btn{display:inline-block;padding:10px 18px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--panel);cursor:pointer;font-size:.86rem;font-weight:600;font-family:var(--font-sans);color:var(--text);transition:background var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),transform var(--dur-micro) var(--ease-standard);}
-.btn:hover{background:var(--panel-raised);border-color:var(--muted-2);}
-.btn:active{transform:scale(.97);}
+.btn:not(:disabled):hover{background:var(--surface-hover);border-color:var(--border-strong);}
+/* État pressé — un seul enfoncement pour un seul geste. Il n'existait que sur `.btn`
+   (scale .97) et `#themeToggle` (scale .92) : deux valeurs pour la même intention, et rien
+   du tout sur les puces, les onglets ou la navigation des Paramètres, pourtant les contrôles
+   les plus tapotés sur mobile. */
+.btn:not(:disabled):active, #themeToggle:not(:disabled):active, .chip-btn:not(:disabled):active,
+.tabs button:not(:disabled):active, .period-select button:not(:disabled):active,
+.settings-nav button:not(:disabled):active{transform:scale(.97);}
+@media (prefers-reduced-motion:reduce){
+  .btn:active, #themeToggle:active, .chip-btn:active,
+  .tabs button:active, .period-select button:active, .settings-nav button:active{transform:none;}
+}
 .btn.primary,.btn.accent{background:var(--accent);border-color:var(--accent);color:var(--accent-text);}
-.btn.primary:hover,.btn.accent:hover{background:var(--accent-hover);border-color:var(--accent-hover);box-shadow:0 4px 16px rgba(107,142,78,.35);}
+.btn.primary:not(:disabled):hover,.btn.accent:not(:disabled):hover{background:var(--accent-hover);border-color:var(--accent-hover);box-shadow:0 4px 16px rgba(107,142,78,.35);}
 @media (prefers-reduced-motion:reduce){ .btn{transition:none;} }
 /* §20 — bouton SECONDAIRE : surface neutre + bordure + texte clair, l'accent vert n'apparaît
    qu'au survol et au focus. Utilisé pour « voir l'analyse », « voir le plan », « voir
    l'objectif » : des consultations, pas l'action principale de la page. Le fond vert plein reste
    réservé au niveau 1 (imports). Le focus reste vert vif : le §3 l'autorise nommément. */
 .btn.secondary{background:var(--surface-elevated);border-color:var(--border-default);color:var(--text-primary);}
-.btn.secondary:hover{background:var(--panel-raised);border-color:var(--accent);color:var(--accent-light);}
-.btn.secondary:focus-visible{border-color:var(--elev-green);outline:2px solid var(--elev-green);outline-offset:2px;}
+.btn.secondary:not(:disabled):hover{background:var(--surface-hover);border-color:var(--accent);color:var(--accent-light);}
+.btn.secondary:not(:disabled):focus-visible{border-color:var(--elev-green);outline:2px solid var(--elev-green);outline-offset:2px;}
 .btn.ghost{background:transparent;border-color:transparent;}
-.btn.ghost:hover{background:var(--bg);}
+.btn.ghost:not(:disabled):hover{background:var(--surface-hover);}
 .btn.danger{background:var(--panel);border-color:var(--danger);color:var(--danger);}
-.btn.danger:hover{background:var(--danger-soft);}
+.btn.danger:not(:disabled):hover{background:var(--danger-soft);}
 .btn.small{padding:6px 13px;font-size:.78rem;}
-.btn:disabled{opacity:.45;cursor:not-allowed;}
+/* État désactivé — un seul traitement pour TOUS les contrôles. Avant la phase 15, `.btn:disabled`
+   était la seule règle de tout le fichier : un champ, une liste déroulante ou un bouton sans la
+   classe `.btn` restaient rigoureusement identiques à l'état actif une fois désactivés.
+   L'opacité passe de .45 à .55 : à .45, le libellé du bouton principal tombait à 1.43:1 sur la
+   page, donc illisible. WCAG exempte les contrôles inactifs du seuil de contraste (1.4.3), ce
+   n'était donc pas une non-conformité — mais un bouton dont on ne peut plus lire le texte
+   pendant qu'il travaille n'apprend rien à personne.
+   `aria-disabled` est inclus : c'est le bon marquage pour un contrôle qui doit rester
+   atteignable au clavier tout en étant inopérant (voir « Vider le cache local », Paramètres). */
+.btn:disabled, button:disabled, input:disabled, select:disabled, textarea:disabled,
+[aria-disabled="true"], button[aria-disabled="true"], a[aria-disabled="true"]{
+  opacity:.55;cursor:not-allowed;box-shadow:none;transform:none;
+}
+/* Le survol s'applique aussi aux contrôles désactivés en CSS : sans cette neutralisation, un
+   bouton inopérant s'éclairait quand même au passage de la souris — un signal qui ment. */
+button[aria-disabled="true"]:hover, a[aria-disabled="true"]:hover{background:none;}
 @media (prefers-reduced-motion:reduce){ main > section.card,main > .dash-grid > *{animation:none;} }
 
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
@@ -647,7 +685,7 @@ th{color:var(--muted);font-weight:600;font-size:.68rem;font-family:var(--font-mo
 td{font-family:var(--font-mono);}
 td.sans{font-family:var(--font-sans);}
 tr.session-row{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard);}
-tr.session-row:hover{background:var(--panel-raised);}
+tr.session-row:hover{background:var(--surface-hover);}
 
 .badge{display:inline-block;padding:3px 10px;border-radius:var(--radius-pill);font-size:.68rem;font-weight:600;font-family:var(--font-sans);text-transform:uppercase;letter-spacing:.06em;}
 .badge.principal{background:var(--accent);color:var(--accent-text);border:1px solid var(--accent);}
@@ -730,7 +768,9 @@ tr.session-row:hover{background:var(--panel-raised);}
 @media (min-width:640px){ .coach-cards-grid{grid-template-columns:1fr 1fr;} }
 @media (min-width:1200px){ .coach-cards-grid{grid-template-columns:repeat(4,1fr);} }
 .coach-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;background:var(--panel-raised,var(--panel));transition:border-color var(--dur-fast) var(--ease-standard);}
-.coach-card:hover{border-color:var(--border-strong);}
+/* Pas de survol sur .coach-card : c'est une carte de lecture (recommandation, retour Coach),
+   jamais cliquable. Un retour au survol y laissait croire le contraire — le seul repère
+   d'interactivite doit rester fiable. */
 .coach-card h3{margin:0 0 8px;font-family:var(--font-display);font-size:.86rem;font-weight:700;}
 .coach-card p{margin:0 0 8px;font-size:.86rem;line-height:1.5;color:var(--text);font-weight:600;}
 .coach-card p:last-child{margin-bottom:0;}
@@ -1578,7 +1618,7 @@ main.activities-main{max-width:1600px;}
 .activities-table-head{display:none;}
 .activity-row-list{display:flex;flex-direction:column;gap:6px;}
 .activity-row{display:grid;grid-template-columns:56px 1.3fr .7fr .6fr .7fr .8fr .7fr 160px 130px;align-items:center;gap:16px;padding:11px 16px;border:1px solid transparent;border-radius:var(--radius-md);background:var(--panel);text-decoration:none;color:inherit;transition:background var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),transform var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard);}
-.activity-row:hover{background:var(--panel-raised);border-color:var(--border-strong);transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.24);}
+.activity-row:hover{background:var(--surface-hover);border-color:var(--border-strong);transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.24);}
 .activity-row:hover .link-arrow{color:var(--accent);}
 /* La ligne entiere est un lien, mais rien ne la signalait au CLAVIER : seul le survol souris la
    distinguait. Le plan d'action exige un focus visible et interdit que la nature cliquable
@@ -1733,7 +1773,7 @@ main.activities-main{max-width:1600px;}
 .climbs-mini-head{color:var(--muted);font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);}
 .climbs-mini-row{border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text);}
 .climbs-mini-row:last-child{border-bottom:none;}
-.climbs-mini-row:hover{background:var(--panel-raised);}
+.climbs-mini-row:hover{background:var(--surface-hover);}
 
 /* Répartition course/marche/arrêt en barre empilée (onglet Résumé) */
 .locomotion-bar{display:flex;height:14px;border-radius:var(--radius-pill);overflow:hidden;background:var(--panel-raised);margin:4px 0 10px;}
@@ -1903,7 +1943,7 @@ main.analysis-main{max-width:1440px;}
 .goal-selector-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:240px;background:var(--panel-raised);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow);z-index:10;padding:6px;display:none;}
 .goal-selector-menu.open{display:block;}
 .goal-selector-item{display:block;width:100%;text-align:left;font:inherit;font-family:var(--font-sans);background:none;border:none;color:var(--text);padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:.84rem;}
-.goal-selector-item:hover{background:var(--bg);}
+.goal-selector-item:hover{background:var(--surface-hover);}
 .goal-selector-item.active{color:var(--accent-light);font-weight:700;}
 .goal-selector-item .gsi-meta{display:block;font-size:.7rem;color:var(--muted);margin-top:1px;font-weight:400;}
 

@@ -458,7 +458,11 @@ function renderGoalSecondary() {
     others.map(r => {
       const readiness = computeRaceReadiness(r);
       const days = Math.ceil((new Date(r.date) - new Date(today)) / 86400000);
-      return '<div class="race-chip ' + r.statut + '" data-select="' + r.id + '" style="cursor:pointer;">' +
+      // Même action que le sélecteur d'objectif ci-dessus (ligne ~296), qui est un vrai <button> :
+      // ici c'était un <div> avec un simple gestionnaire de clic, donc une carte qu'on pouvait
+      // activer à la souris mais jamais au clavier. `role`/`tabindex` la rendent atteignable sans
+      // la transformer en <button>, qui n'accepte pas le <h3> qu'elle contient (HTML invalide).
+      return '<div class="race-chip ' + r.statut + '" data-select="' + r.id + '" role="button" tabindex="0" style="cursor:pointer;">' +
         '<span class="tag">' + escapeHtml(statutLabel(r.statut)) + '</span>' +
         '<h3>' + escapeHtml(r.name) + '</h3>' +
         '<small>' + fmtDate(r.date) + ' — ' + r.distanceKm + ' km / ' + r.denivele + ' m D+</small><br>' +
@@ -466,7 +470,13 @@ function renderGoalSecondary() {
         (readiness.overall != null ? ' <span class="badge brand-badge">' + readiness.overall + '% prêt</span>' : '') +
       '</div>';
     }).join('') + '</div>';
-  box.querySelectorAll('[data-select]').forEach(el => el.addEventListener('click', () => selectRace(el.dataset.select)));
+  box.querySelectorAll('[data-select]').forEach(el => {
+    el.addEventListener('click', () => selectRace(el.dataset.select));
+    // Un <button> répond nativement à Entrée et Espace ; un role="button" doit le faire lui-même.
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectRace(el.dataset.select); }
+    });
+  });
 }
 
 /* --------------------------- ONGLET APERÇU --------------------------- */

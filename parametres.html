@@ -208,10 +208,17 @@ function humanizeTimezoneLocal(tz) {
   } catch (e) {}
   return city + (offset ? ' · ' + offset : '');
 }
+// opts.unavailable : action qui EXISTE mais n'est pas disponible en l'état (ex. vider le cache
+// sans synchronisation cloud active). Rendue comme un vrai bouton porteur d'`aria-disabled`
+// plutôt qu'un `<div>` muet : elle reste atteignable au clavier, donc la raison inscrite en
+// sous-titre est annoncée, et le style désactivé partagé la distingue enfin d'une action offerte
+// — jusqu'ici seule l'absence de chevron les séparait. `disabled` la rendrait infocalisable,
+// donc silencieuse sur le pourquoi.
 function settingsRow(label, sub, valueHtml, opts) {
   opts = opts || {};
-  const tag = opts.onClick ? 'button type="button"' : 'div';
-  const closeTag = opts.onClick ? 'button' : 'div';
+  const interactive = opts.onClick || opts.unavailable;
+  const tag = interactive ? 'button type="button"' + (opts.unavailable ? ' aria-disabled="true"' : '') : 'div';
+  const closeTag = interactive ? 'button' : 'div';
   return '<' + tag + ' class="settings-row' + (opts.danger?' danger':'') + '"' + (opts.id ? ' id="'+opts.id+'"' : '') + '>' +
     '<span><span class="settings-row-label">' + label + '</span>' + (sub ? '<span class="settings-row-sub">'+sub+'</span>' : '') + '</span>' +
     '<span class="settings-row-value">' + (valueHtml||'') + (opts.onClick ? '<img class="chev" src="'+ICON_S('chevron-right')+'" alt="">' : '') + '</span>' +
@@ -411,7 +418,7 @@ function renderCardBackup() {
   const canClearCache = !!(cfg.url && cfg.anonKey && localStorage.getItem(SUPA_META_KEY));
   box.innerHTML =
     settingsRow('Vérifier l\'intégrité', 'Recherche les séances liées à un équipement supprimé', '', { id:'checkIntegrityBtn', onClick:true }) +
-    settingsRow('Vider le cache local', canClearCache ? 'Resynchronise depuis le cloud' : 'Disponible une fois la synchronisation cloud active', '', { id:'clearCacheBtn', onClick: canClearCache }) +
+    settingsRow('Vider le cache local', canClearCache ? 'Resynchronise depuis le cloud' : 'Disponible une fois la synchronisation cloud active', '', { id:'clearCacheBtn', onClick: canClearCache, unavailable: !canClearCache }) +
     '<div id="backupMsg"></div>';
   document.getElementById('checkIntegrityBtn').addEventListener('click', () => {
     const r = checkDataIntegrity();
