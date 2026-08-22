@@ -14,7 +14,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Raleway:wght@700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="assets/style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Version FIGEE (audit PERF-001) : `@2` laissait jsDelivr servir n'importe quelle version
+     corrective de la branche 2.x, donc un comportement pouvant changer sans aucune modification du
+     depot. `integrity` volontairement absent : la ressource est epinglee a une version immuable, et
+     une empreinte non verifiee ici serait une fausse garantie. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -230,7 +234,7 @@ function renderPlanHero() {
     '</div>' +
     (phases ? '<div class="plan-phase-track">' + phases.map(ph => {
       const isCurrent = currentPhase && ph.label === currentPhase.label && ph.fromDate === currentPhase.fromDate;
-      const isDone = !isCurrent && ph.toDate < new Date().toISOString().slice(0,10);
+      const isDone = !isCurrent && ph.toDate < todayISO();
       return '<div class="plan-phase-step' + (isCurrent?' current':'') + (isDone?' done':'') + '">' +
         '<span class="lbl">' + escapeHtml(ph.label) + '</span><span class="sub">Sem. ' + ph.fromWeek + (ph.toWeek!==ph.fromWeek?'–'+ph.toWeek:'') + '</span>' +
       '</div>';
@@ -312,7 +316,7 @@ function renderPlanWeekSessions() {
   const sessions = loadAllSessions();
   if (!week.inRange) { box.innerHTML = '<div class="empty">Aucune séance à afficher.</div>'; return; }
   const WEEKDAY_LABELS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
-  const todayISO = new Date().toISOString().slice(0,10);
+  const aujourdhui = todayISO();
   const days = [];
   for (let i = 0; i < 7; i++) days.push(addDaysIso(week.startISO, i));
   const STATUS_BADGE = {
@@ -324,7 +328,7 @@ function renderPlanWeekSessions() {
   box.innerHTML = '<div class="mini-list">' + days.map((date, i) => {
     const plannedItems = week.items.filter(p => p.date === date);
     const doneItems = sessions.filter(s => s.date === date);
-    const isToday = date === todayISO;
+    const isToday = date === aujourdhui;
     const status = getPlanDayStatus(date, plannedItems.length, doneItems.length);
     const statusBadge = STATUS_BADGE[status];
     const label = plannedItems.length ? plannedItems.map(p => escapeHtml(p.type||'Séance') + (p.distanceKm?' · '+p.distanceKm+' km':'')).join(', ') :
@@ -350,9 +354,9 @@ function renderPlanToday() {
   if (!plan || !plan.length) { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const planned = plan.filter(p => p.date === todayISO);
-  const done = loadAllSessions().filter(s => s.date === todayISO);
+  const aujourdhui = todayISO();
+  const planned = plan.filter(p => p.date === aujourdhui);
+  const done = loadAllSessions().filter(s => s.date === aujourdhui);
 
   const lienSeance = s =>
     '<a class="link-arrow" href="activite.html?id=' + encodeURIComponent(s.id) + '">Voir la séance →</a>';
@@ -437,9 +441,9 @@ function renderPlanCharts() {
     volBox.innerHTML = msg; dplusBox.innerHTML = msg; chargeBox.innerHTML = msg;
     return;
   }
-  const todayISO = new Date().toISOString().slice(0,10);
-  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, fmt: v=>v.toFixed(0)+' km', mutedPlanned:true, futureFromISO:todayISO });
-  dplusBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, fmt: v=>Math.round(v)+' m', mutedPlanned:true, futureFromISO:todayISO });
+  const aujourdhui = todayISO();
+  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, fmt: v=>v.toFixed(0)+' km', mutedPlanned:true, futureFromISO:aujourdhui });
+  dplusBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, fmt: v=>Math.round(v)+' m', mutedPlanned:true, futureFromISO:aujourdhui });
   initChartTooltips(volBox); initChartTooltips(dplusBox);
 
   const trend = getTrainingTrend();
@@ -494,7 +498,7 @@ function renderPlanChargeVolume() {
     volBox.innerHTML = msg; durBox.innerHTML = msg; chargeBox.innerHTML = msg;
     return;
   }
-  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, height:220, fmt: v=>v.toFixed(0)+' km', mutedPlanned:true, futureFromISO:new Date().toISOString().slice(0,10) });
+  volBox.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'km', { hideTitle:true, height:220, fmt: v=>v.toFixed(0)+' km', mutedPlanned:true, futureFromISO:todayISO() });
   initChartTooltips(volBox);
   durBox.innerHTML = agg ? ('<div class="metric" style="border:none;padding:0;"><div class="val" style="font-size:1.6rem;">' + fmtDuration(agg.durationS) + '</div><p class="hint">Cumulé sur les semaines couvertes par le plan.</p></div>') : '<div class="empty">Non disponible.</div>';
 
@@ -570,7 +574,7 @@ function renderPlanDplusTab() {
   const data = planWeeksAndMap();
   const box = document.getElementById('planDplusChart2Box');
   if (!data || data.weeks.length < 2) box.innerHTML = '<div class="empty">Pas assez de semaines pour ce graphique.</div>';
-  else { box.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, height:240, fmt: v=>Math.round(v)+' m', mutedPlanned:true, futureFromISO:new Date().toISOString().slice(0,10) }); initChartTooltips(box); }
+  else { box.innerHTML = goalTrendChartSvg(data.weeks, data.planMap, 'ascent', { hideTitle:true, height:240, fmt: v=>Math.round(v)+' m', mutedPlanned:true, futureFromISO:todayISO() }); initChartTooltips(box); }
 
   const plan = getPlan();
   const climbBox = document.getElementById('planClimbSessionsBox');
