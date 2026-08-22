@@ -347,11 +347,12 @@ function renderCardData() {
     '<input type="file" id="importFileInput" accept=".json" style="display:none;">' +
     '<div id="importJsonMsg"></div>';
   document.getElementById('exportBtn').addEventListener('click', () => {
-    // Même contenu que le payload de synchronisation : cet export est la sauvegarde manuelle de
-    // l'utilisateur, il ne doit rien omettre de ce qui part vers le cloud. Il oubliait `planNotes`
-    // (note libre de l'onglet Ajustements du Plan) et `planYear` (année de référence du CSV, qui
-    // date les séances planifiées) — une restauration depuis un export les perdait silencieusement.
-    const data = buildSyncPayload();
+    // Sauvegarde manuelle COMPLÈTE, séances comprises — volontairement distincte du payload de
+    // synchronisation, qui ne les porte plus depuis que la table `activities` en est propriétaire
+    // (voir buildSyncPayload). Les deux partageaient la même fonction : sortir les séances de la
+    // synchro aurait vidé l'export en silence, alors que c'est la seule copie hors ligne, et la
+    // seule qui existe si la synchro n'a jamais été configurée.
+    const data = buildExportPayload();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -433,8 +434,15 @@ function renderCardBackup() {
     const idx = loadIndex();
     idx.forEach(deleteSession);
     localStorage.removeItem(IDX_KEY); localStorage.removeItem(PLAN_KEY); localStorage.removeItem(RACES_KEY); localStorage.removeItem(PROFILE_KEY); localStorage.removeItem(GEAR_KEY);
+    // Deux récupérations, car il y a désormais deux stockages cloud distincts : le blob
+    // (plan, courses, profil, équipements, réglages) et la table `activities` (les séances).
+    // Ne rappeler que syncPull() laisserait l'appareil sans aucune séance.
     const res = await syncPull();
-    showMsg('backupMsg', res.ok ? 'Cache vidé et données récupérées depuis le cloud.' : ('Cache vidé — erreur de récupération : ' + res.reason), res.ok ? 'ok' : 'err');
+    const resAct = await syncActivitiesWithSupabase();
+    const ok = res.ok && resAct.ok;
+    showMsg('backupMsg', ok
+      ? ('Cache vidé et données récupérées depuis le cloud (' + (resAct.count || 0) + ' séance(s)).')
+      : ('Cache vidé — erreur de récupération : ' + (res.ok ? resAct.reason : res.reason)), ok ? 'ok' : 'err');
     setTimeout(() => location.reload(), 900);
   });
 }

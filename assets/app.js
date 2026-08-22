@@ -1030,7 +1030,24 @@ function buildSyncPayload() {
   // dans ce payload : le réglage déclenchait donc une synchronisation complète sans jamais être
   // lui-même synchronisé. C'est une vraie donnée de configuration (elle sert à dater les séances
   // d'un CSV de plan qui ne porte que jour/mois, voir parsePlanCsv).
-  return { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
+  // 2026-08-22 — LES SÉANCES NE SONT PLUS DANS CE PAYLOAD. Deux mécanismes les écrivaient au même
+  // chargement de page sans se coordonner (ce blob et la table `activities`), le dernier arrivé
+  // gagnant. Arbitrage rendu par l'utilisateur : `activities` devient l'unique propriétaire des
+  // séances — ce que les commentaires du code affirmaient déjà (« Supabase = source de vérité pour
+  // les séances »), le blob qui les portait encore étant le résidu.
+  // Effet mesuré sur un jeu de 59 séances : le payload passe de 1396 ko à 51 ko, dont 1234 ko de
+  // seules séries de points. Sur des séances réelles (~1200 points au lieu de 150), la projection
+  // à 50 séances passe d'environ 4,4 Mo renvoyés à CHAQUE modification locale à environ 50 ko.
+  // Ne jamais y réintroduire `sessions` : ce serait recréer les deux écrivains concurrents.
+  return { plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
+}
+// Sauvegarde manuelle (page Paramètres → Exporter) : elle, doit être COMPLÈTE. C'est la seule
+// copie hors ligne de l'utilisateur, et la seule qui existe s'il n'a jamais configuré la synchro.
+// Elle contient donc les séances, contrairement au payload cloud ci-dessus — l'export et la
+// synchronisation partageaient la même fonction, et sortir les séances de l'une aurait vidé
+// l'autre en silence.
+function buildExportPayload() {
+  return Object.assign({ sessions: loadAllSessions() }, buildSyncPayload());
 }
 // Pendant l'application des données reçues du cloud, on désactive scheduleSync() pour ne pas
 // renvoyer immédiatement vers Supabase ce qu'on vient d'en recevoir.
@@ -1038,11 +1055,18 @@ let _applyingRemote = false;
 function applySyncPayload(payload) {
   _applyingRemote = true;
   try {
-    if (Array.isArray(payload.sessions)) {
-      loadIndex().forEach(deleteSession);
+    // Les séances ne sont plus pilotées ici (voir buildSyncPayload) : c'est `activities` qui les
+    // possède, via syncActivitiesWithSupabase(). Ce bloc effaçait TOUT l'index local avant de le
+    // réécrire depuis le blob — c'était la moitié destructrice des deux écrivains concurrents.
+    // Seul cas conservé, et volontairement étroit : un blob ANCIEN qui porte encore des séances,
+    // reçu sur un appareil dont le cache local est vide. Sans lui, cet appareil resterait vide le
+    // temps que `activities` prenne le relais. Il s'éteint de lui-même dès le premier envoi
+    // effectué depuis n'importe quel appareil à jour, puisque le champ disparaît alors du blob.
+    if (Array.isArray(payload.sessions) && payload.sessions.length && !loadIndex().length) {
       const ids = [];
       payload.sessions.forEach(s => { if (s && s.id) { saveSession(s.id, s); ids.push(s.id); } });
       saveIndex(ids);
+      console.info('Séances reprises d\'un payload antérieur au passage à la table `activities` :', ids.length);
     }
     // Règle appliquée ci-dessous : on distingue « la clé est absente du payload » (payload ancien
     // ou partiel — on ne touche à rien en local) de « la clé est présente et vide » (l'utilisateur
@@ -1308,17 +1332,24 @@ async function syncActivitiesWithSupabase() {
 
   const { data: rows, error } = await client.from('activities').select('*').eq('user_id', user.id).order('date', { ascending: true });
   if (error || !rows) return { ok:false, reason: error ? error.message : 'empty' };
-  const ids = [];
-  rows.forEach(row => {
-    const remote = activityRowToSession(row);
-    // Fusion plutôt que remplacement : une ligne écrite avant les corrections de mapping ne porte
-    // ni la note de contexte, ni le nom de fichier, ni l'indicateur de date approximative. Les
-    // écraser reviendrait à détruire en local des données que Supabase n'a jamais reçues.
-    saveSession(remote.id, mergeSessionFromRemote(loadSession(remote.id), remote));
-    ids.push(remote.id);
-  });
-  saveIndex(ids);
-  return { ok:true, count: rows.length };
+  // `_applyingRemote` neutralise scheduleSync() pendant la reconstruction : chaque saveSession()
+  // en déclenchait un, donc CHAQUE chargement de page programmait un envoi complet du blob vers
+  // Supabase pour y renvoyer ce qu'on venait d'en lire. Inutile même maintenant que le payload
+  // est petit — et c'était l'un des chemins par lesquels les deux mécanismes se marchaient dessus.
+  _applyingRemote = true;
+  try {
+    const ids = [];
+    rows.forEach(row => {
+      const remote = activityRowToSession(row);
+      // Fusion plutôt que remplacement : une ligne écrite avant les corrections de mapping ne porte
+      // ni la note de contexte, ni le nom de fichier, ni l'indicateur de date approximative. Les
+      // écraser reviendrait à détruire en local des données que Supabase n'a jamais reçues.
+      saveSession(remote.id, mergeSessionFromRemote(loadSession(remote.id), remote));
+      ids.push(remote.id);
+    });
+    saveIndex(ids);
+    return { ok:true, count: rows.length };
+  } finally { _applyingRemote = false; }
 }
 
 /* --------------------------- ANALYSE D'UNE SÉANCE (page Activité) --------------------------- */
