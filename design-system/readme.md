@@ -84,8 +84,20 @@ Aucun set d'icônes n'a été fourni dans les sources. La charte recommande expl
 
 - `styles.css` — point d'entrée global (imports uniquement).
 - `tokens/` — `colors.css`, `typography.css`, `spacing.css`, `effects.css` (rayons, ombres, durées).
-- `guidelines/` — 14 fiches spécimen (Colors, Type, Spacing, Brand) visibles dans l'onglet Design System.
-- `components/` — primitives React groupées par usage :
+  Les trois premiers sont alignés sur `assets/style.css` : la typographie et l'espacement ont été
+  **ré-ancrés sur des relevés du produit** le 2026-08-22 (échelle en `rem`, rythme d'espacement à
+  2px), les valeurs précédentes en décrivant un autre.
+- `tokens/_legacy-vocabulaire.css` — **non importé par `styles.css`, et c'est voulu.** Les anciens
+  noms de la charte d'origine (`--color-anthracite`, `--surface-page`…) n'y subsistent que pour
+  `components/`. Toutes les fiches spécimen ont été réécrites dans le vocabulaire réel le
+  2026-08-22, ce qui a permis de sortir cette couche des vrais tokens. Ne pas la réimporter :
+  ce serait réintroduire deux vocabulaires concurrents.
+- `guidelines/` — 15 fiches spécimen (Colors, Type, Spacing, Brand), toutes dans le vocabulaire du
+  produit depuis le 2026-08-22.
+- `components/` — primitives **React**, groupées par usage. ⚠️ **Ce projet n'utilise aucun
+  framework** : ces fichiers décrivent un produit sans existence ici, et sont le seul reste du
+  vocabulaire hérité. La documentation des composants réels vit dans **`../composants.html`**.
+  Leur suppression reste à décider.
   - `core/` — Button, IconButton, Card, Badge, Tag
   - `forms/` — Input, Select, Switch, Checkbox
   - `data/` — MetricCard, DataValue, Table

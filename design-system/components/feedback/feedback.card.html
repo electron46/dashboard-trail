@@ -17,7 +17,7 @@ function Demo(){
       <EmptyState title="Aucune séance importée pour l'instant." />
       <Button size="sm" onClick={()=>setOpen(true)}>Ouvrir la fenêtre modale</Button>
       <Dialog open={open} title="Séance du 12/05/2026" onClose={()=>setOpen(false)}>
-        <div style={{fontSize:14,color:'var(--color-muted)'}}>Contenu de détail ici.</div>
+        <div style={{fontSize:14,color:'var(--text-secondary)'}}>Contenu de détail ici.</div>
       </Dialog>
     </div>
   );

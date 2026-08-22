@@ -1,0 +1,27 @@
+/* ---------------------------------------------------------------------------------------------
+   VOCABULAIRE HERITE — NON CHARGE PAR styles.css, ET C'EST VOULU.
+   ---------------------------------------------------------------------------------------------
+   Ces noms viennent de la charte d'origine (theme clair, deux tons, sans accent). Ils ont ete
+   maintenus en alias le 2026-08-21 parce que les fiches specimen les employaient encore : les
+   retirer sans correspondances les avait laissees sans couleur.
+   Le 2026-08-22, TOUTES les fiches specimen et tous les fichiers chargeant styles.css ont ete
+   reecrits dans le vocabulaire reel du produit. La couche a donc quitte tokens/colors.css, qui
+   ne decrit plus que la palette effective.
+   Ne subsistent sur ces noms que les composants React de components/, qui decrivent un produit
+   sans existence dans ce depot (aucun framework ici) et n'ont jamais charge de CSS. Ce fichier
+   n'existe donc que pour eux, et pour documenter la correspondance si quelqu'un les rouvre.
+   NE PAS l'importer dans styles.css : ce serait reintroduire deux vocabulaires concurrents.
+   --------------------------------------------------------------------------------------------- */
+:root{
+--color-anthracite:var(--text-primary);
+  --color-offwhite:var(--canvas);
+  --color-white:var(--surface-1);
+  --color-border:var(--border-subtle);
+  --color-muted:var(--text-secondary);
+  --color-muted-2:var(--text-muted);
+  --surface-page:var(--canvas);
+  --surface-card:var(--surface-1);
+  --color-success-soft:rgba(127,184,107,.14);
+  --color-danger-soft:rgba(216,121,111,.14);
+  --color-warning-soft:rgba(210,168,90,.14);
+}
