@@ -19,8 +19,22 @@ Décisions actées par l'utilisateur (le document stratégique laissait ces poin
 >
 > | | Contenu | Statut |
 > |---|---|---|
+> | **`../composants.html`** | les **composants réels**, rendus depuis `assets/style.css` | ✅ **fait foi** |
 > | **`readme.md`** (ce fichier) | l'identité **telle qu'appliquée** dans `assets/style.css` | ✅ **fait foi** |
-> | `tokens/*.css`, `guidelines/*.html`, `components/`, `SKILL.md`, `uploads/` | la **proposition initiale** de charte | ❌ jamais implémentée |
+> | `tokens/*.css`, `guidelines/*.html` | **alignés sur le produit** depuis le 2026-08-22 | ✅ à jour |
+> | `SKILL.md`, `_ds_manifest.json`, `ui_kits/`, `uploads/` | reste de la **proposition initiale** | ⚠️ périmé |
+>
+> `components/` a été **supprimé le 2026-08-22** : 53 fichiers React décrivant un produit sans
+> existence ici. `_ds_manifest.json` est un index **généré** : ses renvois vers les fichiers
+> supprimés ont été retirés, mais sa palette et ses échelles décrivent toujours la charte
+> d'origine — le régénérer demande l'outil qui l'a produit, pas une réécriture à la main.
+>
+> **La documentation des composants vit désormais dans `composants.html`** (accessible depuis
+> Paramètres → À propos), ajoutée le 2026-08-22. C'est une page **vivante** : elle charge la vraie
+> feuille de style, rend les vrais composants et extrait leurs règles à l'exécution — elle ne peut
+> donc pas dériver, contrairement à une description écrite à la main. Elle a été créée là plutôt
+> qu'ici parce que `components/` de ce dossier décrit des composants **React**, que ce projet
+> n'utilise pas : y écrire la documentation réelle aurait ajouté un troisième récit contradictoire.
 >
 > L'écart n'est pas une dérive de maintenance : la proposition décrit **un autre produit**. Thème
 > clair (page `#F2F1EE`, cartes blanches), **aucune couleur d'accent** (décision explicite : « no
@@ -76,8 +90,17 @@ Aucun set d'icônes n'a été fourni dans les sources. La charte recommande expl
 
 - `styles.css` — point d'entrée global (imports uniquement).
 - `tokens/` — `colors.css`, `typography.css`, `spacing.css`, `effects.css` (rayons, ombres, durées).
-- `guidelines/` — 14 fiches spécimen (Colors, Type, Spacing, Brand) visibles dans l'onglet Design System.
-- `components/` — primitives React groupées par usage :
+  Les trois premiers sont alignés sur `assets/style.css` : la typographie et l'espacement ont été
+  **ré-ancrés sur des relevés du produit** le 2026-08-22 (échelle en `rem`, rythme d'espacement à
+  2px), les valeurs précédentes en décrivant un autre.
+- `guidelines/` — 15 fiches spécimen (Colors, Type, Spacing, Brand), toutes dans le vocabulaire du
+  produit depuis le 2026-08-22. **Plus aucun fichier de ce dossier n'emploie l'ancien vocabulaire**,
+  la couche de correspondances transitoire a donc pu être retirée.
+- ~~`components/`~~ — **supprimé le 2026-08-22** (53 fichiers : 16 primitives React, leurs types,
+  leurs prompts et leurs 5 fiches de démo). Elles décrivaient un produit sans existence dans ce
+  dépôt — ce projet n'utilise aucun framework — et étaient le dernier reste du vocabulaire hérité.
+  La documentation des composants **réels** vit dans **`../composants.html`**, qui les rend depuis
+  `assets/style.css` et ne peut donc pas dériver.
   - `core/` — Button, IconButton, Card, Badge, Tag
   - `forms/` — Input, Select, Switch, Checkbox
   - `data/` — MetricCard, DataValue, Table

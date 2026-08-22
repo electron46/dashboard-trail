@@ -18,15 +18,15 @@ function RaceChip({ race }) {
   return (
     <div style={{
       flex: '1 1 220px', borderRadius: 'var(--radius-md)', padding: 14,
-      border: `1px solid ${isPrincipal ? 'var(--color-anthracite)' : 'var(--color-border)'}`,
-      background: isPrincipal ? 'var(--color-anthracite)' : 'var(--color-white)',
-      color: isPrincipal ? 'var(--color-offwhite)' : 'var(--color-anthracite)',
+      border: `1px solid ${isPrincipal ? 'var(--text-primary)' : 'var(--border-subtle)'}`,
+      background: isPrincipal ? 'var(--text-primary)' : 'var(--surface-1)',
+      color: isPrincipal ? 'var(--canvas)' : 'var(--text-primary)',
     }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', color: isPrincipal ? 'var(--color-muted-2)' : 'var(--color-muted)' }}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', color: isPrincipal ? 'var(--text-muted)' : 'var(--text-secondary)' }}>
         Objectif {race.statut}
       </div>
       <div style={{ fontSize: 16, fontWeight: 600, margin: '4px 0 2px' }}>{race.name}</div>
-      <div style={{ fontSize: 13, color: isPrincipal ? 'var(--color-muted-2)' : 'var(--color-muted)' }}>
+      <div style={{ fontSize: 13, color: isPrincipal ? 'var(--text-muted)' : 'var(--text-secondary)' }}>
         {fmtDate(race.date)} — <span style={{ fontFamily: 'var(--font-mono)' }}>{race.distanceKm} km / {race.denivele} m D+</span>
       </div>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 18, fontWeight: 600, marginTop: 8 }}>J-{days}</div>

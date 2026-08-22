@@ -10,8 +10,22 @@
   /* --font-mono : distances, D+, allures, durées, dates, scores. JAMAIS le texte courant.
      Graisses disponibles 500 et 600 ; la famille plafonne à 700. */
 
-  --text-xs:12px; --text-sm:13.5px; --text-base:15px; --text-md:17px;
-  --text-lg:20px; --text-xl:26px; --text-2xl:34px; --text-3xl:48px;
+  /* Ré-ancrée sur le produit le 2026-08-22, d'après un relevé de ses 253 déclarations de taille :
+     47 valeurs distinctes, dont douze entre 10,5 et 14px — de la dérive, pas des décisions.
+     Huit rôles en ressortent, ce sont les paliers ci-dessous.
+     En REM et non en pixels : le produit ne fixe aucune taille de base sur `html`, ses tailles
+     suivent donc le réglage de police du navigateur. Une échelle en px l'aurait annulé.
+     Les valeurs précédentes ne décrivaient pas non plus le produit (--text-base à 15px alors que
+     son texte le plus courant en mesure 13). */
+  --text-2xs:.6875rem;  /* 11px — micro-étiquette, souvent en majuscules */
+  --text-xs:.75rem;     /* 12px — légende, métadonnée */
+  --text-sm:.8125rem;   /* 13px — texte secondaire, le rôle le plus fréquent */
+  --text-base:.875rem;  /* 14px — texte courant */
+  --text-md:.9375rem;   /* 15px — texte large */
+  --text-lg:1.0625rem;  /* 17px — titre de carte */
+  --text-xl:1.25rem;    /* 20px — titre de groupe de cartes */
+  --text-2xl:1.625rem;  /* 26px — métrique dominante */
+  --text-3xl:2.125rem;  /* 34px — affichage */
 
   --weight-regular:400; --weight-medium:500; --weight-semibold:600; --weight-bold:700;
   --leading-tight:1.15; --leading-normal:1.5;

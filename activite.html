@@ -92,6 +92,19 @@
       <label class="field" style="max-width:280px;">Paire de chaussures utilisée
         <select id="gearSelect"><option value="">Non renseignée</option></select>
       </label>
+      <!-- Fichier original : n'apparaît que si un .fit est réellement disponible dans le Storage
+           privé. Jusqu'ici les fichiers y étaient envoyés à chaque import sans qu'aucun code ne
+           les relise — ce bloc est le chemin de retour. -->
+      <div id="fitFileBox" style="display:none;"></div>
+      <!-- Aucune suppression unitaire n'existait : un import raté ou en double ne pouvait se
+           retirer qu'en effaçant TOUTES les données. Réutilise `.danger-zone`, déjà en place
+           en Paramètres, plutôt que d'inventer un traitement visuel pour l'occasion. -->
+      <div class="danger-zone" style="max-width:520px;">
+        <h3>Supprimer cette séance</h3>
+        <p id="deleteSessionHint">Action définitive. La séance et son fichier original seront retirés de cet appareil et de ton espace cloud.</p>
+        <button class="btn danger small" id="deleteSessionBtn" type="button">Supprimer définitivement</button>
+        <div id="deleteSessionMsg"></div>
+      </div>
     </div>
 
     <div class="tab-panel" data-panel="allure">
@@ -184,6 +197,51 @@ function initActivityPage(s) {
   renderSplitsTab(s);
   renderInsight(s, zoneDist, climbs);
 
+  // Fichier .fit original — voir downloadFitFile / reanalyzeSessionFromFit (assets/app.js).
+  // Le bloc reste caché tant qu'aucun fichier n'est réellement récupérable : promettre une
+  // récupération qui échouerait vaudrait moins que ne rien afficher.
+  async function renderFitFileBox(session) {
+    const box = document.getElementById('fitFileBox');
+    if (!getSupabaseClient() || !(await supaGetUser())) return;
+    if (!session.fitFilePath) return; // aucune trace d'un fichier côté Storage pour cette séance
+    box.style.display = '';
+    box.innerHTML =
+      '<p class="hint" style="margin:14px 0 8px;">Le fichier <code>.fit</code> original de cette séance est conservé ' +
+      'dans ton espace privé. Le ré-analyser applique le moteur d\'analyse actuel : utile si celui-ci ' +
+      's\'est amélioré depuis l\'import.</p>' +
+      '<div class="row">' +
+      '<button class="btn small" id="reanalyzeBtn" type="button">Ré-analyser depuis le fichier original</button>' +
+      '<button class="btn small" id="downloadFitBtn" type="button">Télécharger le fichier .fit</button>' +
+      '</div><div id="fitFileMsg"></div>';
+
+    document.getElementById('downloadFitBtn').addEventListener('click', async () => {
+      showMsg('fitFileMsg', 'Récupération du fichier…', 'info');
+      const res = await downloadFitFile(session);
+      if (!res.ok) { showMsg('fitFileMsg', 'Récupération impossible : ' + res.reason, 'err'); return; }
+      const url = URL.createObjectURL(new Blob([res.buffer], { type: 'application/octet-stream' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = session.fileName || (session.id + '.fit');
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      showMsg('fitFileMsg', 'Fichier téléchargé.', 'ok');
+    });
+
+    document.getElementById('reanalyzeBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('reanalyzeBtn');
+      btn.disabled = true;
+      showMsg('fitFileMsg', 'Ré-analyse en cours…', 'info');
+      const res = await reanalyzeSessionFromFit(session.id);
+      btn.disabled = false;
+      if (!res.ok) { showMsg('fitFileMsg', 'Ré-analyse impossible : ' + res.reason, 'err'); return; }
+      // Le nombre de points est le signe le plus lisible qu'une amélioration du moteur a servi.
+      const detail = res.pointsApres !== res.pointsAvant
+        ? (' Série passée de ' + res.pointsAvant + ' à ' + res.pointsApres + ' points.')
+        : ' Aucun changement de finesse de la série.';
+      showMsg('fitFileMsg', 'Séance ré-analysée.' + detail + ' Rechargement…', 'ok');
+      setTimeout(() => location.reload(), 1200);
+    });
+  }
+
   const gearSelect = document.getElementById('gearSelect');
   const gear = getGear().filter(g => g.actif !== false || g.id === s.gearId);
   gearSelect.innerHTML = '<option value="">Non renseignée</option>' + gear.map(g => '<option value="'+g.id+'">'+escapeHtml(g.nom)+'</option>').join('');
@@ -192,6 +250,33 @@ function initActivityPage(s) {
     const cur = loadSession(sessionId); if (!cur) return;
     cur.gearId = gearSelect.value || null;
     saveSession(cur.id, cur);
+  });
+
+  renderFitFileBox(s);
+
+  // Le message d'avertissement dit la vérité selon l'état réel de la synchronisation : promettre
+  // une suppression cloud sans compte configuré serait faux, et taire l'irréversibilité en local
+  // le serait tout autant.
+  (async () => {
+    const avecCloud = !!(getSupabaseClient() && await supaGetUser());
+    document.getElementById('deleteSessionHint').textContent = avecCloud
+      ? 'Action définitive. La séance et son fichier original seront retirés de cet appareil et de ton espace cloud.'
+      : 'Action définitive. Aucune synchronisation n\'est active : cette séance ne sera récupérable que depuis un export JSON antérieur.';
+  })();
+  document.getElementById('deleteSessionBtn').addEventListener('click', async () => {
+    if (!confirm('Supprimer définitivement cette séance (' + fmtDate(s.date) + ' — ' + fmtNum(s.distanceKm, ' km', 1) + ') ?\n\nCette action est irréversible.')) return;
+    const btn = document.getElementById('deleteSessionBtn');
+    btn.disabled = true;
+    showMsg('deleteSessionMsg', 'Suppression…', 'info');
+    const res = await deleteSessionEverywhere(s.id);
+    if (!res.ok) {
+      btn.disabled = false;
+      // Rien n'a été supprimé : l'ordre distant-puis-local garantit qu'un échec laisse la séance intacte.
+      showMsg('deleteSessionMsg', 'Suppression impossible, la séance est intacte : ' + res.reason, 'err');
+      return;
+    }
+    showMsg('deleteSessionMsg', 'Séance supprimée.', 'ok');
+    setTimeout(() => location.href = 'historique.html', 900);
   });
 
   document.getElementById('contexteInput').value = s.contexte || '';

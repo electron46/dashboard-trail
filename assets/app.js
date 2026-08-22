@@ -1030,7 +1030,24 @@ function buildSyncPayload() {
   // dans ce payload : le réglage déclenchait donc une synchronisation complète sans jamais être
   // lui-même synchronisé. C'est une vraie donnée de configuration (elle sert à dater les séances
   // d'un CSV de plan qui ne porte que jour/mois, voir parsePlanCsv).
-  return { sessions: loadAllSessions(), plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
+  // 2026-08-22 — LES SÉANCES NE SONT PLUS DANS CE PAYLOAD. Deux mécanismes les écrivaient au même
+  // chargement de page sans se coordonner (ce blob et la table `activities`), le dernier arrivé
+  // gagnant. Arbitrage rendu par l'utilisateur : `activities` devient l'unique propriétaire des
+  // séances — ce que les commentaires du code affirmaient déjà (« Supabase = source de vérité pour
+  // les séances »), le blob qui les portait encore étant le résidu.
+  // Effet mesuré sur un jeu de 59 séances : le payload passe de 1396 ko à 51 ko, dont 1234 ko de
+  // seules séries de points. Sur des séances réelles (~1200 points au lieu de 150), la projection
+  // à 50 séances passe d'environ 4,4 Mo renvoyés à CHAQUE modification locale à environ 50 ko.
+  // Ne jamais y réintroduire `sessions` : ce serait recréer les deux écrivains concurrents.
+  return { plan: getPlan(), races: getRaces(), profile: getProfile(), gear: getGear(), planNotes: getPlanNotes(), planYear: getPlanYear() };
+}
+// Sauvegarde manuelle (page Paramètres → Exporter) : elle, doit être COMPLÈTE. C'est la seule
+// copie hors ligne de l'utilisateur, et la seule qui existe s'il n'a jamais configuré la synchro.
+// Elle contient donc les séances, contrairement au payload cloud ci-dessus — l'export et la
+// synchronisation partageaient la même fonction, et sortir les séances de l'une aurait vidé
+// l'autre en silence.
+function buildExportPayload() {
+  return Object.assign({ sessions: loadAllSessions() }, buildSyncPayload());
 }
 // Pendant l'application des données reçues du cloud, on désactive scheduleSync() pour ne pas
 // renvoyer immédiatement vers Supabase ce qu'on vient d'en recevoir.
@@ -1038,11 +1055,18 @@ let _applyingRemote = false;
 function applySyncPayload(payload) {
   _applyingRemote = true;
   try {
-    if (Array.isArray(payload.sessions)) {
-      loadIndex().forEach(deleteSession);
+    // Les séances ne sont plus pilotées ici (voir buildSyncPayload) : c'est `activities` qui les
+    // possède, via syncActivitiesWithSupabase(). Ce bloc effaçait TOUT l'index local avant de le
+    // réécrire depuis le blob — c'était la moitié destructrice des deux écrivains concurrents.
+    // Seul cas conservé, et volontairement étroit : un blob ANCIEN qui porte encore des séances,
+    // reçu sur un appareil dont le cache local est vide. Sans lui, cet appareil resterait vide le
+    // temps que `activities` prenne le relais. Il s'éteint de lui-même dès le premier envoi
+    // effectué depuis n'importe quel appareil à jour, puisque le champ disparaît alors du blob.
+    if (Array.isArray(payload.sessions) && payload.sessions.length && !loadIndex().length) {
       const ids = [];
       payload.sessions.forEach(s => { if (s && s.id) { saveSession(s.id, s); ids.push(s.id); } });
       saveIndex(ids);
+      console.info('Séances reprises d\'un payload antérieur au passage à la table `activities` :', ids.length);
     }
     // Règle appliquée ci-dessous : on distingue « la clé est absente du payload » (payload ancien
     // ou partiel — on ne touche à rien en local) de « la clé est présente et vide » (l'utilisateur
@@ -1156,6 +1180,67 @@ async function uploadFitFile(client, userId, clientId, arrayBuffer) {
   });
   if (error) { console.error('Upload du fichier .fit échoué :', error.message); return null; }
   return path;
+}
+
+/* --------------------------- LECTURE DES FICHIERS .fit ORIGINAUX ---------------------------
+   Le bucket `fit-files` était en ÉCRITURE SEULE : les fichiers y étaient envoyés à chaque import
+   depuis la mise en place du Storage, et AUCUN code ne les relisait — ni `download`, ni
+   `createSignedUrl`. L'objectif affiché (« ne plus jamais avoir à redemander une réimportation si
+   l'analyse s'améliore ») n'était donc pas tenu : les fichiers s'accumulaient sans servir.
+   Les deux fonctions ci-dessous ouvrent ce chemin de retour. */
+
+// Chemin de stockage d'une séance. Utilise `fitFilePath` s'il a été restitué par la resynchro,
+// sinon le reconstruit selon la même règle que l'upload — une séance importée sur cet appareil
+// n'a pas encore fait l'aller-retour et ne porte donc pas encore le champ.
+function fitFilePathFor(session, userId) {
+  if (session && session.fitFilePath) return session.fitFilePath;
+  if (!session || !userId) return null;
+  return userId + '/' + sanitizeStorageKey(session.id) + '.fit';
+}
+
+// Récupère le fichier .fit original d'une séance depuis le Storage privé.
+async function downloadFitFile(session) {
+  const client = getSupabaseClient();
+  if (!client) return { ok:false, reason:'not-configured' };
+  const user = await supaGetUser();
+  if (!user) return { ok:false, reason:'not-logged-in' };
+  const path = fitFilePathFor(session, user.id);
+  if (!path) return { ok:false, reason:'no-path' };
+  const { data, error } = await client.storage.from('fit-files').download(path);
+  if (error) return { ok:false, reason: error.message };
+  const buffer = await data.arrayBuffer();
+  return { ok:true, buffer, path };
+}
+
+// Champs d'une séance que le fichier .fit ne contient PAS : ils viennent de l'utilisateur ou de
+// l'import, et une ré-analyse qui les écraserait détruirait son travail. Liste tenue à jour en
+// même temps que `sessionToActivityRow` — même vigilance, même conséquence si on en oublie un.
+const SESSION_USER_FIELDS = ['id', 'gearId', 'contexte', 'aiFeedback', 'fileName', 'importedAt', 'fitFilePath'];
+
+// Ré-analyse une séance à partir de son fichier original : re-télécharge, re-parse avec le moteur
+// COURANT, puis remplace les données dérivées en préservant ce que l'utilisateur a saisi.
+// C'est ce qui permet à une amélioration du parser de profiter aux séances déjà importées — les
+// séances antérieures au passage au downsampling LTTB gardent par exemple une série à 300 points
+// tant qu'elles n'ont pas été ré-analysées (voir CLAUDE.md, aucune migration rétroactive).
+async function reanalyzeSessionFromFit(sessionId) {
+  const local = loadSession(sessionId);
+  if (!local) return { ok:false, reason:'unknown-session' };
+  const dl = await downloadFitFile(local);
+  if (!dl.ok) return dl;
+  let fresh;
+  try {
+    const messages = parseFit(dl.buffer);
+    fresh = summarizeFit(messages, { name: local.fileName || (sessionId + '.fit'), lastModified: Date.now() });
+  } catch (e) { return { ok:false, reason:'Fichier illisible : ' + e.message }; }
+  const merged = Object.assign({}, fresh);
+  SESSION_USER_FIELDS.forEach(k => { if (local[k] !== undefined) merged[k] = local[k]; });
+  merged.id = local.id; // l'identifiant ne se recalcule jamais : il indexe déjà la séance
+  if (!saveSession(merged.id, merged)) return { ok:false, reason: lastStorageError || 'écriture impossible' };
+  // La ligne `activities` est réécrite avec les nouvelles valeurs, sans renvoyer le fichier
+  // (il est déjà en Storage et n'a pas changé) — `pushActivityRow` préserve alors le chemin.
+  await pushActivityRow(merged, null);
+  const avant = (local.series || []).length, apres = (merged.series || []).length;
+  return { ok:true, session: merged, pointsAvant: avant, pointsApres: apres };
 }
 // Construction de la ligne `activities` à partir d'une séance. Extraite de pushActivityRow pour
 // être vérifiable seule et confrontable à activityRowToSession : c'est l'aller d'un aller-retour,
@@ -1308,17 +1393,58 @@ async function syncActivitiesWithSupabase() {
 
   const { data: rows, error } = await client.from('activities').select('*').eq('user_id', user.id).order('date', { ascending: true });
   if (error || !rows) return { ok:false, reason: error ? error.message : 'empty' };
-  const ids = [];
-  rows.forEach(row => {
-    const remote = activityRowToSession(row);
-    // Fusion plutôt que remplacement : une ligne écrite avant les corrections de mapping ne porte
-    // ni la note de contexte, ni le nom de fichier, ni l'indicateur de date approximative. Les
-    // écraser reviendrait à détruire en local des données que Supabase n'a jamais reçues.
-    saveSession(remote.id, mergeSessionFromRemote(loadSession(remote.id), remote));
-    ids.push(remote.id);
-  });
-  saveIndex(ids);
-  return { ok:true, count: rows.length };
+  // `_applyingRemote` neutralise scheduleSync() pendant la reconstruction : chaque saveSession()
+  // en déclenchait un, donc CHAQUE chargement de page programmait un envoi complet du blob vers
+  // Supabase pour y renvoyer ce qu'on venait d'en lire. Inutile même maintenant que le payload
+  // est petit — et c'était l'un des chemins par lesquels les deux mécanismes se marchaient dessus.
+  _applyingRemote = true;
+  try {
+    const ids = [];
+    rows.forEach(row => {
+      const remote = activityRowToSession(row);
+      // Fusion plutôt que remplacement : une ligne écrite avant les corrections de mapping ne porte
+      // ni la note de contexte, ni le nom de fichier, ni l'indicateur de date approximative. Les
+      // écraser reviendrait à détruire en local des données que Supabase n'a jamais reçues.
+      saveSession(remote.id, mergeSessionFromRemote(loadSession(remote.id), remote));
+      ids.push(remote.id);
+    });
+    saveIndex(ids);
+    return { ok:true, count: rows.length };
+  } finally { _applyingRemote = false; }
+}
+
+/* --------------------------- SUPPRESSION D'UNE SÉANCE ---------------------------
+   `deleteSession()` reste volontairement LOCALE et ne touche à rien côté cloud : elle est appelée
+   par « Réinitialiser les données locales » et « Vider le cache local », qui promettent l'une et
+   l'autre que la copie cloud est conservée. La faire supprimer à distance détruirait exactement
+   ce qu'elles annoncent préserver.
+   La suppression réellement définitive passe donc par la fonction ci-dessous, explicite.
+   Depuis que `activities` est propriétaire des séances (2026-08-22), supprimer en local sans
+   supprimer la ligne distante ne servirait à rien : la séance réapparaîtrait à la resynchro
+   suivante. Les deux doivent donc partir ensemble, et dans cet ordre. */
+async function deleteSessionEverywhere(sessionId) {
+  const local = loadSession(sessionId);
+  if (!local) return { ok:false, reason:'unknown-session' };
+  const client = getSupabaseClient();
+  const user = client ? await supaGetUser() : null;
+
+  if (client && user) {
+    // Le distant D'ABORD : si l'appel échoue, on n'a rien détruit et l'utilisateur garde sa séance.
+    // L'ordre inverse laisserait un local vide face à une ligne distante qui la ressusciterait.
+    const { error } = await client.from('activities').delete().eq('user_id', user.id).eq('client_id', sessionId);
+    if (error) return { ok:false, reason: error.message };
+    // Le fichier original ensuite. Son échec n'annule pas la suppression : la séance a disparu de
+    // la table, plus rien ne la reconstruira — il ne resterait qu'un fichier orphelin, signalé.
+    const path = fitFilePathFor(local, user.id);
+    if (path) {
+      const { error: errFile } = await client.storage.from('fit-files').remove([path]);
+      if (errFile) console.warn('Fichier .fit non supprimé (orphelin) :', path, errFile.message);
+    }
+  }
+
+  deleteSession(sessionId);
+  saveIndex(loadIndex().filter(id => id !== sessionId));
+  return { ok:true, cloud: !!(client && user) };
 }
 
 /* --------------------------- ANALYSE D'UNE SÉANCE (page Activité) --------------------------- */
