@@ -333,11 +333,19 @@ function renderObjective() {
       '<summary>Détail de ma préparation <span class="hint">' +
         (weakest ? 'point faible : ' + escapeHtml(weakest.label.toLowerCase()) : '5 sous-scores') + '</span></summary>' +
       '<div class="objective-subscores-body"><div class="obj-subs">' + readiness.subs.map(sub => {
-        const pct = sub.score != null ? sub.score : 0;
-        return '<div class="obj-sub-row" title="' + escapeHtml(sub.detail) + '">' +
+        /* Un sous-score non calculable dessinait une barre à 0 % — visuellement identique à
+           « mesuré et mauvais », alors que c'est une absence. Il n'a plus de barre du tout. */
+        if (sub.score == null) {
+          return '<div class="obj-sub-row obj-sub-row--na" title="' + escapeHtml(sub.unavailableWhy || sub.detail || '') + '">' +
+            '<span>' + escapeHtml(sub.label) + '</span>' +
+            '<span class="obj-sub-na"><span class="dq-sym" aria-hidden="true">—</span>' +
+              escapeHtml(sub.unavailableWhy || 'Non calculable') + '</span>' +
+          '</div>';
+        }
+        return '<div class="obj-sub-row" title="' + escapeHtml(sub.detail || '') + '">' +
           '<span>' + escapeHtml(sub.label) + '</span>' +
-          '<div class="obj-sub-track"><div class="obj-sub-fill" style="width:' + pct + '%"></div></div>' +
-          '<span class="obj-sub-val">' + (sub.score != null ? sub.score + '%' : '—') + '</span>' +
+          '<div class="obj-sub-track"><div class="obj-sub-fill" style="width:' + sub.score + '%"></div></div>' +
+          '<span class="obj-sub-val">' + sub.score + '%</span>' +
         '</div>';
       }).join('') + '</div></div>' +
     '</details>';
@@ -352,10 +360,24 @@ function renderObjective() {
       '<div class="objective-main">' +
         '<div class="objective-lead">' +
           '<h3 class="objective-name">' + escapeHtml(r.name) + '</h3>' +
+          /* Le repli affirmait « Pas encore assez de séances » quelle que soit la cause. Or depuis
+             qu'une divergence au plan empêche de calculer un indice, ce message s'affichait avec
+             59 séances en base : il désignait un manque de données là où il y en a beaucoup.
+             Le motif réel vient désormais de `readiness.unscoredWhy`, et une divergence est
+             annoncée comme un ÉTAT, pas comme une absence. */
           (hasReadiness
             ? '<div class="objective-readiness"><span class="v">' + readiness.overall + '<small>%</small></span>' +
               '<span class="l">de préparation</span></div>'
-            : '<p class="hint" style="margin:10px 0 0;">Pas encore assez de séances pour calculer ton état de préparation.</p>') +
+            : (readiness && readiness.diverging
+              ? '<div class="objective-readiness objective-readiness--na">' +
+                  '<span class="l-strong">Écart important avec le plan</span>' +
+                  '<span class="l">' + escapeHtml(readiness.divergence && readiness.divergence.pct != null
+                    ? (readiness.divergence.key === 'volume' ? 'Volume' : 'Dénivelé') + ' réalisé à ' + readiness.divergence.pct + ' % de la cible'
+                    : 'Indice non calculé') + '</span>' +
+                '</div>'
+              : '<p class="hint" style="margin:10px 0 0;">' +
+                  escapeHtml((readiness && readiness.unscoredWhy) || "Pas encore assez de séances pour calculer ton état de préparation.") +
+                '</p>')) +
         '</div>' +
         '<div class="objective-metrics">' +
           metrics.map(m => '<div class="objective-metric' + (m.lead ? ' is-lead' : '') + '"><span class="v">' + escapeHtml(m.v) + '</span><span class="l">' + escapeHtml(m.l) + '</span></div>').join('') +

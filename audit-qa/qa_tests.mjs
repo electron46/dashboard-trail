@@ -1291,7 +1291,23 @@ await test('E20-2', 'Un dépassement du plan ne produit pas une préparation par
   // Et le libellé ne peut pas annoncer une excellente préparation pendant ce temps.
   const libelle = iso.readinessLevelLabel(95, { diverging: true, scope: 'race' });
   assert(!/excellente/i.test(libelle), 'jamais « Excellente préparation » en même temps qu\'une divergence');
-  return { aligne: aligne.score, depassement: depassement.score, divergence: divergence.score, libelle };
+
+  /* Ajouté après coup, sur un défaut que ce test NE VOYAIT PAS et qui n'est apparu qu'en regardant
+     la page rendue : les sous-scores en divergence passent à `null`, ils sortaient donc de la
+     moyenne, qui remontait à 95 % sur les seules dimensions restantes. La divergence FAISAIT MONTER
+     la note, et un anneau vert à 95 % s'affichait sous « Écart important avec le plan ».
+     On vérifie donc le bout de la chaîne, pas seulement planAlignment() isolément. */
+  seedHistorique(iso, { km: 46 });                 // réalisé très au-dessus du plan
+  iso.saveRaces([{ id: 'd', name: 'Course', date: iso.addDaysIso(iso.todayISO(), 28), distanceKm: 50, denivele: 3000, statut: 'principal' }]);
+  const planDivergent = [];
+  for (let i = 1; i <= 4; i++) planDivergent.push({ date: iso.addDaysIso(iso.todayISO(), -i * 7), distanceKm: 10, deniveleM: 200 });
+  iso.savePlan(planDivergent);
+  iso.savePlanGoalId('d');
+  const rd = iso.computeRaceReadiness(iso.getRaces()[0]);
+  assert(rd.diverging === true, 'le jeu de test doit bien produire une divergence, sinon ce test ne prouve rien');
+  assert(rd.overall === null, "AUCUN indice global en cas de divergence — l'ecarter du calcul revenait a la recompenser");
+  assert(typeof rd.unscoredWhy === 'string' && /ecarte|écarte/i.test(rd.unscoredWhy), 'le non-calcul doit nommer la divergence');
+  return { aligne: aligne.score, depassement: depassement.score, divergence: divergence.score, libelle, overallEnDivergence: rd.overall };
 });
 
 await test('E20-3', 'Deux séances ne suffisent pas à établir une tendance', () => {

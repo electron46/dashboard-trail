@@ -3635,8 +3635,17 @@ function computeRaceReadiness(race) {
   const valid = subs.filter(s => s.score != null);
   /* Audit §6.3 / CRED-10 : aucun score global sous 3 dimensions fiables. Moyenner un seul
      sous-score et l'afficher comme « indice de préparation » donne à une mesure isolée l'autorité
-     d'une synthèse. En dessous du seuil, ELEV montre les sous-scores et se tait sur le total. */
-  const enough = valid.length >= READINESS_MIN_DIMENSIONS;
+     d'une synthèse. En dessous du seuil, ELEV montre les sous-scores et se tait sur le total.
+
+     ET AUCUN SCORE GLOBAL EN CAS DE DIVERGENCE. Défaut trouvé en regardant la page rendue :
+     quand le volume diverge, son sous-score devient `null` et sortait donc de la moyenne — qui
+     remontait alors à 95 % sur les seules dimensions restantes. Écarter du calcul la dimension
+     qui pose problème REVENAIT À RÉCOMPENSER LA DIVERGENCE, et l'anneau vert à 95 % s'affichait
+     à côté de « Écart important avec le plan » : exactement la contradiction que l'audit
+     interdit (P0-2), déplacée d'un cran au lieu d'être corrigée.
+     Une divergence est une raison de ne pas noter, pas de noter sur ce qui reste. */
+  const diverging = prep ? prep.diverging : false;
+  const enough = valid.length >= READINESS_MIN_DIMENSIONS && !diverging;
   const overall = enough ? Math.round(valid.reduce((a, s) => a + s.score, 0) / valid.length) : null;
   const weakest = valid.length ? valid.reduce((min, s) => s.score < min.score ? s : min, valid[0]) : null;
 
@@ -3645,12 +3654,14 @@ function computeRaceReadiness(race) {
     overall, subs, weakest,
     dimensions: valid.length, minDimensions: READINESS_MIN_DIMENSIONS,
     unscoredWhy: enough ? null
-      : (valid.length ? 'Seulement ' + valid.length + ' sous-score' + (valid.length > 1 ? 's' : '') + ' sur ' + subs.length + ' est calculable : trop peu pour un indice global.'
-        : "Aucun sous-score n'est calculable pour l'instant."),
+      : (diverging
+        ? "Ton entraînement s'écarte trop du plan pour qu'un indice de préparation global ait un sens. Les sous-scores ci-dessous restent lisibles un par un."
+        : (valid.length ? 'Seulement ' + valid.length + ' sous-score' + (valid.length > 1 ? 's' : '') + ' sur ' + subs.length + ' est calculable : trop peu pour un indice global.'
+          : "Aucun sous-score n'est calculable pour l'instant.")),
     scope,
     scopeLabel: prep ? prep.scopeLabel : 'Préparation générale',
     scopeWhy: prep ? prep.scopeWhy : "Aucun plan n'est importé : ELEV compare ton entraînement à des repères génériques, pas à une préparation conçue pour cette course.",
-    diverging: prep ? prep.diverging : false,
+    diverging,
     divergence: prep && prep.diverging
       ? (prep.alignment.diverging ? { key: 'volume', pct: prep.pct } : { key: 'dplus', pct: prep.pctDplus })
       : null,
@@ -3666,8 +3677,12 @@ function computeRaceReadiness(race) {
    Signature rétrocompatible : appelée avec le seul nombre, elle retombe sur le comportement
    d'origine, ce qui évite de casser un appelant qui n'a pas encore l'objet complet. */
 function readinessLevelLabel(overall, readiness) {
-  if (overall == null) return null;
+  /* La divergence est testée AVANT la nullité de `overall`. Depuis qu'une divergence empêche de
+     calculer un indice global, `overall` y est null : tester la nullité d'abord faisait retomber
+     la page sur « Pas assez de données », alors que les données sont là et que c'est l'écart au
+     plan qui empêche de noter. */
   if (readiness && readiness.diverging) return 'Écart important avec le plan';
+  if (overall == null) return null;
   const general = !!(readiness && readiness.scope === 'general');
   if (overall >= 85) return general ? 'Volume général élevé' : 'Excellente préparation';
   if (overall >= 60) return general ? 'Entraînement régulier' : 'Sur la bonne voie';
@@ -5898,8 +5913,15 @@ function groupedBarChartSvg(title, weeks, series, opts) {
    Accepte les axes riches de computeTrailAptitude (avec `available`, `score`, `value`, `unit`).
    Signature rétrocompatible : `radarChartSvg(axes, scores)` fonctionne toujours. */
 function radarChartSvg(axes, scoresOrOpts, maybeOpts) {
-  const legacyScores = (scoresOrOpts && !scoresOrOpts.title && !scoresOrOpts.subtitle) ? scoresOrOpts : null;
-  const opts = maybeOpts || (legacyScores ? {} : (scoresOrOpts || {}));
+  /* Détection du mode par la FORME DES AXES, pas par celle du second argument.
+     La version précédente testait `!scoresOrOpts.title` : appelée avec `{ title: null }` — un cas
+     parfaitement légitime, celui d'un radar sans titre — elle prenait l'objet d'options pour une
+     table de scores, n'y trouvait aucune clé d'axe, et déclarait les TROIS axes « indisponibles »
+     alors que les trois étaient mesurés. Un axe riche porte `score` ; une table de scores non. */
+  const axesRiches = Array.isArray(axes) && axes.length &&
+    Object.prototype.hasOwnProperty.call(axes[0], 'score');
+  const legacyScores = axesRiches ? null : (scoresOrOpts || null);
+  const opts = maybeOpts || (axesRiches ? (scoresOrOpts || {}) : {});
   const rich = axes.map(ax => {
     if (legacyScores) {
       const sc = legacyScores[ax.key];
@@ -5962,9 +5984,14 @@ function radarChartSvg(axes, scoresOrOpts, maybeOpts) {
   // Alternative textuelle : le radar est une image, ses valeurs doivent exister en texte (A11Y-01).
   const alt = rich.map(ax => ax.label + ' : ' + (ax.available ? (ax.value != null ? ax.value + (ax.unit ? ' ' + ax.unit : '') : ax.score + ' sur 100') : 'indisponible')).join('. ');
 
+  /* Le viewBox déborde volontairement du carré de dessin : les libellés sont posés à 1,16 fois le
+     rayon et sont centrés, donc un libellé long (« Vitesse (5:24 /km) ») sortait du cadre et se
+     retrouvait coupé — le « V » manquait. La marge est horizontale surtout, les axes latéraux
+     étant les plus exposés. */
+  const padX = 70, padY = 14;
   return '<div class="chart-box radar-box">' +
     (opts.title ? '<h3>' + escapeHtml(opts.title) + (opts.subtitle ? ' <small style="font-weight:400;">' + escapeHtml(opts.subtitle) + '</small>' : '') + '</h3>' : '') +
-    '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + escapeHtml(alt) + '">' +
+    '<svg viewBox="' + (-padX) + ' ' + (-padY) + ' ' + (w + padX * 2) + ' ' + (h + padY * 2) + '" role="img" aria-label="' + escapeHtml(alt) + '">' +
     '<defs><radialGradient id="' + id + 'Fill" cx="50%" cy="50%" r="65%"><stop offset="0%" stop-color="var(--accent-light)" stop-opacity="0.38"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0.08"/></radialGradient></defs>' +
     rings + spokes + shape + dots + labels +
     '</svg></div>';

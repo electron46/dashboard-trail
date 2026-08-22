@@ -297,7 +297,12 @@ function renderPlanWeekBox() {
   box.innerHTML =
     '<p class="hint">' + fmtDate(week.startISO) + ' – ' + fmtDate(week.endISO) + ' · Semaine ' + week.weekNum + ' / ' + week.totalWeeks + (week.bloc ? ' — ' + escapeHtml(week.bloc) : '') + '</p>' +
     '<div class="goal-hero-score" style="gap:16px;margin-top:6px;">' +
-      '<div class="goal-ring-big" style="width:76px;height:76px;">' + ringSvg(wp.pctSessions || 0, 76, (wp.pctSessions!=null?wp.pctSessions+'%':'—')) + '</div>' +
+      /* `wp.pctSessions || 0` dessinait un anneau VIDE quand le pourcentage n'est pas calculable :
+         visuellement identique à 0 % de séances réalisées, donc une absence présentée comme un
+         échec. Même correction qu'ailleurs : pas d'anneau du tout dans ce cas. */
+      '<div class="goal-ring-big" style="width:76px;height:76px;">' + (wp.pctSessions != null
+        ? ringSvg(wp.pctSessions, 76, wp.pctSessions + '%')
+        : '<div class="ring-unavailable" style="width:76px;height:76px;" role="img" aria-label="Progression de la semaine non calculable"><span class="dq-sym" aria-hidden="true">—</span></div>') + '</div>' +
       '<div class="goal-score-meta">' +
         '<div class="lbl">' + wp.doneCount + ' / ' + wp.plannedCount + ' séances</div>' +
         (wp.statusLabel ? '<span class="badge ' + statusClass + '" style="margin-top:6px;display:inline-block;">' + escapeHtml(wp.statusLabel) + '</span>' : '') +

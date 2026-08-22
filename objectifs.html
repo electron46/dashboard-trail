@@ -449,21 +449,32 @@ function renderGoalHero() {
       kpiCell('Sortie longue', longestRecent != null ? fmtNum(longestRecent,' km',1) : null, longSpark, null) +
     '</div>' +
     '<div class="goal-subscores">' +
-      readiness.subs.map(s => '<div class="goal-subscore-row" title="' + escapeHtml(s.detail || '') + '">' +
-        '<span>' + escapeHtml(s.label) + '</span>' +
-        '<div class="goal-subscore-track">' + (s.score != null
-          ? '<div class="goal-subscore-fill" style="width:' + Math.min(100, s.score) + '%"></div>'
-          : '<div class="goal-subscore-fill goal-subscore-fill--na"></div>') + '</div>' +
-        '<span class="goal-subscore-val' + (s.score==null?' na':'') + '">' +
-          (s.score != null ? s.score + '%' : '<span class="dq-sym" aria-hidden="true">—</span> indisponible') + '</span>' +
-      '</div>').join('') +
+      /* Une dimension non calculable ne montre PAS de barre. Une trame pleine largeur se lisait
+         comme un score maximal, une barre à zéro se lirait comme un échec mesuré : les deux sont
+         faux. La ligne porte donc une mention en clair à la place de la piste, et la raison en
+         info-bulle comme pour les autres lignes. */
+      readiness.subs.map(s => s.score != null
+        ? '<div class="goal-subscore-row" title="' + escapeHtml(s.detail || '') + '">' +
+            '<span>' + escapeHtml(s.label) + '</span>' +
+            '<div class="goal-subscore-track"><div class="goal-subscore-fill" style="width:' + Math.min(100, s.score) + '%"></div></div>' +
+            '<span class="goal-subscore-val">' + s.score + '%</span>' +
+          '</div>'
+        : '<div class="goal-subscore-row goal-subscore-row--na" title="' + escapeHtml(s.unavailableWhy || s.detail || '') + '">' +
+            '<span>' + escapeHtml(s.label) + '</span>' +
+            '<span class="goal-subscore-na"><span class="dq-sym" aria-hidden="true">—</span>' +
+              escapeHtml(s.unavailableWhy || 'Non calculable pour l\'instant.') + '</span>' +
+          '</div>').join('') +
     '</div>' +
     /* Trois blocs que la page mélangeait jusqu'ici (audit §4.4 / UX-07) : ce qui est DISPONIBLE,
        ce qui est ALIGNÉ au plan, et ce qu'ELEV ne peut pas conclure. */
     '<div class="goal-scope-note">' +
       (readiness.scopeWhy ? '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> ' + escapeHtml(readiness.scopeWhy) +
         (readiness.scope === 'general' ? ' <a href="#" data-link-plan>Lier mon plan à cette course</a>' : '') + '</p>' : '') +
-      (readiness.unscoredWhy ? '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> ' + escapeHtml(readiness.unscoredWhy) + '</p>' : '') +
+      /* `unscoredWhy` n'est affiché que s'il n'est PAS dû à la divergence : le bandeau de
+         divergence juste en dessous dit déjà la même chose, en plus précis (il porte le
+         pourcentage réel). Deux messages pour un seul fait, c'est l'inverse du « moins de
+         signaux, plus de preuves » que vise l'audit. */
+      (readiness.unscoredWhy && !readiness.diverging ? '<p class="partial-note"><span class="dq-sym" aria-hidden="true">—</span> ' + escapeHtml(readiness.unscoredWhy) + '</p>' : '') +
       (readiness.diverging ? '<p class="partial-note" data-divergence><span class="dq-sym" aria-hidden="true">▲</span> ' +
         escapeHtml('Ton ' + (readiness.divergence.key === 'volume' ? 'volume' : 'dénivelé') + ' réalisé atteint ' + readiness.divergence.pct +
         ' % de la cible du plan. Au-delà de 140 %, ELEV ne note plus le respect du plan : le plan ne décrit plus ce que tu fais.') + '</p>' : '') +
