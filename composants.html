@@ -314,9 +314,11 @@
     <div class="doc-note">
       Les deux échelles sont <strong>ré-ancrées sur des relevés</strong>, pas décrétées. La typographie est
       en <code>rem</code> et non en pixels : le produit ne fixe aucune taille de base, ses tailles suivent
-      donc le réglage du navigateur. L'espacement suit un rythme à <strong>2 px</strong>, pas 4 —
-      c'est ce que fait le produit. Resserrer sur un rythme à 4 px déplacerait visiblement toutes les pages :
-      c'est un choix de design, pas un nettoyage.
+      donc le réglage du navigateur. L'espacement a été <strong>resserré sur un rythme à 4 px</strong> le
+      2026-08-22 : 381 déclarations repositionnées, 20 valeurs distinctes ramenées à 11. Les pas 6, 10, 14
+      et 18 qu'employait le produit tombaient exactement entre deux crans — ils ont été répartis dans les
+      deux sens pour ne pas faire dériver la mise en page. Restent hors échelle, à dessein : les filets
+      d'1 px et le dégagement de la barre de navigation mobile.
     </div>
 
     <p class="doc-label">Ce que cette page ne documente pas</p>
@@ -362,9 +364,8 @@ document.getElementById('docPartial').innerHTML = partialNoteHtml('Le plan ne co
   const typo = [['--text-2xs','micro-étiquette'],['--text-xs','légende'],['--text-sm','texte secondaire'],
                 ['--text-base','texte courant'],['--text-md','texte large'],['--text-lg','titre de carte'],
                 ['--text-xl','titre de groupe'],['--text-2xl','métrique dominante'],['--text-3xl','affichage']];
-  const esp = ['--space-2','--space-4','--space-6','--space-8','--space-10','--space-12','--space-14',
-               '--space-16','--space-18','--space-20','--space-24','--space-28','--space-32','--space-40',
-               '--space-48','--space-64'];
+  const esp = ['--space-4','--space-8','--space-12','--space-16','--space-20','--space-24',
+               '--space-28','--space-32','--space-40','--space-48','--space-64'];
   let html = '<div class="doc-demo stack">';
   typo.forEach(([tok, role]) => {
     const v = cs.getPropertyValue(tok).trim();

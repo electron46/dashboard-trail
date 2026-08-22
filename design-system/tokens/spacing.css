@@ -1,21 +1,14 @@
 /* Aligné sur assets/style.css le 2026-08-22.
-   L'échelle précédente (4/8/12/16/20/24/32/40/48/64, indexée) décrivait un rythme à 4px que le
-   produit n'a jamais suivi : le relevé de ses 326 déclarations d'espacement donne 10px (82 fois),
-   14px (64), 6px (61) et 18px (30) — soit 237 sur 326 — et aucune de ces quatre valeurs n'y
-   figurait. C'est pourquoi elle n'a jamais été consommée une seule fois.
-   Le rythme réel est à 2px. Le nom porte la valeur en pixels : --space-14 vaut 14px.
-   Resserrer le produit sur un vrai rythme à 4px reste possible, mais c'est un choix de design
-   avec des déplacements visibles sur toutes les pages, pas un nettoyage — voir readme.md. */
+   Le produit a été resserré sur un rythme à 4px le même jour, sur décision de l'utilisateur.
+   Auparavant il tournait à 2px : ses quatre pas les plus employés étaient 10, 14, 6 et 18 —
+   237 déclarations sur 326 — qui tombent exactement entre deux pas de 4. Ils ont été répartis
+   (6→8 et 14→16 vers le haut, 10→8 et 18→16 vers le bas) pour compenser au lieu de dériver.
+   381 déclarations repositionnées, 20 valeurs distinctes ramenées à 11. */
 :root{
-  --space-2:2px;
   --space-4:4px;
-  --space-6:6px;
   --space-8:8px;
-  --space-10:10px;
   --space-12:12px;
-  --space-14:14px;
   --space-16:16px;
-  --space-18:18px;
   --space-20:20px;
   --space-24:24px;
   --space-28:28px;
