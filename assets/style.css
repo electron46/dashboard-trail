@@ -262,7 +262,7 @@ html.auth-pending body::before{content:'Connexion…';position:fixed;inset:0;dis
 .sidebar-brand .brand-mark{width:30px;height:30px;flex-shrink:0;filter:invert(66%) sepia(14%) saturate(700%) hue-rotate(50deg) brightness(95%);}
 .sidebar-brand .brand-word{display:flex;flex-direction:column;line-height:1.15;}
 .sidebar-brand .brand-word strong{font-family:var(--font-display);font-size:var(--text-lg);font-weight:800;color:var(--rail-text);letter-spacing:.01em;}
-.sidebar-brand .brand-word span{font-family:var(--font-sans);font-size:.56rem;font-weight:600;color:#5C6A63;letter-spacing:.13em;text-transform:uppercase;}
+.sidebar-brand .brand-word span{font-family:var(--font-sans);font-size:var(--text-2xs);font-weight:600;color:#5C6A63;letter-spacing:.13em;text-transform:uppercase;}
 .sidebar-nav{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;overflow-y:auto;}
 .sidebar-nav-sep{height:1px;background:rgba(244,247,245,.07);margin:10px 8px;flex-shrink:0;}
 /* Lien de nav : la capsule active est une surface élevée + un filet lumineux de bord gauche
@@ -1062,7 +1062,7 @@ html[data-theme="light"] .terrain-profile-bg-mask{background:linear-gradient(180
 .terrain-label .tl-icon{flex:0 0 auto;display:block;}
 .terrain-label .tl-icon svg{width:15px;height:15px;display:block;}
 .terrain-label .tl-body{display:flex;flex-direction:column;gap:1px;min-width:0;line-height:1.15;}
-.terrain-label .tl-body strong{font-family:var(--font-sans);font-size:.6rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#E7F8EC;white-space:nowrap;}
+.terrain-label .tl-body strong{font-family:var(--font-sans);font-size:var(--text-2xs);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#E7F8EC;white-space:nowrap;}
 .terrain-label .tl-vals{font-size:var(--text-2xs);color:#B9E6C7;font-variant-numeric:tabular-nums;white-space:nowrap;}
 html[data-theme="light"] .terrain-label{background:rgba(11,15,14,.82);}
 
@@ -1317,7 +1317,7 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 /* Legende de la vignette geographique. Elle n'existe que lorsque la vignette existe, donc
    uniquement quand la seance porte de vraies coordonnees. */
 .lastride-trace-cap{margin:4px 0 0;font-size:var(--text-2xs);color:var(--muted);text-align:center;line-height:1.3;}
-.lastride-trace-cap span{display:block;color:var(--text-muted);font-size:.62rem;}
+.lastride-trace-cap span{display:block;color:var(--text-muted);font-size:var(--text-2xs);}
 .lastride-trace svg{display:block;width:100%;height:auto;max-height:178px;object-fit:contain;}
 .lastride-trace:hover{border-color:var(--accent);}
 .terrain-profile--lastride{height:clamp(160px,17vw,200px);}
@@ -1351,8 +1351,8 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
   .terrain-profile--hero{height:clamp(165px,42vw,200px);}
   .terrain-profile--summit{height:clamp(150px,38vw,185px);}
   .terrain-label{max-width:150px;padding:5px 10px 5px 8px;gap:7px;}
-  .terrain-label .tl-body strong{font-size:.55rem;letter-spacing:.07em;}
-  .terrain-label .tl-vals{font-size:.64rem;}
+  .terrain-label .tl-body strong{font-size:var(--text-2xs);letter-spacing:.07em;}
+  .terrain-label .tl-vals{font-size:var(--text-2xs);}
   .terrain-tip{font-size:var(--text-2xs);padding:6px 11px;gap:8px;}
   /* Même correction d'orphelin pour les 4 repères de la semaine (Training Landscape). */
   .week-stats-inline{display:grid;grid-template-columns:1fr 1fr;gap:16px 18px;}
@@ -1463,7 +1463,7 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
 .week-stat{display:flex;align-items:center;gap:9px;}
 .week-stat img{width:17px;height:17px;filter:invert(55%);flex-shrink:0;}
 .week-stat .v{font-family:var(--font-mono);font-size:1.3rem;font-weight:600;line-height:1.1;}
-.week-stat .l{font-size:.64rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px;}
+.week-stat .l{font-size:var(--text-2xs);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px;}
 .week-stat .d{font-size:var(--text-2xs);color:var(--muted);margin-top:0;}
 .week-stat .d.status-ok{color:var(--success);}
 .trend-subhead{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding-top:16px;border-top:1px solid var(--border);}
@@ -1661,7 +1661,7 @@ main.activities-main{max-width:1600px;}
 .activity-row .cell{min-width:0;}
 .activity-row .cell-date{font-family:var(--font-mono);color:var(--muted);line-height:1.15;}
 .activity-row .cell-date .cell-day{display:block;font-size:var(--text-lg);font-weight:700;color:var(--text);font-family:var(--font-display);}
-.activity-row .cell-date .cell-month,.activity-row .cell-date .cell-year{display:block;font-size:.6rem;letter-spacing:.04em;}
+.activity-row .cell-date .cell-month,.activity-row .cell-date .cell-year{display:block;font-size:var(--text-2xs);letter-spacing:.04em;}
 .activity-row .cell-activity{overflow:hidden;}
 .activity-row .row-title{display:block;font-family:var(--font-display);font-size:var(--text-md);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .activity-row .row-sub{display:block;font-size:var(--text-2xs);color:var(--muted);margin-top:1px;}
@@ -1704,7 +1704,7 @@ main.activities-main{max-width:1600px;}
   /* Couple « micro-libellé en capitales + valeur » de l'Accueil : hors tableau, l'en-tête de
      colonnes n'existe plus, cinq nombres nus ne se distinguent pas. */
   .activity-row .cell-stat{display:flex;flex-direction:column;gap:1px;}
-  .activity-row .cell-stat::before{content:attr(data-l);font-family:var(--font-sans);font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  .activity-row .cell-stat::before{content:attr(data-l);font-family:var(--font-sans);font-size:var(--text-2xs);font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
   .activity-row .cell-stat{font-family:var(--font-mono);font-weight:500;}
 }
 
@@ -1959,7 +1959,7 @@ main.analysis-main{max-width:1440px;}
 .rw-grade-label{font-size:var(--text-xs);color:var(--muted);font-variant-numeric:tabular-nums;}
 .rw-grade-bars{display:flex;flex-direction:column;gap:4px;}
 .rw-grade-bar-line{display:flex;align-items:center;gap:6px;}
-.rw-grade-bar-line .rw-tag{width:44px;flex-shrink:0;font-size:.64rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+.rw-grade-bar-line .rw-tag{width:44px;flex-shrink:0;font-size:var(--text-2xs);color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
 .rw-grade-track{flex:1 1 auto;height:6px;border-radius:var(--radius-pill);background:rgba(244,247,245,.08);overflow:hidden;}
 .rw-grade-fill{height:100%;border-radius:var(--radius-pill);}
 .rw-grade-fill.run{background:var(--accent);}
@@ -2048,7 +2048,7 @@ section.card .goal-hero-identity h2::before{display:none;}
   }
   .mobile-nav a{
     position:relative;flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;
-    text-decoration:none;padding:8px 2px;min-height:44px;box-sizing:border-box;font-family:var(--font-sans);font-size:.62rem;color:var(--rail-text-muted);
+    text-decoration:none;padding:8px 2px;min-height:44px;box-sizing:border-box;font-family:var(--font-sans);font-size:var(--text-2xs);color:var(--rail-text-muted);
     transition:color var(--dur-fast) var(--ease-standard);
   }
   .mobile-nav a img{width:18px;height:18px;filter:invert(55%);transition:filter var(--dur-fast) var(--ease-standard);}
@@ -2060,7 +2060,7 @@ section.card .goal-hero-identity h2::before{display:none;}
   /* Bouton "Plus" : même gabarit que les liens, réinitialisé (c'est un <button>, pas un <a>). */
   .mobile-nav button{position:relative;flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;
     background:none;border:none;padding:8px 2px;min-height:44px;box-sizing:border-box;
-    font-family:var(--font-sans);font-size:.62rem;color:var(--rail-text-muted);cursor:pointer;transition:color var(--dur-fast) var(--ease-standard);}
+    font-family:var(--font-sans);font-size:var(--text-2xs);color:var(--rail-text-muted);cursor:pointer;transition:color var(--dur-fast) var(--ease-standard);}
   .mobile-nav button img{width:18px;height:18px;filter:invert(55%);transition:filter var(--dur-fast) var(--ease-standard);}
   .mobile-nav button.active{color:var(--accent-light);}
   .mobile-nav button.active img{filter:invert(72%) sepia(15%) saturate(500%) hue-rotate(50deg);}
