@@ -1,2 +1,6 @@
 *.zip
 plan-trail-nico.csv
+
+# Reglages Claude Code propres a la machine (chemins absolus, GUID de session).
+# .claude/launch.json est versionne, lui : il rend l'outillage de mesure reproductible.
+.claude/settings.local.json

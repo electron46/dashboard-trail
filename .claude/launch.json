@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "elev-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "_serve.py",
+        ".",
+        "8901"
+      ],
+      "port": 8901
+    }
+  ]
+}
