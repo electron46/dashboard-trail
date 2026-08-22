@@ -331,7 +331,7 @@ async function renderCardConnect() {
 function renderCardData() {
   const box = document.getElementById('cardData');
   box.innerHTML =
-    settingsRow('Mes données', 'Exporter toutes vos données en JSON', '', { id:'exportBtn', onClick:true }) +
+    settingsRow('Mes données', 'Exporter toutes tes données en JSON', '', { id:'exportBtn', onClick:true }) +
     settingsRow('Importer un export', 'Restaurer depuis un fichier JSON', '', { id:'importBtn', onClick:true }) +
     settingsRow('Confidentialité', 'Tes données ne sont accessibles qu\'à ton compte (règles de sécurité Supabase)', '') +
     // Zone de danger (Phase 10 du plan d'action) : les deux actions destructrices étaient posées

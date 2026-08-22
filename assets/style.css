@@ -2043,12 +2043,26 @@ section.card .goal-hero-identity h2::before{display:none;}
      44x44, dont .link-arrow à 19 px de haut, soit sous le minimum WCAG 2.2 (24 px). La correction
      est confinée à cette media query : la densité desktop, où le pointeur est précis, ne bouge
      pas. `align-items:center` conserve l'apparence du bouton, seule la surface cliquable grandit. */
+  /* `.btn` avait été oublié lors de cette correction : seule `.btn.small` était reprise, alors
+     que `.btn` porte l'action PRINCIPALE de chaque page (importer une activité, ajouter un
+     objectif, ajouter un équipement). Mesuré à 38 px de haut. */
+  .btn,
   .btn.small,
   .period-select button{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
   .link-arrow{min-height:44px;display:inline-flex;align-items:center;}
   /* Topbar sticky en haut d'écran : sur un téléphone à encoche, l'espace système (notch/île
      dynamique) doit s'ajouter au padding plutôt que de passer dessous. */
   header.app-topbar{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;}
+  /* Traitement allégé étendu à TOUTES les pages en mobile. Le sprint 8 ne l'avait appliqué qu'à
+     l'Accueil : mesuré à 375 px, la topbar valait 75 px là-bas contre 150 px sur Activités et
+     Équipements et 169 px sur Objectifs et Plan — soit près d'un quart de l'écran d'un téléphone
+     consommé par un titre, un sous-titre et deux boutons, avant d'avoir vu la moindre donnée.
+     Le sous-titre n'est pas supprimé mais rendu hors écran : il n'apporte rien de plus que le
+     titre sur un petit écran, mais reste lu par les lecteurs d'écran. Le <h1> garde sa place et
+     sa taille — c'est le premier repère annoncé, il n'est pas question de le réduire. */
+  header.app-topbar{padding-bottom:10px;}
+  header.app-topbar .page-sub{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
   /* Cibles tactiles < 44px releve pendant l'audit accessibilite (voir CLAUDE.md) — corrige au
      seul endroit ou ca compte reellement (le tactile), la densite desktop reste inchangee. */
   #themeToggle{width:44px;height:44px;}
