@@ -1146,18 +1146,26 @@ async function generateAiFeedback(id) {
          l'utilisateur ce qu'il peut FAIRE. Le premier message livré était « Valeurs absentes des
          données fournies : 16 » : exact, et inexploitable — il ne disait ni pourquoi c'est refusé,
          ni que relancer suffit le plus souvent. */
-      console.warn('[ELEV] Réponse IA rejetée :', check.reasons);
-      const chiffres = /Valeurs absentes/.test(check.reasons[0] || '');
-      setAiError(statusEl, chiffres
-        ? "Le retour généré citait un chiffre absent de tes données — ELEV refuse de l'enregistrer plutôt que d'afficher une valeur que ta séance ne soutient pas. Relance la génération : c'est le plus souvent suffisant."
-        : "Le retour généré ne respectait pas les règles d'ELEV (" + check.reasons[0] +
-          ") — il n'a pas été enregistré. Tu peux relancer la génération.");
+      console.warn('[ELEV] Réponse IA rejetée :', check.reasons, check.dropped);
+      /* Le message NOMME la valeur en cause. La version précédente disait « un chiffre absent de
+         tes données » sans dire lequel : exact, actionnable, mais impossible à diagnostiquer sans
+         ouvrir la console — ce qu'on ne peut pas demander à l'utilisateur du produit. */
+      const val = (check.dropped || []).slice(0, 3).join(', ');
+      setAiError(statusEl, "Le retour généré citait une valeur que ta séance ne contient pas" +
+        (val ? " (« " + val + " »)" : '') +
+        ". ELEV préfère ne rien afficher plutôt qu'un chiffre que tes données ne soutiennent pas. Relance la génération.");
       return;
     }
+    // Des observations ont pu être retirées sans invalider le reste : on le dit, sans alarmer.
+    const retirees = (check.dropped || []).length;
     s.aiFeedback = JSON.stringify(check.data);
     saveSession(s.id, s);
     renderCoachCards(s.aiFeedback);
-    statusEl.textContent = '';
+    // Retirer une observation en silence serait aussi opaque qu'afficher une valeur inventée.
+    statusEl.textContent = retirees
+      ? retirees + ' observation' + (retirees > 1 ? 's ont été retirées' : ' a été retirée') +
+        ' : elle citait une valeur absente de ta séance.'
+      : '';
     btn.textContent = 'Regénérer le retour Coach ELEV';
   } finally { btn.disabled = false; }
 }

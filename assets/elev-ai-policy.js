@@ -173,11 +173,46 @@ function _extractJson(text) {
 
 /* Nombres réellement écrits dans un texte. Les nombres collés à un mot (« Z3 », « 5x1000 ») sont
    des étiquettes, pas des mesures : on ne les compare pas. */
-function _numbersIn(text) {
+/* MESURES écrites dans un texte — et elles seules.
+
+   Première version : tout nombre rencontré était confronté à la liste autorisée. Trop fragile par
+   construction, et vérifié deux fois en usage réel. Un modèle qui rédige une analyse écrit
+   forcément des nombres qui ne sont PAS des mesures : « 3 séances », « 2 fois plus », « la 4e
+   semaine », un ordinal, une date. Chacun faisait perdre l'analyse entière.
+
+   Ce que l'audit interdit (§9.7) est d'inventer une MESURE — une valeur physique présentée comme
+   lue dans les données. Le critère devient donc l'UNITÉ : un nombre suivi de km, m, bpm, %, h,
+   min, kcal, W… est une mesure et doit être justifié ; un nombre nu ne l'est pas.
+
+   C'est plus permissif sur ce qui ne risque rien, et tout aussi strict sur ce qui compte : « 2400
+   kcal », « 72 h », « 180 bpm » restent refusés s'ils ne viennent pas des données. */
+const AI_MEASURE_UNIT = /^\s*(kcal|cal|kilocalories?|bpm|puls|km\/h|m\/h|km|kms|m\b|mètres?|metres?|%|pourcent|h\b|heures?|min\b|minutes?|sec\b|secondes?|kg|w\b|watts?|°c|pas\/min|spm)/i;
+
+function _measuresIn(text) {
+  const s = String(text || '');
   const out = [];
+  const push = (v, raw) => { if (isFinite(v)) out.push({ value: v, raw }); };
+
+  /* Durées et allures composées : « 4h21 », « 13:15/km ». Elles portent DEUX nombres pour une
+     seule mesure — les traiter séparément ferait rejeter une allure parfaitement exacte. */
+  const compose = /(\d{1,3})\s*(?:h|:)\s*(\d{1,2})\b/gi;
+  let c;
+  const consommees = [];
+  while ((c = compose.exec(s))) {
+    push(parseFloat(c[1]), c[0]); push(parseFloat(c[2]), c[0]);
+    consommees.push([c.index, c.index + c[0].length]);
+  }
+
   const re = /(?:^|[\s(«"'‑–—-])(\d+(?:[.,]\d+)?)/g;
   let m;
-  while ((m = re.exec(String(text || '')))) out.push(parseFloat(m[1].replace(',', '.')));
+  while ((m = re.exec(s))) {
+    const debut = m.index + m[0].length - m[1].length;
+    if (consommees.some(([a, b]) => debut >= a && debut < b)) continue; // déjà traité ci-dessus
+    const suite = s.slice(debut + m[1].length);
+    const u = suite.match(AI_MEASURE_UNIT);
+    if (!u) continue; // nombre sans unité : ce n'est pas une mesure, on ne le juge pas
+    push(parseFloat(m[1].replace(',', '.')), m[1] + (u[1] || ''));
+  }
   return out;
 }
 
@@ -235,20 +270,49 @@ function validateAiOutput(rawText, allowed, opts) {
 
   /* 5. Nombres. Le cœur de la règle §9.7 : « un texte contenant un nombre absent de l'objet est
         rejeté ». C'est ce qui empêche le modèle de recalculer, d'extrapoler ou d'inventer un délai. */
+  /* Une mesure non justifiée ne fait plus perdre TOUTE la réponse.
+
+     Le rejet global partait d'une bonne intention (§8.3) mais se retournait contre son but : une
+     seule puce douteuse effaçait une analyse entière, et un garde-fou qu'on subit trop souvent
+     finit par être désactivé. La phrase fautive est RETIRÉE, le reste est conservé, et le motif
+     est journalisé — aucune valeur inventée n'est jamais affichée, ce qui est l'exigence réelle.
+
+     Une seule exception : si c'est le résumé qui est fautif, la réponse entière tombe. Le résumé
+     est la conclusion de l'analyse ; l'amputer laisserait un objet incohérent. */
+  const mesuresRefusees = [];
   if (allowed && Array.isArray(allowed.numbers)) {
-    const inconnus = [];
-    _numbersIn(tout).forEach(n => {
-      if (!_numberAllowed(n, allowed.numbers) && inconnus.indexOf(n) < 0) inconnus.push(n);
+    const suspecte = txt => _measuresIn(txt).filter(x => !_numberAllowed(x.value, allowed.numbers));
+
+    const mauvaisResume = typeof data.resume === 'string' ? suspecte(data.resume) : [];
+    if (mauvaisResume.length) {
+      mesuresRefusees.push(...mauvaisResume.map(x => x.raw));
+      reasons.push('Le résumé cite une valeur absente des données : ' + mauvaisResume.map(x => x.raw).join(', ') + '.');
+    }
+
+    ['analyse', 'positif', 'vigilance', 'suite'].forEach(k => {
+      if (!Array.isArray(data[k])) return;
+      const gardees = [];
+      data[k].forEach(ligne => {
+        const mauvais = typeof ligne === 'string' ? suspecte(ligne) : [];
+        if (mauvais.length) mesuresRefusees.push(...mauvais.map(x => x.raw));
+        else gardees.push(ligne);
+      });
+      data[k] = gardees;
     });
-    if (inconnus.length)
-      reasons.push('Valeurs absentes des données fournies : ' + inconnus.slice(0, 6).join(', ') + '.');
+
+    // Si tout a été retiré, il ne reste rien à montrer : autant le dire.
+    const resteQuelqueChose = ['analyse', 'positif', 'suite'].some(k => Array.isArray(data[k]) && data[k].length);
+    if (!resteQuelqueChose && !reasons.length)
+      reasons.push('Toutes les observations citaient des valeurs absentes des données : ' + mesuresRefusees.slice(0, 4).join(', ') + '.');
   }
 
   // 6. Aucune consigne de récupération tant qu'aucune donnée de récupération n'est suivie.
   if (allowed && !allowed.hasRecoveryData && /\br[ée]cup[ée]ration\b|\brepos\b/i.test(String(data.suite || '') + ' ' + (Array.isArray(data.suite) ? data.suite.join(' ') : '')))
     reasons.push('Conseil de récupération alors qu\'aucune donnée de récupération n\'est suivie.');
 
-  return { ok: reasons.length === 0, data: reasons.length ? null : data, reasons };
+  /* `dropped` remonte ce qui a été retiré : la page peut le dire à l'utilisateur, et la console le
+     journalise. Une observation écartée en silence serait aussi opaque qu'une valeur inventée. */
+  return { ok: reasons.length === 0, data: reasons.length ? null : data, reasons, dropped: mesuresRefusees };
 }
 
 /* Consigne commune ajoutée à tout prompt IA. Écrite ici plutôt que dans chaque page : deux copies

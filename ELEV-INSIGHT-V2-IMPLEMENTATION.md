@@ -161,6 +161,31 @@ vise les faits INVENTÉS, pas l'arithmétique sur des faits fournis. Sont désor
 (tolérance relative de 2 %, « 1452 m » écrit « 1450 m »). Ce qui reste refusé n'a pas bougé :
 une valeur venue d'ailleurs, un délai, une causalité, un terme médical. Test `V2-G16b`.
 
+**Deuxième rejet en usage réel, et refonte de la validation (2026-08-23).** Après le premier
+correctif, un second retour a encore été refusé. Le défaut était de conception, pas de réglage :
+la validation confrontait **tout nombre** du texte à la liste autorisée. Or un modèle qui rédige
+une analyse écrit forcément des nombres qui ne sont pas des mesures — « 3 séances », « 2 fois
+plus », « la 4e semaine », un ordinal, une date. Chacun faisait perdre l'analyse entière.
+
+Deux changements, tous deux **écarts assumés par rapport à la lettre de l'audit** :
+
+1. **Le critère devient l'unité.** Seul un nombre suivi d'une unité de mesure (km, m, bpm, %, h,
+   min, kcal, W…) est confronté aux données. Ce que l'audit §9.7 interdit est d'inventer une
+   MESURE ; un nombre nu n'en est pas une. Plus permissif sur ce qui ne risque rien, aussi strict
+   sur ce qui compte : « 2400 kcal », « 72 h », « 180 bpm » restent refusés.
+2. **La ligne fautive est retirée, la réponse n'est plus jetée en entier.** L'audit §8.3 dit
+   « rejeter la réponse » ; le rejet global se retournait contre son but, une seule puce douteuse
+   effaçant une analyse entière — et un garde-fou qu'on subit trop souvent finit par être
+   désactivé. L'exigence de fond est tenue, et même renforcée : la valeur non justifiée
+   n'apparaît **nulle part** dans ce qui est affiché, elle est remontée dans `dropped`, et
+   l'utilisateur est informé qu'une observation a été retirée. Deux exceptions conservent le rejet
+   total : un **résumé** fautif (l'amputer laisserait un objet incohérent) et le cas où toutes les
+   observations ont été retirées.
+
+Le message à l'écran **nomme désormais la valeur en cause** : la version précédente disait « un
+chiffre absent de tes données » sans dire lequel, ce qui obligeait à ouvrir la console — chose
+qu'on ne peut pas demander à l'utilisateur du produit.
+
 **NON VÉRIFIÉ, et pourquoi :**
 - **Captures d'écran** : le volet navigateur n'était pas affiché, la page ne compose donc pas
   d'images. La vérification repose sur des mesures DOM réelles. Le jugement esthétique final
