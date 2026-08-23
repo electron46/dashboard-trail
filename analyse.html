@@ -75,7 +75,10 @@
        qui n'aurait affiche que des messages « aucune donnee » sans action. -->
   <div id="analysisEmpty" style="display:none;"></div>
 
-  <div id="analysisContent">
+  <!-- .page-flow : ce conteneur groupe des blocs de NIVEAU PAGE, il doit donc reconduire le
+       rythme vertical de <main>. Sans lui, les blocs retombaient au flux par défaut : cartes
+       voisines collées et titre de groupe chevauchant la carte suivante. -->
+  <div id="analysisContent" class="page-flow">
 
   <!-- ============================================================================
        Ordre de lecture (Sprint 2, plan d'action §4) : resume -> SENS -> detail.

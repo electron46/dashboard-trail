@@ -118,6 +118,8 @@
   <div class="tab-panel" data-panel="semaines">
     <section class="card">
       <h2>Toutes les semaines du plan</h2>
+      <p class="hint">Déplie une semaine pour voir le détail de chaque séance : objectif, durée, distance,
+        dénivelé, intensité et zones de fréquence cardiaque, tels qu'ils figurent dans le plan importé.</p>
       <div id="planWeeksOverviewBox"></div>
     </section>
   </div>
@@ -184,6 +186,29 @@
 </div>
 </div>
 
+<!-- Déplacer une séance planifiée. Champ date NATIF : le produit n’a pas de sélecteur de date
+     maison, et en ajouter un ici créerait un motif de plus pour un besoin déjà couvert (même
+     choix que la modale Course de la page Objectifs). -->
+<div class="modal-backdrop" id="movePlanBackdrop">
+  <div class="modal">
+    <h3>Modifier la date de la séance</h3>
+    <p class="hint" id="movePlanTitle" style="font-weight:600;color:var(--text);margin:0 0 2px;"></p>
+    <p class="hint" id="movePlanCurrent" style="margin:0 0 14px;"></p>
+    <div class="row modal-form" style="flex-direction:column;align-items:stretch;">
+      <label class="field">Nouvelle date
+        <input type="date" id="movePlanDate">
+      </label>
+    </div>
+    <p class="hint" style="margin-top:10px;">La séance garde tout son contenu ; seule sa date change.
+      Elle sera recomptée dans sa nouvelle semaine, et sa date d’origine reste indiquée sur la fiche.</p>
+    <div id="movePlanMsg"></div>
+    <div class="row" style="margin-top:16px;justify-content:flex-end;">
+      <button class="btn" id="movePlanCancel" type="button">Annuler</button>
+      <button class="btn primary" id="movePlanSave" type="button">Enregistrer la nouvelle date</button>
+    </div>
+  </div>
+</div>
+
 <nav class="mobile-nav" id="mobileNav"></nav>
 
 <script>
@@ -235,14 +260,150 @@ function renderPlanHero() {
       '<div class="metric"><div class="lbl">D+ hebdo moyen (plan)</div><div class="val">' + (targets ? fmtNum(targets.avgWeeklyDplus,' m',0) : 'Non disponible') + '</div></div>' +
       '<div class="metric"><div class="lbl">Sortie la plus longue prévue</div><div class="val">' + (targets && targets.longestPlannedKm ? fmtNum(targets.longestPlannedKm,' km',1) : 'Non disponible') + '</div></div>' +
     '</div>' +
-    (phases ? '<div class="plan-phase-track">' + phases.map(ph => {
-      const isCurrent = currentPhase && ph.label === currentPhase.label && ph.fromDate === currentPhase.fromDate;
-      const isDone = !isCurrent && ph.toDate < todayISO();
-      return '<div class="plan-phase-step' + (isCurrent?' current':'') + (isDone?' done':'') + '">' +
-        '<span class="lbl">' + escapeHtml(ph.label) + '</span><span class="sub">Sem. ' + ph.fromWeek + (ph.toWeek!==ph.fromWeek?'–'+ph.toWeek:'') + '</span>' +
-      '</div>';
-    }).join('') + '</div>' : '');
+    (phases ? planPhaseTrackHtml(phases, currentPhase) : '');
 }
+
+/* Timeline des phases du plan. Le trait est un ELEMENT UNIQUE (`.plan-phase-rail`) tracé d'un bout
+   à l'autre de la piste, avec sa portion parcourue dessinée par-dessus : la continuité ne dépend
+   donc plus de la hauteur des libellés, qui la cassait quand deux étapes n'avaient pas le même
+   nombre de lignes. `--steps` sert au CSS à retirer une demi-étape de chaque côté, pour que le
+   trait commence à la première pastille et finisse à la dernière. */
+function planPhaseTrackHtml(phases, currentPhase) {
+  const n = phases.length;
+  const aujourdhui = todayISO();
+  const currentIdx = phases.findIndex(ph => currentPhase && ph.label === currentPhase.label && ph.fromDate === currentPhase.fromDate);
+  /* Portion parcourue : la piste va de la 1re à la dernière pastille, donc l'étape i est à
+     i/(n-1). Hors phase courante, on distingue « plan terminé » (tout le trait) de
+     « pas encore commencé » (rien) — jamais une progression inventée entre les deux. */
+  let donePct = 0;
+  if (currentIdx >= 0) donePct = n > 1 ? (currentIdx / (n - 1)) * 100 : 100;
+  else if (phases[n - 1].toDate < aujourdhui) donePct = 100;
+  const steps = phases.map((ph, i) => {
+    const isCurrent = i === currentIdx;
+    const isDone = !isCurrent && ph.toDate < aujourdhui;
+    return '<div class="plan-phase-step' + (isCurrent ? ' current' : '') + (isDone ? ' done' : '') + '">' +
+      '<span class="lbl">' + escapeHtml(ph.label) + '</span>' +
+      '<span class="sub">Sem. ' + ph.fromWeek + (ph.toWeek !== ph.fromWeek ? '–' + ph.toWeek : '') + '</span>' +
+    '</div>';
+  }).join('');
+  return '<div class="plan-phase-track"><div class="plan-phase-steps" style="--steps:' + n + ';">' +
+    '<div class="plan-phase-rail" aria-hidden="true"><span style="width:' + donePct.toFixed(1) + '%;"></span></div>' +
+    steps +
+  '</div></div>';
+}
+
+/* ============================== FICHE D'ENTRAÎNEMENT ==============================
+   Rendu UNIQUE d'une séance planifiée, partagé par « Aujourd'hui », « Prochaine séance » et
+   l'onglet Semaines. Les trois affichaient auparavant chacune leur propre sous-ensemble de
+   champs, et le seul endroit où le contenu complet d'une séance était lisible était le tableau
+   brut de la page Paramètres — un lieu de configuration, consulté une fois à l'import.
+   `plannedSessionDetails` (app.js) est la seule fonction qui connaît le modèle du plan : rien
+   n'est affiché ici qui ne soit réellement présent dans le CSV importé.
+   opts : { status, isToday, done, keySession, showDate, allowMove } */
+function plannedSessionFicheHtml(p, opts) {
+  opts = opts || {};
+  const d = plannedSessionDetails(p);
+  const STATUS = {
+    done:   '<span class="badge status-done">Terminé</span>',
+    missed: '<span class="badge status-missed">Manqué</span>',
+    todo:   '<span class="badge status-todo">À faire</span>',
+  };
+  const dt = new Date(p.date + 'T00:00:00Z');
+  const dayLabel = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'][dt.getUTCDay()]
+    + ' ' + dt.getUTCDate() + ' ' + FR_MONTHS_SHORT_P[dt.getUTCMonth()];
+
+  // --- Niveau 1 : ce qu'il y a à faire. Une mesure absente du CSV n'occupe pas de colonne.
+  const metrics = [];
+  if (d.duree) metrics.push(['Durée', escapeHtml(d.duree), false]);
+  if (d.distanceKm != null) metrics.push(['Distance', d.distanceKm + ' km', false]);
+  if (d.deniveleM != null) metrics.push(['D+', Math.round(d.deniveleM) + ' m', false]);
+  if (d.intensite) metrics.push(['Intensité', escapeHtml(d.intensite), true]);
+  const metricsHtml = metrics.length
+    ? '<div class="plan-fiche-metrics">' + metrics.map(function (m) {
+        return '<div><span class="lbl">' + m[0] + '</span><span class="val' + (m[2] ? ' is-text' : '') + '">' + m[1] + '</span></div>';
+      }).join('') + '</div>'
+    : '';
+
+  // --- Niveau 2 : comment la mener.
+  const goalHtml = d.objectif
+    ? '<p class="plan-fiche-goal"><b>Objectif de la séance</b>' + escapeHtml(d.objectif) + '</p>' : '';
+  const zonesHtml = d.zones.length
+    ? '<div class="plan-fiche-zones">' + d.zones.map(function (z) {
+        return '<span class="plan-fiche-zone"><span>' + z[0] + '</span><strong>' + escapeHtml(String(z[1])) + '</strong></span>';
+      }).join('') + '</div>'
+    : '';
+
+  // --- Niveau 3 : provenance dans le plan, repliée — inutile pour exécuter la séance.
+  const more = [];
+  if (d.bloc) more.push(['Bloc', escapeHtml(d.bloc)]);
+  if (d.semaine) more.push(['Semaine du plan', escapeHtml(String(d.semaine))]);
+  if (d.descenteM != null) more.push(['D− prévu', Math.round(d.descenteM) + ' m']);
+  if (d.movedFrom) more.push(['Date d’origine', fmtDate(d.movedFrom)]);
+  const moreHtml = more.length
+    ? '<details class="plan-fiche-more"><summary>Détails du plan</summary><dl>' +
+      more.map(function (m) { return '<dt>' + m[0] + '</dt><dd>' + m[1] + '</dd>'; }).join('') + '</dl></details>'
+    : '';
+
+  const actions = [];
+  if (opts.done) actions.push('<a class="link-arrow" href="activite.html?id=' + encodeURIComponent(opts.done.id) + '">Voir la séance réalisée →</a>');
+  if (opts.allowMove !== false && p.uid) actions.push('<button class="btn ghost small" type="button" data-move-plan="' + escapeHtml(p.uid) + '">Modifier la date</button>');
+  const actionsHtml = actions.length ? '<div class="plan-fiche-actions">' + actions.join('') + '</div>' : '';
+
+  const cls = 'plan-fiche' + (opts.isToday ? ' is-today' : '') + (opts.status === 'missed' ? ' is-missed' : '');
+  return '<article class="' + cls + '">' +
+    '<div class="plan-fiche-head">' +
+      '<div class="plan-fiche-when">' +
+        (opts.showDate === false ? '' : '<span class="plan-fiche-day">' + escapeHtml(dayLabel) + '</span>') +
+        (d.movedFrom ? '<span class="plan-fiche-moved">Déplacée depuis le ' + fmtDate(d.movedFrom) + '</span>' : '') +
+      '</div>' +
+      '<div class="plan-fiche-badges">' +
+        (opts.status && STATUS[opts.status] ? STATUS[opts.status] : '') +
+        (opts.keySession ? '<span class="badge principal">Séance clé</span>' : '') +
+      '</div>' +
+    '</div>' +
+    '<h3 class="plan-fiche-title">' + escapeHtml(d.type) + '</h3>' +
+    metricsHtml + goalHtml + zonesHtml + moreHtml + actionsHtml +
+  '</article>';
+}
+
+/* --------------------------- DÉPLACER UNE SÉANCE PLANIFIÉE ---------------------------
+   Un plan importé ne survit pas au réel : une séance se décale d'un jour pour une gêne, un
+   imprévu, une météo. Jusqu'ici la seule issue était de réimporter tout le CSV — donc de perdre
+   au passage l'historique du plan tel qu'il avait été suivi. L'action vit sur la fiche elle-même,
+   là où l'utilisateur constate le décalage.
+   La date d'ORIGINE est conservée (voir updatePlannedSessionDate) : c'est la première donnée
+   réelle d'ajustement du plan, l'onglet Ajustements n'ayant jusqu'ici qu'une note libre. */
+let movingPlanUid = null;
+function openMovePlanModal(uid) {
+  const plan = ensurePlanUids(getPlan());
+  const item = (plan || []).find(function (p) { return p.uid === uid; });
+  if (!item) return;
+  movingPlanUid = uid;
+  document.getElementById('movePlanTitle').textContent = item.type || 'Séance';
+  document.getElementById('movePlanCurrent').textContent = 'Actuellement prévue le ' + fmtDate(item.date) + '.';
+  document.getElementById('movePlanDate').value = item.date;
+  document.getElementById('movePlanMsg').innerHTML = '';
+  document.getElementById('movePlanBackdrop').classList.add('open');
+}
+function closeMovePlanModal() {
+  document.getElementById('movePlanBackdrop').classList.remove('open');
+  movingPlanUid = null;
+}
+document.getElementById('movePlanCancel').addEventListener('click', closeMovePlanModal);
+document.getElementById('movePlanBackdrop').addEventListener('click', function (e) { if (e.target.id === 'movePlanBackdrop') closeMovePlanModal(); });
+document.getElementById('movePlanSave').addEventListener('click', function () {
+  const res = updatePlannedSessionDate(movingPlanUid, document.getElementById('movePlanDate').value);
+  if (!res.ok) { showMsg('movePlanMsg', res.error, 'err'); return; }
+  closeMovePlanModal();
+  // Tout se recalcule depuis les dates du plan (semaines, statuts, graphiques) : un simple
+  // nouveau rendu suffit, il n'y a aucun index parallèle à tenir à jour.
+  renderPlanPage();
+});
+// Délégation : les fiches sont régénérées à chaque rendu, un écouteur par bouton serait perdu.
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest('[data-move-plan]');
+  if (btn) openMovePlanModal(btn.getAttribute('data-move-plan'));
+});
 
 /* --------------------------- INSIGHT ELEV (plan) --------------------------- */
 // Version compacte, fusionnée dans la carte "Charge d'entraînement" plutôt qu'un bloc pleine largeur
@@ -382,26 +543,20 @@ function renderPlanToday() {
   }
 
   const keyDates = new Set(getKeyPlannedSessions(plan).map(p => p.date));
+  // Fiche d'entraînement complète (voir plannedSessionFicheHtml) plutôt qu'un extrait de quatre
+  // mesures : c'est la séance qu'on lit juste avant de partir, elle doit porter son objectif et
+  // ses zones, pas seulement sa distance.
   box.innerHTML = planned.map((p, i) => {
     const realisee = done[i] || (planned.length === 1 ? done[0] : null);
-    const badge = realisee
-      ? '<span class="badge status-done">Terminé</span>'
-      : '<span class="badge status-todo">À faire</span>';
-    // Les séances clés étaient visibles uniquement dans un onglet séparé. Le repère remonte ici,
-    // là où il change une décision — la règle de détection reste celle de getKeyPlannedSessions.
-    const cle = keyDates.has(p.date) ? '<span class="badge principal">Séance clé</span>' : '';
-    return '<div class="plan-next-card"' + (i ? ' style="margin-top:14px;"' : '') + '>' +
-      '<div class="row" style="gap:7px;">' + badge + cle + '</div>' +
-      '<span class="pnc-title">' + escapeHtml(p.type || 'Séance') + '</span>' +
-      '<div class="metrics-grid" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));">' +
-        (p.dureeDetail ? '<div class="metric"><div class="lbl">Durée</div><div class="val">' + escapeHtml(p.dureeDetail) + '</div></div>' : '') +
-        '<div class="metric"><div class="lbl">Distance</div><div class="val">' + fmtNum(p.distanceKm, ' km', 1) + '</div></div>' +
-        '<div class="metric"><div class="lbl">D+</div><div class="val">' + fmtNum(p.deniveleM, ' m', 0) + '</div></div>' +
-        (p.intensite ? '<div class="metric"><div class="lbl">Intensité</div><div class="val" style="font-size:.82rem;">' + escapeHtml(p.intensite) + '</div></div>' : '') +
-      '</div>' +
-      (p.notes ? '<p class="hint">Objectif : ' + escapeHtml(p.notes) + '</p>' : '') +
-      (realisee ? lienSeance(realisee) : '') +
-    '</div>';
+    return plannedSessionFicheHtml(p, {
+      status: realisee ? 'done' : 'todo',
+      isToday: true,
+      done: realisee,
+      // Les séances clés étaient visibles uniquement dans un onglet séparé. Le repère remonte ici,
+      // là où il change une décision — la règle reste celle de getKeyPlannedSessions.
+      keySession: keyDates.has(p.date),
+      showDate: false,   // la carte s'appelle déjà « Aujourd'hui »
+    });
   }).join('');
 }
 
@@ -411,19 +566,7 @@ function renderPlanNextSession() {
   const sessions = loadAllSessions();
   const next = getNextPlanSession(plan, sessions);
   if (!next) { box.innerHTML = '<div class="empty">Aucune séance à venir dans le plan.</div>'; return; }
-  const d = new Date(next.date + 'T00:00:00Z');
-  const dayLabel = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'][d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + FR_MONTHS_SHORT_P[d.getUTCMonth()];
-  box.innerHTML = '<div class="plan-next-card">' +
-    '<span class="pnc-date">' + escapeHtml(dayLabel) + '</span>' +
-    '<span class="pnc-title">' + escapeHtml(next.type || 'Séance') + '</span>' +
-    '<div class="metrics-grid" style="grid-template-columns:1fr 1fr;">' +
-      (next.dureeDetail ? '<div class="metric"><div class="lbl">Durée</div><div class="val">' + escapeHtml(next.dureeDetail) + '</div></div>' : '') +
-      '<div class="metric"><div class="lbl">Distance</div><div class="val">' + fmtNum(next.distanceKm,' km',1) + '</div></div>' +
-      '<div class="metric"><div class="lbl">D+</div><div class="val">' + fmtNum(next.deniveleM,' m',0) + '</div></div>' +
-      (next.intensite || next.fcCorpsSeance ? '<div class="metric"><div class="lbl">Intensité</div><div class="val" style="font-size:.82rem;">' + escapeHtml(next.intensite || next.fcCorpsSeance) + '</div></div>' : '') +
-    '</div>' +
-    (next.notes ? '<p class="hint">Objectif : ' + escapeHtml(next.notes) + '</p>' : '') +
-  '</div>';
+  box.innerHTML = plannedSessionFicheHtml(next, { status: 'todo' });
 }
 
 /* --------------------------- APERÇU : graphiques volume/D+/charge --------------------------- */
@@ -473,15 +616,48 @@ function renderPlanWeeksOverview() {
   const plan = getPlan();
   const overview = getPlanWeeksOverview(plan);
   if (!overview.length) { box.innerHTML = '<div class="empty">Aucun plan importé.</div>'; return; }
-  box.innerHTML = '<div class="plan-weeks-grid">' + overview.map(w => {
+  /* Une semaine par accordéon, dépliable sur ses FICHES DE SÉANCE. La grille de vignettes
+     précédente résumait la semaine (volume, D+, séances faites) sans jamais donner accès à son
+     contenu : pour savoir ce qu'il y avait à faire, il fallait ouvrir la page Paramètres et lire
+     un tableau à six colonnes. C'est désormais ici, dans le contexte où la question se pose.
+     La semaine en cours est ouverte par défaut ; les autres restent repliées pour que la liste
+     d'un plan de plusieurs mois reste parcourable. */
+  const plan2 = ensurePlanUids(plan);
+  const sessions = loadAllSessions();
+  const keyDates = new Set(getKeyPlannedSessions(plan2).map(p => p.date));
+  const aujourdhui = todayISO();
+  box.innerHTML = '<div class="plan-week-list">' + overview.map(w => {
+    const items = plan2.filter(p => p.date >= w.startISO && p.date <= w.endISO)
+      .sort((a, b) => a.date.localeCompare(b.date));
     const statusHtml = w.isFuture ? '<span class="badge status-todo">Prévu</span>' :
-      (w.plannedCount ? '<span class="badge ' + (w.doneCount>=w.plannedCount?'status-done':'status-todo') + '">' + w.doneCount + '/' + w.plannedCount + '</span>' : '');
-    return '<div class="plan-week-card' + (w.isCurrent?' current':'') + '">' +
-      '<div class="pwc-head"><span class="pwc-title">Semaine ' + w.weekNum + (w.semaineLabel?' — '+escapeHtml(w.semaineLabel):'') + '</span>' + statusHtml + '</div>' +
-      '<div class="pwc-dates">' + fmtDate(w.startISO) + ' – ' + fmtDate(w.endISO) + (w.bloc?' · '+escapeHtml(w.bloc):'') + '</div>' +
-      '<div class="pwc-row"><span>Volume</span><strong>' + (w.isFuture ? w.plannedKm.toFixed(0)+' km (prévu)' : w.doneKm.toFixed(0)+' / '+w.plannedKm.toFixed(0)+' km') + '</strong></div>' +
-      '<div class="pwc-row"><span>D+</span><strong>' + (w.isFuture ? Math.round(w.plannedDplus)+' m (prévu)' : Math.round(w.doneDplus)+' / '+Math.round(w.plannedDplus)+' m') + '</strong></div>' +
-    '</div>';
+      (w.plannedCount ? '<span class="badge ' + (w.doneCount >= w.plannedCount ? 'status-done' : 'status-todo') + '">' + w.doneCount + '/' + w.plannedCount + ' séances</span>' : '');
+    const fiches = items.length ? items.map(p => {
+      const doneItems = sessions.filter(x => x.date === p.date);
+      const plannedSameDay = plan2.filter(x => x.date === p.date).length;
+      const status = getPlanDayStatus(p.date, plannedSameDay, doneItems.length);
+      return plannedSessionFicheHtml(p, {
+        status: status === 'rest' ? null : status,
+        isToday: p.date === aujourdhui,
+        done: status === 'done' ? doneItems[0] : null,
+        keySession: keyDates.has(p.date),
+      });
+    }).join('') : '<div class="empty">Aucune séance planifiée cette semaine.</div>';
+    return '<details class="plan-week-acc' + (w.isCurrent ? ' current' : '') + '"' + (w.isCurrent ? ' open' : '') + '>' +
+      '<summary>' +
+        /* Le libellé « Semaine » du CSV vaut le plus souvent le numéro de semaine lui-même :
+           l'afficher tel quel donnait « Semaine 7 — 7 ». On ne le montre que s'il apporte
+           réellement autre chose (un nom de bloc, une numérotation propre au plan). */
+        '<span class="pwa-title">Semaine ' + w.weekNum +
+          (w.semaineLabel && String(w.semaineLabel).trim() !== String(w.weekNum) ? ' — ' + escapeHtml(w.semaineLabel) : '') + '</span>' +
+        '<span class="pwa-dates">' + fmtDate(w.startISO) + ' – ' + fmtDate(w.endISO) + (w.bloc ? ' · ' + escapeHtml(w.bloc) : '') + '</span>' +
+        '<span class="pwa-stats">' +
+          '<span>Volume <strong>' + (w.isFuture ? w.plannedKm.toFixed(0) + ' km' : w.doneKm.toFixed(0) + ' / ' + w.plannedKm.toFixed(0) + ' km') + '</strong></span>' +
+          '<span>D+ <strong>' + (w.isFuture ? Math.round(w.plannedDplus) + ' m' : Math.round(w.doneDplus) + ' / ' + Math.round(w.plannedDplus) + ' m') + '</strong></span>' +
+          statusHtml +
+        '</span>' +
+      '</summary>' +
+      '<div class="pwa-body">' + fiches + '</div>' +
+    '</details>';
   }).join('') + '</div>';
 }
 
@@ -608,14 +784,30 @@ document.getElementById('planNotesSaveBtn').addEventListener('click', () => {
 });
 
 /* --------------------------- TABS --------------------------- */
-document.querySelectorAll('#planTabs button').forEach(btn => btn.addEventListener('click', () => {
+function activatePlanTab(tab) {
+  const btn = document.querySelector('#planTabs button[data-tab="' + tab + '"]');
+  if (!btn) return false;
   document.querySelectorAll('#planTabs button').forEach(b => b.classList.toggle('active', b === btn));
-  const tab = btn.dataset.tab;
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
-}));
+  return true;
+}
+document.querySelectorAll('#planTabs button').forEach(btn => btn.addEventListener('click', () => activatePlanTab(btn.dataset.tab)));
+/* Ancre d'onglet (ex. `plan.html#semaines` depuis Paramètres) : sans cela le lien amène sur la
+   page mais laisse l'onglet Aperçu actif, donc pas sur ce qu'on venait voir. Même prise en charge
+   du cas où la page est DÉJÀ ouverte (le document n'est alors pas rechargé), comme l'ancre #plan
+   de Paramètres. */
+function applyPlanHash() {
+  const tab = (location.hash || '').replace('#', '');
+  if (tab) activatePlanTab(tab);
+}
+window.addEventListener('hashchange', applyPlanHash);
 
 /* --------------------------- ORCHESTRATION --------------------------- */
 function renderPlanPage() {
+  // Un plan importé avant l'ajout du déplacement de séance n'a pas d'identifiants : on les pose
+  // une fois pour toutes ici, avant tout rendu, pour qu'aucune fiche ne soit désignable par sa
+  // seule date (voir ensurePlanUids / updatePlannedSessionDate dans app.js).
+  ensurePlanUids(getPlan());
   renderPlanHero();
   const plan = getPlan();
   /* Audit §4.7 et §13 / UX-09 : sans plan, la page laissait en place la rangée d'onglets et les
@@ -645,6 +837,7 @@ function renderPlanPage() {
 }
 
 renderPlanPage();
+applyPlanHash();
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderSidebarUser();
 </script>
