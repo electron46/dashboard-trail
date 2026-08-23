@@ -2773,6 +2773,64 @@ await test('V2-P1G', 'Vue avancée : les observations valides non retenues reste
   return { ecartees: res.dropped.length, rendues: true };
 });
 
+
+await test('V2-G16b', 'IA : un écart calculé entre deux valeurs fournies n\'est pas une invention', async () => {
+  const iso = loadApp();
+  /* Reproduit un REJET OBSERVÉ EN USAGE RÉEL : la réponse citait « 16 », le validateur l'a refusée
+     et le retour a été perdu. Or le prompt demande au modèle d'interpréter l'écart au plan — un
+     pourcentage dérivé de deux valeurs fournies est vérifiable, pas inventé. La règle §9.7 vise les
+     faits INVENTÉS, pas l'arithmétique sur des faits fournis. */
+  const session = { id: 's', date: '2026-09-01', sport: 'Trail', distanceKm: 19.7, ascent: 1452,
+                    descent: 1982, durationS: 15660, avgHr: 165, avgPaceSecPerKm: 795 };
+  const planned = { uid: 'p', date: '2026-09-01', type: 'Sortie longue', distanceKm: 17, deniveleM: 1700 };
+  const zones = [{ key:'z1', pct: 4, low: 100, high: 130, sec: 600 }, { key:'z2', pct: 8, low: 131, high: 145, sec: 1200 },
+                 { key:'z3', pct: 30, low: 146, high: 158, sec: 4000 }, { key:'z4', pct: 50, low: 159, high: 172, sec: 7000 },
+                 { key:'z5', pct: 8, low: 173, high: 190, sec: 900 }];
+  const allowed = iso.buildAllowedFacts({ session, planned, history: [{}, {}, {}], zones,
+    counts: { montees: 3, seancesHistorique: 3 }, hasRecoveryData: false });
+
+  // 19,7 km réalisés pour 17 km prévus = +15,9 %, soit « 16 % » une fois arrondi. C'était LE rejet.
+  const ecart = JSON.stringify({
+    resume: 'Sortie longue au-dessus de la distance prévue.',
+    analyse: ['19,7 km parcourus pour 17 km prévus, soit 16 % de plus', '1452 m D+ pour 1700 m prévus'],
+    positif: ['Distance tenue sur terrain pentu'],
+    suite: ['Ajuster la cible de distance si l\'écart se répète'],
+  });
+  const r = iso.validateAiOutput(ecart, allowed);
+  assert(r.ok, 'un écart dérivé de deux valeurs fournies doit être accepté, refusé pour : ' + JSON.stringify(r.reasons));
+
+  // Une durée et une allure s'écrivent décomposées : « 4h21 », « 13:15/km ».
+  const decompose = JSON.stringify({
+    resume: 'Sortie de 4h21, allure moyenne 13:15/km.',
+    analyse: ['50 % du temps en zone 4, entre 159 et 172 bpm'],
+    positif: ['3 montées franches enchaînées'],
+    suite: ['Continuer sur ce format'],
+  });
+  const r2 = iso.validateAiOutput(decompose, allowed);
+  assert(r2.ok, 'durée, allure, bornes de zones et comptes doivent être citables : ' + JSON.stringify(r2.reasons));
+
+  // Un arrondi d'affichage reste la même mesure : 1452 m écrit « 1450 m ».
+  const arrondi = JSON.stringify({
+    resume: 'Environ 1450 m de dénivelé positif.', analyse: ['Terrain très vallonné'],
+    positif: ['Effort régulier'], suite: ['Maintenir ce volume'],
+  });
+  assert(iso.validateAiOutput(arrondi, allowed).ok, 'un arrondi d\'affichage ne doit pas être traité comme une invention');
+
+  // MAIS la règle tient toujours sur ce qui compte : une valeur venue d'ailleurs reste refusée.
+  const invente = JSON.stringify({
+    resume: 'Sortie exigeante.', analyse: ['Tu as dépensé environ 2400 kilocalories'],
+    positif: ['Effort tenu'], suite: ['Continuer'],
+  });
+  assert(!iso.validateAiOutput(invente, allowed).ok, 'une valeur absente des données doit rester refusée');
+
+  const delai = JSON.stringify({
+    resume: 'Sortie exigeante.', analyse: ['19,7 km parcourus'], positif: ['Effort tenu'],
+    suite: ['Prévoir 72 h avant la prochaine séance longue'],
+  });
+  assert(!iso.validateAiOutput(delai, allowed).ok, 'un délai inventé doit rester refusé');
+  return { ecartAccepte: '16 %', arrondiAccepte: '1450 m', toujoursRefuses: ['2400 kcal', '72 h'] };
+});
+
 /* --------------------------- rapport --------------------------- */
 const passed = results.filter(r => r.status === 'PASS').length;
 const failed = results.length - passed;

@@ -73,16 +73,50 @@ function buildAllowedFacts(spec) {
      ['avgHr', 0], ['maxHr', 0], ['cadenceSpm', 0], ['avgPower', 0], ['avgTemp', 0]].forEach(([k, d]) => {
       if (s[k] != null) { _pushNum(numbers, s[k], d); fields.push(prefix + '.' + k); }
     });
+    /* Une durée et une allure s'ÉCRIVENT décomposées : « 4h21 », « 6:30/km ». Le texte porte donc
+       deux nombres pour une seule mesure, et refuser la décomposition revenait à interdire d'écrire
+       une durée. */
     if (s.durationS != null) {
       _pushNum(numbers, Math.round(s.durationS / 60));
       _pushNum(numbers, Math.floor(s.durationS / 3600));
       _pushNum(numbers, Math.round((s.durationS % 3600) / 60));
       fields.push(prefix + '.durationS');
     }
+    if (s.avgPaceSecPerKm != null) {
+      _pushNum(numbers, s.avgPaceSecPerKm);
+      _pushNum(numbers, Math.floor(s.avgPaceSecPerKm / 60));
+      _pushNum(numbers, Math.round(s.avgPaceSecPerKm % 60));
+      fields.push(prefix + '.avgPaceSecPerKm');
+    }
   };
   addSession(spec.session, 'session');
   addSession(spec.planned, 'planned');
   (spec.history || []).forEach((h, i) => addSession(h, 'history[' + i + ']'));
+  // Un compte est vérifiable : « 3 séances comparables » se lit dans les données fournies.
+  if (Array.isArray(spec.history)) _pushNum(numbers, spec.history.length);
+  if (Array.isArray(spec.zones)) _pushNum(numbers, spec.zones.length);
+  Object.values(spec.counts || {}).forEach(v => _pushNum(numbers, v));
+
+  /* ÉCARTS ENTRE RÉALISÉ ET PRÉVU. C'est la correction la plus importante de ce fichier, et elle
+     vient d'un rejet observé en usage réel : la réponse citait « 16 », valeur absente de la liste,
+     et le retour a été perdu.
+
+     Or le prompt DEMANDE au modèle d'interpréter l'écart au plan. Un pourcentage calculé à partir
+     de deux valeurs autorisées n'est pas une invention : c'est une dérivation vérifiable, que
+     n'importe qui peut refaire. L'interdire revenait à demander une analyse tout en refusant le
+     seul chiffre qui l'exprime. La règle §9.7 vise les faits INVENTÉS, pas l'arithmétique sur des
+     faits fournis. */
+  if (spec.session && spec.planned) {
+    [['distanceKm', 'distanceKm'], ['ascent', 'deniveleM'], ['descent', 'descenteM'], ['durationS', 'durationS']]
+      .forEach(([kReel, kPrevu]) => {
+        const x = spec.session[kReel], y = spec.planned[kPrevu];
+        if (x == null || y == null || !y) return;
+        const pct = (x - y) / y * 100;
+        _pushNum(numbers, pct); _pushNum(numbers, Math.abs(pct));
+        _pushNum(numbers, x - y, 1); _pushNum(numbers, Math.abs(x - y), 1);
+        _pushNum(numbers, x / y * 100); // « 110 % de la cible »
+      });
+  }
 
   // Valeurs portées par les insights déterministes : elles sont calculées, donc citables.
   (spec.insights || []).forEach(ins => {
@@ -92,7 +126,16 @@ function buildAllowedFacts(spec) {
     Object.values(ins.values || {}).forEach(v => { if (typeof v === 'number') { _pushNum(numbers, v, 1); _pushNum(numbers, v, 0); } });
   });
 
-  (spec.zones || []).forEach(z => { if (z && z.pct != null) _pushNum(numbers, z.pct); });
+  /* Zones : le pourcentage du temps, mais aussi les BORNES et le numéro de zone. Une phrase comme
+     « 88 % du temps entre 150 et 165 bpm, soit en zone 4 » ne cite que des valeurs fournies. */
+  (spec.zones || []).forEach((z, i) => {
+    if (!z) return;
+    if (z.pct != null) _pushNum(numbers, z.pct);
+    if (z.low != null) _pushNum(numbers, z.low);
+    if (z.high != null) _pushNum(numbers, z.high);
+    if (z.sec != null) { _pushNum(numbers, Math.round(z.sec / 60)); _pushNum(numbers, z.sec); }
+    _pushNum(numbers, i + 1);
+  });
 
   /* Une recommandation ne peut porter que sur des actions dont ELEV dispose réellement des
      données. La récupération n'en fait jamais partie aujourd'hui : rien ne la mesure. */
@@ -138,7 +181,17 @@ function _numbersIn(text) {
   return out;
 }
 
-const AI_NUMBER_TOLERANCE = 1; // arrondis d'affichage : 12,4 km cité « 12 km » reste la même mesure
+/* Tolérance d'arrondi. Elle était FIXE à 1, ce qui interdisait d'arrondir une grande valeur :
+   « 1452 m » écrit « 1450 m » était rejeté comme une invention, alors que c'est la même mesure
+   arrondie. La tolérance devient relative — 1 unité, ou 2 % de la valeur si c'est plus large. */
+const AI_NUMBER_TOLERANCE = 1;
+const AI_NUMBER_TOLERANCE_PCT = 0.02;
+function _numberAllowed(n, allowedNumbers) {
+  return allowedNumbers.some(a => {
+    const tol = Math.max(AI_NUMBER_TOLERANCE, Math.abs(a) * AI_NUMBER_TOLERANCE_PCT);
+    return Math.abs(a - n) <= tol;
+  });
+}
 
 function validateAiOutput(rawText, allowed, opts) {
   opts = opts || {};
@@ -185,8 +238,7 @@ function validateAiOutput(rawText, allowed, opts) {
   if (allowed && Array.isArray(allowed.numbers)) {
     const inconnus = [];
     _numbersIn(tout).forEach(n => {
-      const ok = allowed.numbers.some(a => Math.abs(a - n) <= AI_NUMBER_TOLERANCE);
-      if (!ok && inconnus.indexOf(n) < 0) inconnus.push(n);
+      if (!_numberAllowed(n, allowed.numbers) && inconnus.indexOf(n) < 0) inconnus.push(n);
     });
     if (inconnus.length)
       reasons.push('Valeurs absentes des données fournies : ' + inconnus.slice(0, 6).join(', ') + '.');
@@ -202,17 +254,27 @@ function validateAiOutput(rawText, allowed, opts) {
 /* Consigne commune ajoutée à tout prompt IA. Écrite ici plutôt que dans chaque page : deux copies
    divergeraient, et c'est exactement ce que l'audit reproche au pipeline actuel. */
 function aiOutputContract(allowed) {
-  const nums = (allowed && allowed.numbers || []).join(', ');
+  const nums = (allowed && allowed.numbers || []);
+  /* La liste était une suite de nombres nus, difficile à exploiter pour un modèle — et c'est en
+     partie ce qui produisait des rejets : il citait un écart parfaitement dérivable sans savoir
+     qu'il devait le prendre dans la liste. On dit désormais quels CHAMPS sont disponibles, et on
+     autorise explicitement l'arithmétique sur les valeurs fournies. */
+  const champs = (allowed && allowed.fields || []);
   return [
     'RÈGLES ABSOLUES DE SORTIE.',
     "Tu reformules des observations déjà calculées. Tu n'es pas le moteur de calcul.",
     '1. Réponds UNIQUEMENT par un objet JSON valide, sans texte autour, sans bloc de code.',
     '2. Clés autorisées, aucune autre : resume (texte), analyse, positif, vigilance, suite (listes de textes courts).',
-    "3. N'écris AUCUN nombre absent de cette liste : [" + nums + ']. Aucun calcul nouveau, aucune extrapolation.',
+    '3. CHIFFRES. Tu ne peux employer que les valeurs présentes dans les données ci-dessus'
+      + (champs.length ? ' (champs fournis : ' + champs.slice(0, 40).join(', ') + ')' : '')
+      + ', ou un écart calculé ENTRE deux de ces valeurs (différence, pourcentage, rapport).'
+      + " N'introduis aucune valeur venue d'ailleurs : ni durée de repos, ni délai, ni objectif chiffré, ni estimation."
+      + (nums.length ? ' Valeurs et dérivations reconnues : [' + nums.join(', ') + '].' : ''),
     "4. N'affirme aucune cause (pas de « donc », « à cause de », « s'explique par ») : les facteurs ne sont pas contrôlés.",
     '5. Aucun délai, aucune consigne de récupération, de repos ou de coupure : ELEV ne mesure ni sommeil, ni fréquence cardiaque de repos, ni ressenti.',
     "6. Aucun diagnostic, aucune mention de blessure, de surentraînement ou d'état de fatigue.",
     "7. Si une donnée manque, dis-le. N'invente jamais pour combler.",
+    "8. En cas de doute sur un chiffre, écris la phrase SANS le chiffre plutôt que de l'approximer.",
   ].join('\n');
 }
 
