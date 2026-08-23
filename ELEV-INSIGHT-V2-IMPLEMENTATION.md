@@ -1,9 +1,9 @@
 # Registre d'implémentation — ELEV Insight V2
 
 **Source :** `AUDIT-SCIENTIFIQUE-ELEV-INSIGHT-V2-2026-08-23.md`
-**Branche :** `fix/quatre-defauts-cibles` — aucun commit, aucun push, aucun déploiement.
+**Branche :** `fix/quatre-defauts-cibles`, poussée sur `origin` (commits `3e870f5` puis correctif P1).
 **Baseline avant travaux :** `node audit-qa/qa_tests.mjs` → **84/84 réussis, 0 échec**.
-**État final :** `node audit-qa/qa_tests.mjs` → **108/108 réussis, 0 échec** (24 tests ajoutés).
+**État final :** `node audit-qa/qa_tests.mjs` → **110/110 réussis, 0 échec** (26 tests ajoutés).
 
 Statuts : `À FAIRE` · `EN COURS` · `TERMINÉ` · `BLOQUÉ` · `HORS DÉPÔT` · `À VALIDER`.
 
@@ -33,6 +33,14 @@ aucune modification du produit — seulement à la correction du test :
 2. `parsePlanCsv` exige une année dans la date : mon CSV de test était mal formé.
 3. `generateElevInsight` retourne **un** insight, la priorisation étant faite par la page :
    mon test supposait un résultat de priorisation.
+
+**Deux exigences P1 avaient été annoncées « terminées » à tort**, et corrigées après vérification
+demandée par l'utilisateur : `noteInsightsShown()` existait, était testée, et **aucune page ne
+l'appelait** — le délai de répétition était donc inerte, exactement le défaut de `provenance` que
+cette mission corrigeait par ailleurs ; et la « vue avancée des insights valides non retenus »
+(§13, P1) n'existait pas, `dropped` étant calculé mais jamais affiché. L'écriture de l'historique
+appartient désormais au composant de rendu — le seul endroit qui sache ce qui est réellement montré,
+donc le seul où l'oubli soit impossible. Tests `V2-P1E2` et `V2-P1G`.
 
 Un quatrième écart a été trouvé **dans mon propre code** en cours de route : la détection de
 contradictions portait sur les insights retenus **après** déduplication par famille, si bien que
@@ -72,7 +80,8 @@ que l'audit interdit. Corrigé : la détection porte sur tous les insights valid
 | P1-B | Registre de preuve A/B/C/D/X, 19 sources | TERMINÉ | `assets/elev-evidence.js` | `V2-P1B` — 19 sources, 17 affirmations, dates de revue |
 | P1-C | Triple confiance plafonnée | TERMINÉ | `assets/elev-insight.js` | `V2-P1C` — charge : haute → **moyenne** ; estimation D → **faible** |
 | P1-D | Contradictions visibles | TERMINÉ | `assets/elev-insight.js`, `assets/style.css` | `V2-P1D` — 2 familles de tension détectées et rendues |
-| P1-E | Priorité explicable, cooldown, feedback | TERMINÉ | `assets/elev-insight.js` | `V2-P1E` — priorité multiplicative, alerte jamais effacée |
+| P1-E | Priorité explicable, cooldown, feedback | TERMINÉ | `assets/elev-insight.js` | `V2-P1E` — priorité multiplicative, alerte jamais effacée ; `V2-P1E2` — historique **réellement écrit** par le composant |
+| P1-G | Vue avancée des insights valides non retenus | TERMINÉ | `assets/elev-insight.js`, `assets/style.css` | `V2-P1G` — section repliée « Autres observations (N) », vérifiée sur Plan |
 | P1-F | InsightCard V2 et volet de preuve | TERMINÉ | `assets/elev-insight.js`, `assets/style.css` | `V2-P1F` — méthode, formule, niveau, sources, limites, revue |
 
 ## 4. P2 et P3
