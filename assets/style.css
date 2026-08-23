@@ -392,6 +392,12 @@ header.app-topbar .app-topbar-actions{display:flex;align-items:center;gap:8px;fl
 @media (prefers-reduced-motion:reduce){ .nav-sheet,.nav-sheet-backdrop{transition:none;} }
 
 main{max-width:1360px;margin:0 auto;padding:20px 28px 28px;display:flex;flex-direction:column;gap:16px;width:100%;box-sizing:border-box;}
+/* Un conteneur qui REGROUPE des blocs de niveau page (ex. tout le contenu d'Analyse sous son
+   état vide) doit reconduire le rythme vertical de `main`, sinon les blocs retombent au flux
+   par défaut et perdent le gap : mesuré sur Analyse, deux cartes voisines se touchaient (0 px)
+   et le titre de groupe chevauchait la carte suivante de 4 px, là où Profil — dont les mêmes
+   blocs sont enfants directs de `main` — obtenait 24 px avant le titre et 12 px après. */
+.page-flow{display:flex;flex-direction:column;gap:16px;min-width:0;}
 section.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 24px;box-shadow:none;}
 /* Page enter — léger, réservé aux blocs structurels de premier niveau (les cartes elles-mêmes,
    pas chaque ligne de tableau) ; neutralisé par la media query reduced-motion globale ci-dessus. */
@@ -421,7 +427,9 @@ section.card.card-compact h2::before{display:none;}
 .kpi-strip .kpi-item .v,
 .mini-list-val,
 .zdl-pct,.zdl-time,
-.plan-week-card .pwc-row strong,
+.plan-week-acc .pwa-stats strong,
+.plan-fiche-metrics .val,
+.plan-fiche-zone strong,
 .plan-actual-card .pa-after,
 .goal-subscore-val,
 .equip-row .equip-km-val,
@@ -507,24 +515,41 @@ section.card.card-compact h2::before{display:none;}
 .plan-compare-diff{font-size:var(--text-xs);margin-top:4px;font-weight:600;}
 
 /* Page Plan — cockpit d'exécution (refonte) */
-.plan-phase-track{display:flex;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);}
-.plan-phase-step{flex:1 1 0;text-align:center;position:relative;padding-top:16px;}
-/* La ligne de connexion passe par 3 etats (a venir/en cours/fait) plutot qu'une seule couleur
-   plate — elle raconte la progression du plan a elle seule, sans devoir lire les libelles. */
-.plan-phase-step::before{content:"";position:absolute;top:6px;left:0;right:0;height:2px;background:var(--border);transition:background var(--dur-page) var(--ease-standard);}
+/* ------------------------------ TIMELINE DES PHASES DU PLAN ------------------------------
+   RESTRUCTURÉE (2026-08-23). La version précédente faisait dessiner à CHAQUE étape son propre
+   segment de trait, en `::before` positionné à `top:6px` dans son propre repère, dans une piste
+   en `align-items:center`. Deux étapes de hauteurs différentes — ce qui arrive dès qu'un libellé
+   passe sur deux ou trois lignes, cas courant avec des noms de bloc réels — étaient donc centrées
+   à des ordonnées différentes : les segments ne se rejoignaient plus et le trait apparaissait
+   HACHÉ. Aucune correction ponctuelle ne pouvait tenir, la continuité dépendait de la hauteur du
+   texte.
+   Désormais : les étapes sont alignées sur leur BORD HAUT (les pastilles partagent donc la même
+   ordonnée quoi qu'il arrive), et le trait est un élément UNIQUE tracé d'un bout à l'autre, avec
+   sa portion parcourue en accent. La continuité est acquise par construction.
+   La piste défile horizontalement quand les phases sont nombreuses : un plan réel peut en porter
+   une vingtaine, que la répartition en parts égales rendait illisibles (libellés se chevauchant
+   les uns les autres, mesuré). Chaque étape garde une largeur minimale lisible. */
+.plan-phase-track{margin-top:16px;padding-top:16px;border-top:1px solid var(--border);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;}
+/* `width:max-content` + `min-width:100%` : sans le premier, la piste reste à la largeur du
+   conteneur pendant que les étapes débordent, et le trait — positionné par rapport à elle —
+   s'arrêtait en plein milieu des dernières phases (mesuré : trait à 1187 px, dernière pastille
+   à 2401 px). Sans le second, quatre phases ne se répartiraient plus sur toute la largeur. */
+.plan-phase-steps{display:flex;align-items:flex-start;position:relative;width:max-content;min-width:100%;padding-bottom:2px;}
+/* Trait continu, tracé de la première à la dernière pastille (d'où les retraits d'une demi-étape
+   de chaque côté — `--steps` porte le nombre réel d'étapes, posé à la génération). */
+.plan-phase-rail{position:absolute;top:6px;height:2px;background:var(--border);border-radius:2px;
+  left:calc(50% / var(--steps));right:calc(50% / var(--steps));}
+.plan-phase-rail > span{display:block;height:100%;border-radius:2px;background:var(--accent);opacity:.75;
+  transition:width var(--dur-page) var(--ease-standard);}
+.plan-phase-step{flex:1 0 112px;text-align:center;position:relative;padding:16px 6px 0;min-width:0;}
 .plan-phase-step::after{content:"";position:absolute;top:1px;left:50%;transform:translateX(-50%);width:12px;height:12px;border-radius:50%;background:var(--panel);border:2px solid var(--border);transition:background var(--dur-base) var(--ease-standard),border-color var(--dur-base) var(--ease-standard),box-shadow var(--dur-base) var(--ease-standard);}
-.plan-phase-step:first-child::before{left:50%;}
-.plan-phase-step:last-child::before{right:50%;}
-.plan-phase-step .lbl{font-size:var(--text-sm);font-weight:700;color:var(--muted);}
+.plan-phase-step .lbl{display:block;font-size:var(--text-sm);font-weight:700;color:var(--muted);line-height:1.25;overflow-wrap:anywhere;}
 .plan-phase-step .sub{display:block;font-size:var(--text-2xs);color:var(--muted);margin-top:4px;}
 .plan-phase-step.current .lbl{color:var(--accent-light);font-weight:800;}
 .plan-phase-step.current::after{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 5px var(--accent-soft);}
 .plan-phase-step.done .lbl{color:var(--muted);opacity:.85;}
 .plan-phase-step.done::after{background:var(--accent);border-color:var(--accent);}
-/* Segment "fait" en vert plein (la portion du parcours deja parcourue), segment restant a la
-   couleur neutre par defaut deja definie ci-dessus — chaque etape peint le trait a SA gauche. */
-.plan-phase-step.done::before,.plan-phase-step.current::before{background:var(--accent);opacity:.6;}
-.plan-phase-step.current::before{background:linear-gradient(90deg,var(--accent),var(--border) 50%);opacity:1;}
 
 /* Ligne des 3 cartes Aperçu (Semaine en cours / Aperçu de la semaine / Prochaine séance) : hauteur
    naturelle de chaque carte plutôt qu'un étirement forcé sur la plus haute des trois (voir CLAUDE.md,
@@ -551,24 +576,105 @@ section.card.card-compact h2::before{display:none;}
 .badge.status-todo{background:var(--panel);color:var(--muted);border:1px solid var(--border);}
 .badge.status-rest{background:var(--panel);color:var(--muted);border:1px dashed var(--border);}
 
-.plan-weeks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
-.plan-week-card{border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 16px;background:var(--panel-raised,var(--panel));}
-.plan-week-card.current{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
-.plan-week-card .pwc-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;}
-.plan-week-card .pwc-title{font-family:var(--font-display);font-weight:700;font-size:var(--text-md);}
-.plan-week-card .pwc-dates{font-size:var(--text-2xs);color:var(--muted);margin-bottom:8px;}
-.plan-week-card .pwc-row{display:flex;justify-content:space-between;font-size:var(--text-sm);color:var(--muted);padding:4px 0;}
-.plan-week-card .pwc-row strong{color:var(--text);font-variant-numeric:tabular-nums;}
 
 .plan-next-card{display:flex;flex-direction:column;gap:8px;}
 .plan-next-card .pnc-date{font-size:var(--text-xs);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
 .plan-next-card .pnc-title{font-family:var(--font-display);font-weight:700;font-size:var(--text-lg);}
+
+/* ============================================================================================
+   FICHE D'ENTRAÎNEMENT — séance planifiée (page Plan).
+   Les informations d'une séance existaient déjà (type, durée, distance, D+, intensité, zones FC
+   par phase, D−, objectif, bloc, semaine) mais n'étaient lisibles en entier que dans un TABLEAU
+   BRUT de la page Paramètres, à six colonnes serrées, replié par semaine — un lieu de
+   configuration, consulté une fois à l'import, jamais avant de partir courir.
+   Cette fiche les remet dans le contexte où elles servent, avec trois niveaux de lecture :
+     1. ce qu'il faut faire (type, jour, durée/distance/D+/intensité) — toujours visible ;
+     2. comment le mener (objectif, zones FC par phase de séance, D−) — toujours visible aussi,
+        mais dans un registre secondaire ;
+     3. d'où elle vient dans le plan (bloc, semaine, libellé CSV d'origine) — repliée.
+   Aucun champ n'est affiché s'il n'existe pas dans le CSV importé : pas de ligne vide, pas de
+   tiret décoratif à la place d'une donnée absente.
+   ============================================================================================ */
+.plan-fiche{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel-raised,var(--panel));
+  padding:16px;display:flex;flex-direction:column;gap:12px;}
+.plan-fiche + .plan-fiche{margin-top:12px;}
+.plan-fiche.is-today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+.plan-fiche.is-missed{border-color:var(--danger);}
+.plan-fiche-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.plan-fiche-when{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.plan-fiche-day{font-size:var(--text-xs);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;}
+.plan-fiche-moved{font-size:var(--text-2xs);color:var(--warn);}
+.plan-fiche-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.plan-fiche-title{margin:0;font-family:var(--font-display);font-weight:700;font-size:var(--text-lg);line-height:1.25;color:var(--text);}
+/* Niveau 1 — les quatre mesures qui décident du contenu de la séance. Colonnes égales, valeurs
+   en mono comme partout ailleurs dans le produit. */
+.plan-fiche-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:8px 16px;}
+.plan-fiche-metrics > div{min-width:0;}
+.plan-fiche-metrics .lbl{display:block;font-size:var(--text-2xs);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+/* La police est posée par la règle partagée « voix des chiffres » (source unique) ; on n’y
+   ajoute que le poids, la taille et la couleur propres au composant. */
+.plan-fiche-metrics .val{display:block;font-weight:600;font-size:var(--text-md);color:var(--text);margin-top:2px;overflow-wrap:anywhere;}
+/* Une intensité est un libellé ("RPE3", "Z2 endurance"), pas une mesure : même place dans la
+   grille, mais dans la voix du texte plutôt que dans celle des chiffres. */
+.plan-fiche-metrics .val.is-text{font-family:var(--font-sans);font-size:var(--text-sm);font-weight:600;}
+/* Niveau 2 */
+.plan-fiche-goal{margin:0;font-size:var(--text-sm);color:var(--text);line-height:1.5;
+  border-left:3px solid var(--accent);padding-left:12px;}
+.plan-fiche-goal b{display:block;font-size:var(--text-2xs);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin-bottom:2px;}
+.plan-fiche-zones{display:flex;flex-wrap:wrap;gap:6px;}
+.plan-fiche-zone{display:inline-flex;align-items:baseline;gap:6px;font-size:var(--text-xs);
+  background:var(--surface-2,var(--bg));border:1px solid var(--border);border-radius:var(--radius-pill);padding:4px 10px;}
+.plan-fiche-zone span{color:var(--muted);}
+.plan-fiche-zone strong{color:var(--text);font-weight:600;}
+/* Niveau 3 — replié : provenance dans le plan, jamais nécessaire pour exécuter la séance. */
+.plan-fiche-more{font-size:var(--text-xs);}
+.plan-fiche-more > summary{cursor:pointer;color:var(--muted);list-style:none;}
+.plan-fiche-more > summary::-webkit-details-marker{display:none;}
+.plan-fiche-more > summary::before{content:'+ ';font-family:var(--font-mono);}
+.plan-fiche-more[open] > summary::before{content:'2 ';}
+.plan-fiche-more dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0 0;}
+.plan-fiche-more dt{color:var(--muted);}
+.plan-fiche-more dd{margin:0;color:var(--text);}
+.plan-fiche-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:4px;border-top:1px solid var(--border);}
+@media (max-width:640px){
+  .plan-fiche{padding:12px;}
+  .plan-fiche-metrics{grid-template-columns:repeat(auto-fit,minmax(72px,1fr));}
+}
+
+/* Onglet Semaines — une semaine par accordéon, dépliable sur ses fiches de séance. Remplace la
+   grille de vignettes qui résumait la semaine sans jamais donner accès à son contenu. */
+.plan-week-list{display:flex;flex-direction:column;gap:8px;}
+.plan-week-acc{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--panel);overflow:hidden;}
+.plan-week-acc.current{border-color:var(--accent);}
+.plan-week-acc > summary{cursor:pointer;list-style:none;padding:12px 16px;display:flex;flex-wrap:wrap;
+  align-items:baseline;gap:8px 16px;transition:background var(--dur-base) var(--ease-standard);}
+.plan-week-acc > summary::-webkit-details-marker{display:none;}
+.plan-week-acc > summary:hover{background:var(--surface-hover);}
+.plan-week-acc .pwa-title{font-family:var(--font-display);font-weight:700;font-size:var(--text-md);color:var(--text);}
+.plan-week-acc .pwa-dates{font-size:var(--text-2xs);color:var(--muted);}
+.plan-week-acc .pwa-stats{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap;font-size:var(--text-xs);color:var(--muted);}
+.plan-week-acc .pwa-stats strong{color:var(--text);font-weight:600;}
+.plan-week-acc .pwa-body{padding:0 16px 16px;}
 
 /* Page Profil (refonte) */
 .profile-hero{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:stretch;}
 @media (max-width:900px){ .profile-hero{grid-template-columns:1fr;} }
 .profile-identity{display:flex;gap:16px;align-items:flex-start;}
 .profile-identity .avatar{width:64px;height:64px;font-size:1.4rem;flex-shrink:0;border-radius:50%;background:var(--accent-soft);color:var(--accent-light);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;box-shadow:0 0 0 3px var(--surface-2),0 0 0 4px var(--border);}
+/* ------------------------------ PHOTO DE PROFIL ------------------------------
+   Le même avatar porte soit l'initiale (repli), soit la photo : le cadrage carré centré est
+   déjà fait à l'enregistrement (voir readProfilePhotoFile), `object-fit:cover` ne fait donc
+   que garantir le rendu si un jour une image non carrée arrivait. Pas de cropper : une
+   dépendance entière pour un avatar de 64px ne se justifie pas. */
+.avatar.has-photo{padding:0;overflow:hidden;background:var(--surface-2);}
+.avatar.has-photo > img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%;}
+.profile-photo-edit{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.profile-photo-preview{width:72px;height:72px;border-radius:50%;flex-shrink:0;overflow:hidden;
+  background:var(--accent-soft);color:var(--accent-light);display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-weight:700;font-size:1.5rem;
+  box-shadow:0 0 0 3px var(--surface-2),0 0 0 4px var(--border);}
+.profile-photo-preview img{width:100%;height:100%;object-fit:cover;display:block;}
+.profile-photo-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 .profile-identity h2{margin:0 0 4px;font-family:var(--font-display);font-size:1.4rem;font-weight:800;letter-spacing:-.01em;}
 .profile-identity .tagline{color:var(--muted);font-size:var(--text-base);margin:0 0 8px;}
 .profile-identity .meta-row{display:flex;flex-direction:column;gap:4px;font-size:var(--text-sm);color:var(--muted);}
@@ -761,6 +867,20 @@ textarea,input[type=text],input[type=password],input[type=date],input[type=numbe
 }
 textarea{min-height:80px;resize:vertical;font-family:var(--font-mono);font-size:var(--text-sm);}
 label.field{display:flex;flex-direction:column;gap:4px;font-size:var(--text-sm);color:var(--muted);flex:1 1 160px;}
+/* ---------------------------- COLONNE DE CHAMPS ----------------------------
+   `label.field` porte `flex:1 1 160px`, pensé pour une RANGÉE : 160px y est une largeur
+   minimale. Dans un conteneur en COLONNE, ce même flex-basis devient une HAUTEUR, et
+   `flex-grow:1` la laisse encore s'étirer. Mesuré en mode édition du Profil : chaque champ
+   occupait 160px de haut pour un input de 37px, et la carte Identité passait de 152 à 451px
+   — l'impression que chaque champ est une section à lui seul.
+   Les modales s'en étaient déjà protégées par `.modal-form .field{flex:none}` : le correctif
+   était juste, mais réservé aux modales. `.field-stack` en fait une primitive partagée,
+   utilisable partout où des champs s'empilent (édition par carte du Profil). */
+.field-stack{display:flex;flex-direction:column;align-items:stretch;gap:12px;}
+.field-stack > .field,.field-stack > .field-pair{flex:none;}
+.field-stack > .field-pair{display:flex;gap:12px;}
+.field-stack > .field-pair > .field{flex:1 1 0;}
+@media (max-width:520px){ .field-stack > .field-pair{flex-direction:column;} }
 
 .msg{font-size:var(--text-base);padding:8px 12px;border-radius:var(--radius-md);margin-top:8px;}
 .msg.ok{background:var(--success-soft);color:var(--success);}
@@ -1563,6 +1683,14 @@ html[data-theme="light"] .landscape-thin{background:rgba(255,255,255,.4);}
    Première consommation réelle de l'échelle --text-* définie en août et restée inutilisée. */
 svg text.c-axis{font-size:var(--text-xs);fill:var(--muted);}
 svg text.c-tick{font-size:var(--text-2xs);fill:var(--muted);}
+/* .c-peak — altitude du point culminant, posée au-dessus du sommet du profil altimétrique.
+   Même échelle que les graduations d'axe : c'est une valeur lue sur le graphique, pas un titre.
+   La couleur reste en attribut SVG (accent), le placement est calculé (voir elevChartSvg). */
+svg text.c-peak{font-size:var(--text-xs);font-weight:600;}
+
+/* Conteneur d'un graphique signature monté par mountElevChart : il est mesuré pour dessiner le
+   SVG à sa largeur réelle, il doit donc occuper toute la largeur disponible et rien de plus. */
+.elev-chart-host{width:100%;}
 
 /* Alternative tabulaire d'un graphique (voir chartTableHtml). Discrète et repliée : le graphique
    reste la lecture principale, mais les valeurs exactes deviennent atteignables au clavier et
@@ -1927,7 +2055,10 @@ main.activities-main{max-width:1600px;}
    composants déjà validés ailleurs (kpi-grid, chart-box, zone-bars, mini-list, insight-card,
    activity-row) plutôt que d'en recréer des variantes — seuls les éléments propres à cette page
    (grilles de mise en page, run/walk par pente) sont ajoutés ici. */
-main.analysis-main{max-width:1440px;}
+/* Même largeur maximale que l'Accueil, Objectifs, Plan et Profil : les 1440px précédents
+   décalaient la page de 80px sur grand écran, sans raison propre à son contenu (le 1600px
+   d'Activités, lui, sert un tableau dense). */
+main.analysis-main{max-width:1360px;}
 .analysis-period-row{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin:-4px 0 4px;}
 /* Le retour à la ligne était réservé à `max-width:640px`, mais les deux champs de date tiennent
    difficilement bien au-delà : débordement horizontal de 6px mesuré à 641px, juste au-dessus du

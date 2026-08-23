@@ -881,9 +881,111 @@ function getLastDetectedDevice() {
 }
 
 function getPlan() { try { const raw = localStorage.getItem(PLAN_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
-function savePlan(plan) { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); scheduleSync(); return true; } catch (e) { return false; } }
+/* Renseigne `lastStorageError` comme saveSession : le plan est devenu modifiable depuis
+   l'interface (déplacement d'une séance), un échec silencieux y laisserait croire que le
+   changement est pris en compte alors qu'il ne l'est pas. */
+function savePlan(plan) {
+  try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); scheduleSync(); lastStorageError = null; return true; }
+  catch (e) {
+    console.error(e);
+    lastStorageError = isQuotaError(e)
+      ? "Le stockage de ce navigateur est plein : le plan n'a pas pu être enregistré."
+      : ('Écriture impossible : ' + e.message);
+    return false;
+  }
+}
 function clearPlan() { try { localStorage.removeItem(PLAN_KEY); scheduleSync(); } catch (e) {} }
 function findPlannedSession(dateISO) { const plan = getPlan(); if (!plan) return null; return plan.find(p => p.date === dateISO) || null; }
+
+/* --------------------------- SÉANCE PLANIFIÉE : IDENTITÉ ET DÉPLACEMENT ---------------------------
+   Le CSV ne porte aucun identifiant : une séance planifiée n'était jusqu'ici désignable que par sa
+   date, ce qui suffisait tant que rien n'était modifiable. Dès qu'on peut DÉPLACER une séance, la
+   date cesse d'être une identité — deux séances peuvent atterrir le même jour, et celle qu'on vient
+   de déplacer n'est plus là où on l'a désignée. `uid` est donc posé une fois pour toutes, à la
+   première lecture d'un plan qui n'en a pas, et suit la séance quoi qu'il arrive.
+   Volontairement non dérivé du contenu : deux séances identiques le même jour (fréquent en bi-quotidien)
+   partageraient la même empreinte. */
+let _planUidSeq = 0;
+function newPlanUid() {
+  _planUidSeq += 1;
+  return 'ps-' + Date.now().toString(36) + '-' + _planUidSeq.toString(36);
+}
+/* Retourne le plan avec un `uid` sur chaque séance, en le PERSISTANT si des identifiants manquaient
+   (un plan importé avant cette évolution). Aucune autre valeur n'est touchée. */
+function ensurePlanUids(plan) {
+  if (!plan || !plan.length) return plan;
+  let changed = false;
+  plan.forEach(p => { if (!p.uid) { p.uid = newPlanUid(); changed = true; } });
+  if (changed) savePlan(plan);
+  return plan;
+}
+/* Jour + date au format du CSV (« Ven 07/08 ») : c'est un libellé d'AFFICHAGE dérivé de la date,
+   il doit donc être refait quand la date change, sinon la fiche annonce l'ancien jour. */
+const PLAN_WEEKDAY_SHORT = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+function planJourLabel(dateISO) {
+  const d = new Date(dateISO + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return '';
+  return PLAN_WEEKDAY_SHORT[(d.getUTCDay() + 6) % 7] + ' ' + dateISO.slice(8, 10) + '/' + dateISO.slice(5, 7);
+}
+/* Déplace une séance planifiée à une nouvelle date. Toutes les vues du plan (semaine en cours,
+   aperçu des 7 jours, semaines, graphiques, statut « manqué ») dérivent la semaine de `p.date` via
+   isoWeek() : la redistribution est donc automatique, il n'y a aucun index parallèle à mettre à jour.
+   `movedFrom` conserve la date d'origine — c'est la première donnée réelle d'ajustement du plan,
+   l'onglet Ajustements n'avait jusqu'ici qu'une note libre faute de pouvoir tracer quoi que ce soit.
+   Retourne { ok, error } — jamais d'exception, l'appelant affiche le motif. */
+function updatePlannedSessionDate(uid, newDateISO) {
+  if (!uid) return { ok: false, error: 'Séance introuvable.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDateISO || '')) return { ok: false, error: 'Date invalide.' };
+  const d = new Date(newDateISO + 'T00:00:00Z');
+  if (isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== newDateISO) return { ok: false, error: 'Date invalide.' };
+  const plan = ensurePlanUids(getPlan());
+  if (!plan || !plan.length) return { ok: false, error: 'Aucun plan importé.' };
+  const item = plan.find(p => p.uid === uid);
+  if (!item) return { ok: false, error: 'Séance introuvable dans le plan.' };
+  if (item.date === newDateISO) return { ok: true, session: item, unchanged: true };
+  if (!item.movedFrom) item.movedFrom = item.date;   // toujours la date d'ORIGINE, pas la précédente
+  if (item.movedFrom === newDateISO) delete item.movedFrom;  // retour à la case départ
+  item.date = newDateISO;
+  item.jourLabel = planJourLabel(newDateISO);
+  if (!savePlan(plan)) return { ok: false, error: lastStorageError || "Enregistrement impossible." };
+  return { ok: true, session: item };
+}
+
+/* Champs RÉELLEMENT renseignés d'une séance planifiée, regroupés par niveau de lecture. Une seule
+   fonction connaît le modèle du plan : les fiches de la page Plan et le détail des Paramètres ne
+   peuvent donc pas diverger sur ce qui existe, ni afficher une ligne vide pour une colonne absente
+   du CSV importé. Aucun champ n'est inventé ni estimé. */
+function plannedSessionDetails(p) {
+  const val = v => (v == null || v === '') ? null : v;
+  const zones = [
+    ['Échauffement', val(p.fcEchauffement)],
+    ['Corps de séance', val(p.fcCorpsSeance)],
+    ['Retour au calme', val(p.fcRetourCalme)],
+    ['Moyenne visée', val(p.fcMoyenneGlobale)],
+  ].filter(z => z[1]);
+  return {
+    // Niveau 1 — ce qu'on lit avant de partir courir.
+    type: val(p.type) || 'Séance',
+    duree: val(p.dureeDetail),
+    /* `parsePlanNumber` retourne 0 quand la colonne est ABSENTE du CSV, pas seulement quand elle
+       vaut zéro : un plan au format simple, sans colonne D+, affichait donc « D+ 0 m » sur chaque
+       séance, ce qui se lit comme « sortie plate prévue » et non comme « non renseigné ».
+       Le produit traite déjà 0 comme absent partout ailleurs dans l'affichage du plan
+       (`p.distanceKm ? ... : ''`) : même règle ici. Les agrégations, elles, continuent de sommer 0. */
+    distanceKm: p.distanceKm ? p.distanceKm : null,
+    deniveleM: p.deniveleM ? p.deniveleM : null,
+    intensite: val(p.intensite),
+    // Niveau 2 — comment la mener.
+    objectif: val(p.notes),
+    zones: zones,
+    descenteM: p.descenteM ? p.descenteM : null,
+    // Niveau 3 — d'où elle vient dans le plan.
+    bloc: val(p.bloc),
+    semaine: val(p.semaine),
+    jourLabel: val(p.jourLabel),
+    movedFrom: val(p.movedFrom),
+  };
+}
 // Note libre sur le plan (page Plan, onglet Ajustements) — texte manuel de l'utilisateur, jamais généré.
 function getPlanGoalId() { try { return localStorage.getItem(PLAN_GOAL_KEY) || null; } catch (e) { return null; } }
 /* `null` délie explicitement le plan de toute course : c'est un état voulu, pas une absence de
@@ -3024,13 +3126,90 @@ function renderAppNav(activeHref) {
 
 // Bloc utilisateur de la sidebar (avatar initiale + prénom) — identique à celui de l'Accueil,
 // réutilisé par les autres pages migrées vers la sidebar harmonisée (voir CLAUDE.md section 15).
+/* --------------------------- PHOTO DE PROFIL (local-first) ---------------------------
+   Où elle est stockée, et pourquoi. ELEV n'utilise IndexedDB nulle part : y recourir pour une
+   seule image ajouterait un mécanisme de stockage entier — à sauvegarder, à restaurer, à purger,
+   à synchroniser — pour un fichier de quelques dizaines de kilo-octets. La photo est donc un
+   champ du PROFIL comme les autres (`profile.photo`), ce qui lui fait suivre gratuitement
+   l'export JSON, la réinitialisation locale et la synchronisation entre appareils.
+   Ce choix ne tient que parce que l'image est RÉDUITE AVANT d'être stockée : un cliché de
+   téléphone brut en base64 ferait plusieurs méga-octets dans un stockage dont le quota est déjà
+   sous tension (mesuré en QA : ~12 Mo pour 280 séances, quota navigateur de 5 à 10 Mo). On
+   recadre donc en carré centré à 256 px et on encode en JPEG — soit typiquement 10 à 30 ko.
+   Le recadrage fin est volontairement absent : aucune dépendance de cropper n'est ajoutée, le
+   cadrage carré centré plus `object-fit:cover` à l'affichage suffit pour un avatar. */
+const PROFILE_PHOTO_PX = 256;              // côté de l'image stockée
+const PROFILE_PHOTO_MAX_INPUT = 12 * 1024 * 1024;  // 12 Mo en entrée : au-delà, c'est un fichier RAW ou une erreur
+const PROFILE_PHOTO_MAX_STORED = 300 * 1024;       // filet : jamais plus de 300 ko écrits dans le profil
+
+/* Lit un fichier image et retourne une data URI carrée prête à stocker.
+   Ne lève jamais : retourne { ok:false, error } avec un motif affichable. */
+function readProfilePhotoFile(file) {
+  return new Promise(function (resolve) {
+    if (!file) return resolve({ ok: false, error: 'Aucun fichier sélectionné.' });
+    if (!/^image\//.test(file.type || '')) {
+      return resolve({ ok: false, error: 'Ce fichier n’est pas une image. Formats acceptés : JPEG, PNG, WebP, HEIC converti.' });
+    }
+    if (file.size > PROFILE_PHOTO_MAX_INPUT) {
+      return resolve({ ok: false, error: 'Image trop lourde (' + (file.size / 1024 / 1024).toFixed(1) + ' Mo). Choisis une photo de moins de 12 Mo.' });
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      try {
+        // Recadrage carré centré : on prend le plus grand carré possible au milieu de l'image,
+        // ce que `object-fit:cover` montrerait de toute façon à l'affichage.
+        const cote = Math.min(img.naturalWidth, img.naturalHeight);
+        if (!cote) return resolve({ ok: false, error: 'Image illisible.' });
+        const sx = (img.naturalWidth - cote) / 2, sy = (img.naturalHeight - cote) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = PROFILE_PHOTO_PX;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, sx, sy, cote, cote, 0, 0, PROFILE_PHOTO_PX, PROFILE_PHOTO_PX);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        if (!dataUrl || dataUrl.length < 32) return resolve({ ok: false, error: 'Image illisible.' });
+        if (dataUrl.length > PROFILE_PHOTO_MAX_STORED) {
+          return resolve({ ok: false, error: 'Image trop lourde après réduction. Essaie une autre photo.' });
+        }
+        resolve({ ok: true, dataUrl: dataUrl, bytes: dataUrl.length });
+      } catch (e) {
+        // toDataURL lève sur un canvas « teinté » (image d'une autre origine) — impossible ici,
+        // le fichier vient de l'appareil, mais on ne laisse pas la page tomber pour autant.
+        resolve({ ok: false, error: 'Cette image n’a pas pu être préparée : ' + e.message });
+      }
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      resolve({ ok: false, error: 'Ce fichier n’a pas pu être ouvert comme une image.' });
+    };
+    img.src = url;
+  });
+}
+/* `null` efface la photo. patchProfile fusionne, il faut donc une valeur explicite pour supprimer. */
+function saveProfilePhoto(dataUrl) { return patchProfile({ photo: dataUrl || null }); }
+function getProfilePhoto() { const p = getProfile(); return (p && typeof p.photo === 'string' && p.photo.slice(0, 11) === 'data:image/') ? p.photo : null; }
+/* Avatar partagé : photo si elle existe, initiale sinon. Un seul rendu, pour que la sidebar et la
+   page Profil ne divergent pas. `alt` vide et `aria-hidden` : le nom de l'utilisateur est déjà
+   écrit juste à côté, l'annoncer deux fois n'apprend rien. */
+function avatarHtml(profile, cls) {
+  const p = profile || getProfile();
+  const photo = (p && typeof p.photo === 'string' && p.photo.slice(0, 11) === 'data:image/') ? p.photo : null;
+  const prenom = (p.nom || '').trim().split(/\s+/)[0];
+  const initial = prenom ? prenom[0].toUpperCase() : '?';
+  const classe = 'avatar' + (cls ? ' ' + cls : '') + (photo ? ' has-photo' : '');
+  return photo
+    ? '<span class="' + classe + '"><img src="' + photo + '" alt="" aria-hidden="true"></span>'
+    : '<span class="' + classe + '">' + escapeHtml(initial) + '</span>';
+}
+
 function renderSidebarUser() {
   const el = document.getElementById('sidebarUser');
   if (!el) return;
   const profile = getProfile();
   const prenom = (profile.nom || '').trim().split(/\s+/)[0];
-  const initial = prenom ? prenom[0].toUpperCase() : '?';
-  el.innerHTML = '<div class="avatar">' + escapeHtml(initial) + '</div>' +
+  el.innerHTML = avatarHtml(profile) +
     '<div class="user-info"><strong>' + escapeHtml(prenom || 'Ton profil') + '</strong><a href="profil.html">Voir mon profil</a></div>';
 }
 
@@ -4648,9 +4827,12 @@ function genericDonutSvg(segments, centerValue, centerLabel) {
    plutot que de le deviner. */
 const _responsiveCharts = new Map();
 
-function registerResponsiveChart(el, render) {
+function registerResponsiveChart(el, render, onDraw) {
   if (!el || typeof render !== 'function') return;
-  _responsiveCharts.set(el, render);
+  // `onDraw` (optionnel) est rappele APRES chaque redessin, avec le conteneur : c'est la seule
+  // facon de recabler un graphique interactif (elevChartSvg + initElevChart), dont les ecouteurs
+  // vivent sur le noeud remplace, sans que l'appelant ait a redecouvrir quand le redessin a lieu.
+  _responsiveCharts.set(el, { render: render, onDraw: typeof onDraw === 'function' ? onDraw : null });
   _drawResponsiveChart(el);
   // La mise en page n'est pas toujours stabilisee au premier appel (scenes pleine largeur
   // dimensionnees en JS) : on repasse une fois la frame suivante, puis un peu plus tard.
@@ -4659,8 +4841,9 @@ function registerResponsiveChart(el, render) {
 }
 
 function _drawResponsiveChart(el) {
-  const render = _responsiveCharts.get(el);
-  if (!render || !el.isConnected) return;
+  const entry = _responsiveCharts.get(el);
+  if (!entry || !el.isConnected) return;
+  const render = entry.render;
   const w = Math.round(el.clientWidth);
   /* Seuil et non `if (!w)` : le premier dessin a lieu juste après l'insertion, avant que les
      scènes pleine largeur ne soient dimensionnées en JS. Le conteneur y était mesuré à ~24 px sur
@@ -4673,10 +4856,11 @@ function _drawResponsiveChart(el) {
   if (el.dataset.chartWidth === String(w)) return;  // deja dessine a cette largeur
   el.dataset.chartWidth = String(w);
   el.innerHTML = render(w);
+  if (entry.onDraw) entry.onDraw(el, w);
 }
 
 function refreshResponsiveCharts() {
-  _responsiveCharts.forEach(function (fn, el) {
+  _responsiveCharts.forEach(function (_entry, el) {
     if (!el.isConnected) { _responsiveCharts.delete(el); return; }
     _drawResponsiveChart(el);
   });
@@ -5623,7 +5807,16 @@ function elevChartSvg(points, opts) {
   opts = opts || {};
   const id = 'elevChart' + (_elevChartId++);
   const key = opts.key;
-  const w = 1000, h = opts.height || 220, padL = 46, padR = 14, padT = 14, padB = 26;
+  /* Largeur du viewBox alignee sur la largeur REELLE du conteneur (voir mountElevChart) plutot
+     qu'un 1000 fixe. Un viewBox de 1000 rendu dans 293 px de large, c'est une echelle de 0,29 :
+     mesure sur telephone, les libelles d'axes tombaient a 4 px de haut et le graphe entier a
+     64 px, l'etiquette du point culminant sortant en plus par le haut. Meme principe que
+     registerResponsiveChart pour les autres graphiques du site : mesurer, ne pas deviner. */
+  const w = Math.max(280, Math.round(opts.width || 1000));
+  const h = opts.height || 220, padL = 46, padR = 14, padB = 26;
+  // Le repere du point culminant porte une etiquette AU-DESSUS du sommet, or le sommet est par
+  // construction le point le plus haut du cadre : sans marge dediee, l'etiquette est coupee.
+  const padT = opts.terrain ? 28 : 14;
   const xs = points.map(p => p.x);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const spanX = (maxX - minX) || 1;
@@ -5688,9 +5881,21 @@ function elevChartSvg(points, opts) {
     }).join('');
     const peak = points.reduce((best, p) => (p[key] != null && (!best || p[key] > best[key])) ? p : best, null);
     if (peak) {
-      const px = sx(peak.x).toFixed(1), py = sy(peak[key]).toFixed(1);
-      peakSvg = '<circle cx="' + px + '" cy="' + py + '" r="3.5" fill="var(--accent-light)" stroke="var(--panel)" stroke-width="1.5"/>' +
-        '<text x="' + px + '" y="' + (Number(py) - 9) + '" font-size="12" fill="var(--accent-light)" text-anchor="middle" font-weight="600">' + Math.round(peak[key]) + ' m</text>';
+      const px = sx(peak.x), py = sy(peak[key]);
+      const label = Math.round(peak[key]) + ' m';
+      /* Largeur approchee de l'etiquette pour la garder entierement dans le cadre : une altitude a
+         4 chiffres (« 1969 m ») est nettement plus large qu'a 3 (« 684 m »), et un sommet en tout
+         debut ou toute fin de parcours sortait par le cote avec un ancrage centre. On bascule donc
+         l'ancrage pres des bords plutot que de rogner le texte : la valeur merite d'etre lue. */
+      const labelW = label.length * 7 + 4;
+      let anchor = 'middle', tx = px;
+      if (px - labelW / 2 < padL) { anchor = 'start'; tx = padL; }
+      else if (px + labelW / 2 > w - padR) { anchor = 'end'; tx = w - padR; }
+      // Etiquette au-dessus du sommet, jamais au-dessus du bord haut du cadre (padT le garantit,
+      // le max() est le filet si une option future reduisait la marge).
+      const ty = Math.max(12, py - 10);
+      peakSvg = '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="3.5" fill="var(--accent-light)" stroke="var(--panel)" stroke-width="1.5"/>' +
+        '<text x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" class="c-peak" fill="var(--accent-light)" text-anchor="' + anchor + '">' + label + '</text>';
     }
   }
 
@@ -5796,6 +6001,23 @@ function initElevChart(wrapper, points, onMove) {
   wrapper.addEventListener('mouseleave', () => {
     cursor.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); tooltip.style.display = 'none';
   });
+}
+
+/* Monte un graphique signature dans son conteneur en le dessinant a la LARGEUR REELLE de celui-ci,
+   et le redessine au redimensionnement. Sans cela le SVG (viewBox fixe) etait comprime a l'echelle
+   du conteneur : mesure sur telephone, un profil altimetrique de 293 px de large tombait a 64 px de
+   haut avec des libelles d'axes de 4 px, et l'etiquette du point culminant sortait du cadre.
+   Retourne false si la serie ne permet aucun trace (l'appelant affiche alors son propre etat vide). */
+function mountElevChart(host, points, opts, onMove) {
+  if (!host) return false;
+  opts = opts || {};
+  if (!elevChartSvg(points, Object.assign({}, opts, { width: 1000 }))) return false;
+  registerResponsiveChart(
+    host,
+    function (w) { return elevChartSvg(points, Object.assign({}, opts, { width: w })); },
+    function (el) { initElevChart(el.firstElementChild, points, onMove); }
+  );
+  return true;
 }
 
 let _chartGradientId = 0;

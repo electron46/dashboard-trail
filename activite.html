@@ -202,10 +202,13 @@ function initActivityPage(s) {
      ['Alt max', altMinMax.max != null ? Math.round(altMinMax.max) + ' m' : 'Non disponible']]
       .map(([l,v]) => '<span><strong>' + v + '</strong> ' + l + '</span>').join('') : '';
   const chartPoints = withDist.map(p => Object.assign({ x: p.distKm }, p));
-  const altHtml = elevChartSvg(chartPoints, { key: 'alt', yFormat: v => Math.round(v) + ' m', terrain: true });
   const altHost = document.getElementById('altitudeProfileHost');
-  altHost.innerHTML = altHtml || '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
-  if (altHtml) initElevChart(altHost.firstElementChild, chartPoints, p => moveMapCursor(p.lat, p.lon));
+  // mountElevChart dessine à la largeur RÉELLE du conteneur et redessine au redimensionnement :
+  // c'est ce qui garde les libellés d'axes et l'étiquette du point culminant à leur taille
+  // nominale sur téléphone, au lieu de les comprimer avec le SVG.
+  if (!mountElevChart(altHost, chartPoints, { key: 'alt', yFormat: v => Math.round(v) + ' m', terrain: true }, p => moveMapCursor(p.lat, p.lon))) {
+    altHost.innerHTML = '<div class="empty">Cette activité ne contient pas de données d\'altitude exploitables.</div>';
+  }
   renderTerrainDir(s);
 
   const zones = getActiveHrZones(getProfile());
@@ -607,10 +610,10 @@ function renderAllureTab(s) {
   const points = chartPointsFor(s);
   if (!points.filter(p => p.paceSecKm != null).length) { box.innerHTML = '<div class="empty">Pas de donnée d\'allure disponible pour cette activité.</div>'; return; }
   const { display, yMin, yMax } = buildAllureDisplayPoints(points);
-  const chart = elevChartSvg(display, { key: 'paceSecKm', backgroundKey: 'alt', invertY: true, yFormat: fmtPace, axisHint: 'plus rapide ↑', yMin, yMax });
-  box.innerHTML = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre). L\'axe est inversé : une courbe qui monte = une allure plus rapide. Les arrêts/pauses apparaissent en vide dans la courbe plutôt que comme une donnée d\'allure.</p>' + chart;
-  const wrap = box.querySelector('.elev-chart-wrap');
-  if (wrap) initElevChart(wrap, display, p => { if (!p.isPause) moveMapCursor(p.lat, p.lon); });
+  box.innerHTML = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre). L\'axe est inversé : une courbe qui monte = une allure plus rapide. Les arrêts/pauses apparaissent en vide dans la courbe plutôt que comme une donnée d\'allure.</p><div class="elev-chart-host"></div>';
+  mountElevChart(box.querySelector('.elev-chart-host'), display,
+    { key: 'paceSecKm', backgroundKey: 'alt', invertY: true, yFormat: fmtPace, axisHint: 'plus rapide ↑', yMin, yMax },
+    p => { if (!p.isPause) moveMapCursor(p.lat, p.lon); });
 }
 
 /* --------------------------- ONGLET FRÉQUENCE CARDIAQUE --------------------------- */
@@ -618,15 +621,15 @@ function renderFcTab(s) {
   const box = document.getElementById('fcTabBox');
   const points = chartPointsFor(s);
   if (!points.filter(p => p.hr != null).length) { box.innerHTML = '<div class="empty">Cette activité ne contient pas de données de fréquence cardiaque.</div>'; return; }
-  const chart = elevChartSvg(points, { key: 'hr', backgroundKey: 'alt', yFormat: v => Math.round(v) + ' bpm' });
-  let html = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre).</p>' + chart;
+  let html = '<p class="hint">Le relief apparaît en léger arrière-plan (silhouette d\'altitude, sans échelle propre).</p><div class="elev-chart-host"></div>';
   html += '<div class="metrics-grid" style="margin-top:12px;">' +
     '<div class="metric"><div class="lbl">FC moyenne</div><div class="val">' + (s.avgHr != null ? s.avgHr + ' bpm' : 'Non disponible') + '</div></div>' +
     '<div class="metric"><div class="lbl">FC max</div><div class="val">' + (s.maxHr != null ? s.maxHr + ' bpm' : 'Non disponible') + '</div></div>' +
   '</div>';
   box.innerHTML = html;
-  const wrap = box.querySelector('.elev-chart-wrap');
-  if (wrap) initElevChart(wrap, points, p => moveMapCursor(p.lat, p.lon));
+  mountElevChart(box.querySelector('.elev-chart-host'), points,
+    { key: 'hr', backgroundKey: 'alt', yFormat: v => Math.round(v) + ' bpm' },
+    p => moveMapCursor(p.lat, p.lon));
 }
 
 /* --------------------------- ONGLET ZONES --------------------------- */
@@ -772,6 +775,9 @@ function renderTerrainDir(s) {
 function activateTab(tab) {
   document.querySelectorAll('#detailTabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+  // Un onglet masqué a une largeur de 0 : ses graphiques n'ont pas pu être dessinés à leur
+  // largeur réelle. On repasse dès qu'il devient visible.
+  refreshResponsiveCharts();
 }
 document.querySelectorAll('#detailTabs button').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 document.getElementById('seeAllClimbsLink').addEventListener('click', (e) => {

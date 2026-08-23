@@ -152,18 +152,21 @@ function humanizeTimezone(tz) {
 
 /* --------------------------- IDENTITÉ --------------------------- */
 let identityEditing = false;
+/* Photo en cours d'édition, pas encore enregistrée : `undefined` = inchangée, une data URI = une
+   nouvelle photo choisie, `null` = suppression demandée. Les trois états doivent être distincts,
+   sinon « Annuler » ne peut pas revenir en arrière et « Supprimer » ne se distingue pas de
+   « rien changé ». */
+let photoDraft;
 function renderIdentity() {
   const card = document.getElementById('identityCard');
   const p = getProfile();
-  const prenom = (p.nom || '').trim().split(/\s+/)[0];
-  const initial = prenom ? prenom[0].toUpperCase() : '?';
   const memberSince = p.createdAt ? fmtDate(p.createdAt.slice(0,10)) : null;
 
   if (!identityEditing) {
     card.innerHTML =
       '<div class="row" style="justify-content:space-between;align-items:flex-start;">' +
         '<div class="profile-identity">' +
-          '<div class="avatar">' + escapeHtml(initial) + '</div>' +
+          avatarHtml(p) +
           '<div>' +
             '<h2>' + escapeHtml(p.nom || 'Ton profil') + '</h2>' +
             '<div class="meta-row">' +
@@ -174,11 +177,29 @@ function renderIdentity() {
         '</div>' +
         '<button class="btn small" id="identityEditBtn" type="button">Modifier</button>' +
       '</div>';
-    document.getElementById('identityEditBtn').addEventListener('click', () => { identityEditing = true; renderIdentity(); });
+    document.getElementById('identityEditBtn').addEventListener('click', () => {
+      identityEditing = true; photoDraft = undefined; renderIdentity();
+    });
   } else {
+    // Photo affichée dans l'éditeur : le brouillon s'il existe, sinon celle enregistrée.
+    const photo = photoDraft !== undefined ? photoDraft : getProfilePhoto();
+    const prenom = (p.nom || '').trim().split(/\s+/)[0];
+    const initial = prenom ? prenom[0].toUpperCase() : '?';
     card.innerHTML =
-      '<h2 style="margin-bottom:10px;">Identité</h2>' +
-      '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+      '<h2 style="margin-bottom:12px;">Identité</h2>' +
+      '<div class="profile-photo-edit">' +
+        '<span class="profile-photo-preview" id="photoPreview">' +
+          (photo ? '<img src="' + photo + '" alt="Aperçu de ta photo de profil">' : escapeHtml(initial)) +
+        '</span>' +
+        '<div class="profile-photo-actions">' +
+          '<button class="btn small" id="photoPickBtn" type="button">' + (photo ? 'Remplacer la photo' : 'Ajouter une photo') + '</button>' +
+          (photo ? '<button class="btn small" id="photoRemoveBtn" type="button">Retirer</button>' : '') +
+          '<input type="file" id="photoInput" accept="image/*" style="display:none;">' +
+        '</div>' +
+      '</div>' +
+      '<div id="photoMsg"></div>' +
+      '<p class="hint" style="margin:10px 0 12px;">Réduite à 256 px et conservée sur cet appareil avec le reste de ton profil — jamais envoyée ailleurs, sauf si tu as activé la synchronisation ELEV.</p>' +
+      '<div class="field-stack">' +
         '<label class="field">Prénom / pseudo<input type="text" id="idNomInput" value="' + escapeHtml(p.nom || '') + '" placeholder="ex. Nico"></label>' +
         '<label class="field">Localisation<input type="text" id="idGeoInput" value="' + escapeHtml(p.geoBase || '') + '" placeholder="ex. Île de La Réunion, France"></label>' +
       '</div>' +
@@ -186,15 +207,44 @@ function renderIdentity() {
         '<button class="btn primary small" id="idSaveBtn" type="button">Enregistrer</button>' +
         '<button class="btn small" id="idCancelBtn" type="button">Annuler</button>' +
       '</div>';
+
+    const fileInput = document.getElementById('photoInput');
+    document.getElementById('photoPickBtn').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async e => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';                       // rechoisir le même fichier doit re-déclencher
+      if (!file) return;
+      const res = await readProfilePhotoFile(file);
+      if (!res.ok) { showMsg('photoMsg', res.error, 'err'); return; }
+      // Le prénom saisi doit survivre au nouveau rendu de la carte.
+      const saisie = { nom: document.getElementById('idNomInput').value, geo: document.getElementById('idGeoInput').value };
+      photoDraft = res.dataUrl;
+      renderIdentity();
+      document.getElementById('idNomInput').value = saisie.nom;
+      document.getElementById('idGeoInput').value = saisie.geo;
+    });
+    const removeBtn = document.getElementById('photoRemoveBtn');
+    if (removeBtn) removeBtn.addEventListener('click', () => {
+      const saisie = { nom: document.getElementById('idNomInput').value, geo: document.getElementById('idGeoInput').value };
+      photoDraft = null;
+      renderIdentity();
+      document.getElementById('idNomInput').value = saisie.nom;
+      document.getElementById('idGeoInput').value = saisie.geo;
+    });
+
     document.getElementById('idSaveBtn').addEventListener('click', () => {
       const patch = { nom: document.getElementById('idNomInput').value.trim(), geoBase: document.getElementById('idGeoInput').value.trim() };
       if (!getProfile().createdAt) patch.createdAt = new Date().toISOString();
+      // `undefined` = la photo n'a pas été touchée : ne pas l'inclure, patchProfile fusionne.
+      if (photoDraft !== undefined) patch.photo = photoDraft;
       patchProfile(patch);
-      identityEditing = false;
+      identityEditing = false; photoDraft = undefined;
       renderIdentity();
       renderSidebarUser();
     });
-    document.getElementById('idCancelBtn').addEventListener('click', () => { identityEditing = false; renderIdentity(); });
+    document.getElementById('idCancelBtn').addEventListener('click', () => {
+      identityEditing = false; photoDraft = undefined; renderIdentity();
+    });
   }
 }
 
@@ -250,7 +300,7 @@ function renderPerso() {
   } else {
     card.innerHTML =
       '<h2 style="margin-bottom:10px;">Informations personnelles</h2>' +
-      '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+      '<div class="field-stack">' +
         '<label class="field">Date de naissance<input type="date" id="persoNaissance" value="' + escapeHtml(p.naissance || '') + '"></label>' +
         '<label class="field">Poids (kg)<input type="number" id="persoPoids" min="0" step="0.5" value="' + escapeHtml(p.poids || '') + '"></label>' +
       '</div>' +
@@ -316,7 +366,7 @@ function renderFc() {
 
   card.innerHTML =
     '<h2 style="margin-bottom:10px;">Fréquence cardiaque</h2>' +
-    '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+    '<div class="field-stack">' +
       '<label class="field">FC max (bpm)<input type="number" id="fcMaxInput" min="0" value="' + escapeHtml(fcDraft.fcMax) + '"></label>' +
       '<label class="field">FC repos (bpm)<input type="number" id="fcReposInput" min="0" value="' + escapeHtml(fcDraft.fcRepos) + '"></label>' +
     '</div>' +
@@ -419,7 +469,7 @@ function renderSeuils() {
   } else {
     card.innerHTML =
       '<h2 style="margin-bottom:10px;">Seuils et paramètres sport</h2>' +
-      '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+      '<div class="field-stack">' +
         '<label class="field">Allure seuil / spécifique trail (min/km)<input type="text" id="seuilAllure" value="' + escapeHtml(p.allureSeuil || '') + '" placeholder="ex. 5:10"></label>' +
         '<label class="field">VMA (km/h)<input type="number" id="seuilVma" min="0" step="0.1" value="' + escapeHtml(p.vma || '') + '"></label>' +
       '</div>' +

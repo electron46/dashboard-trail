@@ -186,10 +186,20 @@
       </div>
       <div id="planMsg"></div>
     </section>
+    <!-- Récapitulatif d'IMPORT, plus une fiche d'entraînement. Cette carte portait un tableau à
+         six colonnes replié par semaine : c'était le seul endroit du produit où le contenu réel
+         d'une séance (objectif, zones FC par phase, D−) était lisible en entier. Une consigne
+         d'entraînement n'a rien à faire dans une page de configuration, et elle y était consultée
+         une fois à l'import puis jamais. Le détail vit désormais dans la page Plan, onglet
+         Semaines, où chaque séance est une vraie fiche — et où sa date peut être modifiée.
+         Ce qui reste ici relève bien de l'import : ce qui a été lu, sur quelle période. -->
     <section class="card" id="planViewSection" style="display:none;">
-      <h2>Détail du plan importé <small id="planViewCount"></small></h2>
-      <p class="hint">Regroupé par semaine — clique sur une semaine pour la déplier. La semaine en cours est ouverte automatiquement.</p>
-      <div id="planViewBox"></div>
+      <h2>Ce qui a été importé <small id="planViewCount"></small></h2>
+      <div class="metrics-grid" id="planImportSummary"></div>
+      <p class="hint" id="planColumnsRead" style="margin-top:14px;"></p>
+      <div class="row" style="margin-top:14px;">
+        <a class="btn primary" href="plan.html#semaines">Voir le détail des séances dans Mon plan →</a>
+      </div>
     </section>
   </div>
 
@@ -569,44 +579,46 @@ document.getElementById('clearPlanBtn').addEventListener('click', () => {
     'Semaine,Bloc,Jour,Type de seance,Distance (km),D+ (m),Intensite (RPE),Notes\n' +
     '(plan déjà enregistré — ' + plan.length + ' séances. Recollez un CSV puis "Enregistrer" pour le remplacer.)';
 })();
+/* Récapitulatif de l'import — voir le commentaire du markup : le détail par séance appartient à
+   la page Plan. On ne calcule rien de neuf ici, tout est lu directement dans le plan enregistré. */
 function renderPlanView() {
   const plan = getPlan();
   const section = document.getElementById('planViewSection');
   if (!plan || !plan.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
   document.getElementById('planViewCount').textContent = '(' + plan.length + ' séances)';
-  const today = todayISO();
-  const sorted = plan.slice().sort((a,b) => a.date.localeCompare(b.date));
-  const groups = [];
-  let current = null;
-  sorted.forEach(p => {
-    const key = (p.semaine ? 'S' + p.semaine : '') + '|' + (p.bloc || '');
-    if (!current || current.key !== key) { current = { key, semaine: p.semaine, bloc: p.bloc, items: [] }; groups.push(current); }
-    current.items.push(p);
-  });
-  let openedOnce = false;
-  document.getElementById('planViewBox').innerHTML = groups.map(g => {
-    const title = (g.semaine ? 'Semaine ' + g.semaine : '') + (g.bloc ? (g.semaine ? ' — ' : '') + g.bloc : (g.semaine ? '' : 'Séances'));
-    const isCurrentOrNext = !openedOnce && g.items.some(p => p.date >= today);
-    if (isCurrentOrNext) openedOnce = true;
-    const rows = g.items.map(p => {
-      const jourCourt = (p.jourLabel || '').replace(/\d{2}\/\d{2}(\/\d{4})?/, '').trim();
-      const dplus = p.deniveleM ? (p.deniveleM + ' m') : (p.distanceKm ? '—' : '');
-      const dmoins = p.descenteM ? (' / ' + p.descenteM + ' m') : '';
-      return '<tr>' +
-        '<td>' + fmtDate(p.date) + (jourCourt ? ' <span class="hint">(' + escapeHtml(jourCourt) + ')</span>' : '') + '</td>' +
-        '<td>' + escapeHtml(p.type || '') + '</td>' +
-        '<td>' + (p.distanceKm ? p.distanceKm + ' km' : '—') + '</td>' +
-        '<td>' + (dplus || '—') + dmoins + '</td>' +
-        '<td>' + escapeHtml(p.fcCorpsSeance || p.intensite || '') + '</td>' +
-        '<td class="sans">' + escapeHtml(p.notes || '') + '</td>' +
-      '</tr>';
-    }).join('');
-    return '<details' + (isCurrentOrNext ? ' open' : '') + ' style="margin-bottom:6px;border:1px solid var(--border);border-radius:var(--radius-md);padding:8px 12px;">' +
-      '<summary style="cursor:pointer;font-weight:600;">' + escapeHtml(title || 'Séances') + ' <span class="hint">(' + g.items.length + ')</span></summary>' +
-      '<table style="margin-top:8px;"><thead><tr><th>Jour</th><th>Type</th><th>Distance</th><th>D+/D-</th><th>Zone FC / intensité</th><th>Objectif</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-    '</details>';
+
+  const range = getPlanDateRange(plan);
+  const semaines = new Set(plan.map(p => isoWeek(p.date))).size;
+  const km = plan.reduce((t, p) => t + (p.distanceKm || 0), 0);
+  const dplus = plan.reduce((t, p) => t + (p.deniveleM || 0), 0);
+  const deplacees = plan.filter(p => p.movedFrom).length;
+  const cells = [
+    ['Période couverte', range ? fmtDate(range.fromISO) + ' – ' + fmtDate(range.toISO) : 'Non disponible'],
+    ['Semaines', semaines + ' semaine' + (semaines > 1 ? 's' : '')],
+    ['Volume total prévu', km ? km.toFixed(0) + ' km' : 'Non renseigné'],
+    ['D+ total prévu', dplus ? Math.round(dplus) + ' m' : 'Non renseigné'],
+  ];
+  // Une séance déplacée depuis la page Plan n'est plus celle du CSV : le dire ici évite de
+  // croire qu'un réimport laisserait les choses en l'état.
+  if (deplacees) cells.push(['Séances déplacées depuis l\'import', String(deplacees)]);
+  document.getElementById('planImportSummary').innerHTML = cells.map(function (c) {
+    return '<div class="metric"><div class="lbl">' + c[0] + '</div><div class="val">' + c[1] + '</div></div>';
   }).join('');
+
+  /* Colonnes RÉELLEMENT exploitées par l'import : sans cela, une colonne mal intitulée dans le CSV
+     est perdue en silence et rien ne le signale (défaut déjà rencontré sur « Durée totale » et
+     « FC échauffement », voir parsePlanCsv). */
+  const CHAMPS = [
+    ['Type de séance', 'type'], ['Distance', 'distanceKm'], ['D+', 'deniveleM'], ['D−', 'descenteM'],
+    ['Durée', 'dureeDetail'], ['Intensité', 'intensite'], ['Objectif', 'notes'], ['Bloc', 'bloc'],
+    ['Zones FC par phase', 'fcCorpsSeance'],
+  ];
+  const lus = CHAMPS.filter(function (c) { return plan.some(function (p) { return p[c[1]] != null && p[c[1]] !== ''; }); });
+  const absents = CHAMPS.filter(function (c) { return lus.indexOf(c) < 0; });
+  document.getElementById('planColumnsRead').innerHTML =
+    'Colonnes lues : ' + lus.map(function (c) { return escapeHtml(c[0]); }).join(', ') + '.' +
+    (absents.length ? ' Absentes de ce CSV : ' + absents.map(function (c) { return escapeHtml(c[0]); }).join(', ') + '.' : '');
 }
 renderPlanView();
 

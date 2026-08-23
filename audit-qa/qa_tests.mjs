@@ -1540,6 +1540,286 @@ await test('E20-15', 'Tout insight porte les métadonnées exigées par le contr
   return { candidats: candidats.length, principal: res.primary && res.primary.id, secondaires: res.secondary.map(i => i.id) };
 });
 
+/* =========================================================================
+   SUITE FIX — défauts visuels et fonctionnels corrigés le 23 août 2026.
+   Quatre zones : point culminant tronqué (Activité), rythme vertical de
+   Progression, page Plan (timeline, dates modifiables, fiche d'entraînement),
+   formulaire et photo du Profil.
+   ========================================================================= */
+
+await test('FIX-1a', 'Activité — l\'étiquette du point culminant reste dans le cadre du graphique', async () => {
+  const iso = loadApp();
+  /* Le sommet est par construction le point le plus HAUT du cadre : sans marge dédiée, son
+     étiquette était dessinée au-dessus du bord et coupée (mesuré : 6,3 px hors cadre). */
+  const points = [];
+  for (let i = 0; i < 40; i++) points.push({ x: i * 0.5, alt: i === 20 ? 1969 : 400 + i * 3 });
+  const html = iso.elevChartSvg(points, { key: 'alt', terrain: true, width: 900 });
+  const vb = html.match(/viewBox="0 0 (\d+) (\d+)"/);
+  assert(vb, 'le graphique doit porter un viewBox');
+  const hauteur = Number(vb[2]);
+  const peak = html.match(/class="c-peak"[^>]*>([^<]+)</);
+  assert(peak && peak[1].trim() === '1969 m', 'l\'altitude du sommet doit être écrite en entier, jamais tronquée');
+  const y = Number(html.match(/<text x="[\d.]+" y="([\d.]+)" class="c-peak"/)[1]);
+  /* Ligne de base à `y` : le haut du texte est ~1,2 × la taille de police au-dessus. Une police
+     d'axe fait au plus 14 px, on exige donc 14 px de dégagement au-dessus de la ligne de base. */
+  assert(y >= 14, 'la ligne de base de l\'étiquette doit laisser la place au texte au-dessus (y=' + y + ')');
+  assert(y < hauteur, 'l\'étiquette doit rester dans le cadre');
+  return { y, hauteur, texte: peak[1].trim() };
+});
+
+await test('FIX-1b', 'Activité — un sommet en bord de parcours ne sort pas du cadre latéralement', async () => {
+  const iso = loadApp();
+  const cas = {};
+  [['debut', 0], ['fin', 39]].forEach(([nom, idx]) => {
+    const points = [];
+    for (let i = 0; i < 40; i++) points.push({ x: i * 0.5, alt: i === idx ? 9999 : 100 + i });
+    const html = iso.elevChartSvg(points, { key: 'alt', terrain: true, width: 320 });
+    const m = html.match(/<text x="([\d.]+)" y="[\d.]+" class="c-peak" fill="[^"]*" text-anchor="(\w+)"/);
+    assert(m, 'l\'étiquette du sommet doit être rendue (' + nom + ')');
+    const x = Number(m[1]), anchor = m[2];
+    /* Un ancrage centré ferait sortir la moitié de l'étiquette : on bascule l'ancrage plutôt
+       que de rogner le texte — une altitude à quatre chiffres doit rester lisible en entier. */
+    assert(anchor !== 'middle', 'près d\'un bord, l\'ancrage doit basculer (' + nom + ' → ' + anchor + ')');
+    assert(x >= 0 && x <= 320, 'l\'ancre doit rester dans le cadre (' + nom + ')');
+    cas[nom] = { x, anchor };
+  });
+  return cas;
+});
+
+await test('FIX-1c', 'Activité — le graphique se dessine à la largeur réelle du conteneur', async () => {
+  const iso = loadApp();
+  const points = [];
+  for (let i = 0; i < 30; i++) points.push({ x: i, alt: 500 + i * 4 });
+  /* Un viewBox fixe de 1000 comprimé dans 293 px, c'est une échelle de 0,29 : mesuré sur
+     téléphone, les libellés d'axes tombaient à 4 px de haut. La largeur du viewBox doit
+     suivre celle du conteneur pour que l'échelle revienne à 1. */
+  [293, 640, 939].forEach(w => {
+    const html = iso.elevChartSvg(points, { key: 'alt', terrain: true, width: w });
+    const vb = Number(html.match(/viewBox="0 0 (\d+)/)[1]);
+    assert(vb === w, 'le viewBox doit valoir la largeur demandée (' + w + ' → ' + vb + ')');
+  });
+  assert(typeof iso.mountElevChart === 'function', 'mountElevChart doit exister pour brancher la mesure du conteneur');
+  const pages = ['activite.html'];
+  pages.forEach(p => {
+    const src = fs.readFileSync(path.join(root, p), 'utf8');
+    assert(!/elevChartSvg\(/.test(src), p + ' doit passer par mountElevChart, jamais dessiner à largeur fixe');
+  });
+  return { ok: true };
+});
+
+await test('FIX-2', 'Progression — le contenu reconduit le rythme vertical de la page', async () => {
+  /* `#analysisContent` était un simple `div` : ses enfants retombaient au flux par défaut et
+     perdaient le `gap` de `main`. Mesuré avant correction : deux cartes voisines à 0 px, et un
+     titre de groupe chevauchant la carte suivante de 4 px, là où Profil — dont les mêmes blocs
+     sont enfants directs de `main` — obtenait 24 px avant et 12 px après. */
+  const src = fs.readFileSync(path.join(root, 'analyse.html'), 'utf8');
+  assert(/id="analysisContent" class="page-flow"/.test(src), '#analysisContent doit porter .page-flow');
+  const flow = cssSource.match(/\.page-flow\{([^}]*)\}/);
+  assert(flow, '.page-flow doit être défini dans la feuille de style partagée');
+  assert(/flex-direction:column/.test(flow[1]) && /gap:16px/.test(flow[1]),
+    '.page-flow doit reproduire la colonne et le gap de main');
+  const mainRule = cssSource.match(/\nmain\{([^}]*)\}/);
+  assert(/gap:16px/.test(mainRule[1]), 'le gap de référence de main doit rester 16px');
+  assert(/main\.analysis-main\{max-width:1360px;\}/.test(cssSource),
+    'Progression doit partager la largeur maximale des autres pages');
+  return { ok: true };
+});
+
+await test('FIX-3a', 'Plan — la timeline des phases est un trait unique, insensible à la hauteur des libellés', async () => {
+  /* Chaque étape dessinait son propre segment dans une piste `align-items:center` : deux
+     libellés de hauteurs différentes centraient leurs segments à des ordonnées différentes et
+     le trait apparaissait haché. Le trait est désormais un élément unique, et les étapes sont
+     alignées sur leur bord haut. */
+  assert(!/\.plan-phase-step::before/.test(cssSource),
+    'aucune étape ne doit plus dessiner son propre segment de trait');
+  const steps = cssSource.match(/\.plan-phase-steps\{([^}]*)\}/);
+  assert(steps && /align-items:flex-start/.test(steps[1]),
+    'les étapes doivent être alignées sur leur bord haut, sinon les pastilles se décalent');
+  assert(/width:max-content/.test(steps[1]),
+    'la piste doit prendre la largeur de son contenu, sinon le trait s\'arrête avant la dernière pastille');
+  assert(/\.plan-phase-rail\{/.test(cssSource), 'le trait doit exister comme élément propre');
+  const src = fs.readFileSync(path.join(root, 'plan.html'), 'utf8');
+  assert(/plan-phase-rail/.test(src), 'plan.html doit rendre le trait continu');
+  assert(/--steps:/.test(src), 'le nombre d\'étapes doit être transmis au CSS pour caler les extrémités');
+  return { ok: true };
+});
+
+await test('FIX-3b', 'Plan — une séance planifiée porte une identité stable, indépendante de sa date', async () => {
+  const iso = loadApp();
+  const plan = iso.parsePlanCsv('Semaine,Jour,Type de seance,Distance (km)\n1,Lun 10/08,Footing,8\n1,Lun 10/08,Fractionné,6');
+  iso.savePlan(plan);
+  const avecIds = iso.ensurePlanUids(iso.getPlan());
+  assert(avecIds.every(p => p.uid), 'chaque séance doit recevoir un identifiant');
+  /* Deux séances le MÊME JOUR doivent rester distinguables : c'est précisément le cas que la
+     date seule ne sait pas désigner, et il devient courant dès qu'on peut déplacer une séance. */
+  assert(new Set(avecIds.map(p => p.uid)).size === 2, 'deux séances du même jour ne partagent pas d\'identifiant');
+  // Les identifiants sont PERSISTÉS : une seconde lecture ne les régénère pas.
+  const relu = iso.ensurePlanUids(iso.getPlan());
+  assert(relu[0].uid === avecIds[0].uid, 'les identifiants doivent être persistés, pas recalculés à chaque lecture');
+  return { uids: relu.map(p => p.uid) };
+});
+
+await test('FIX-3c', 'Plan — la date d\'une séance est modifiable, persistée, et redistribue la semaine', async () => {
+  const iso = loadApp();
+  iso.savePlan(iso.parsePlanCsv(
+    'Semaine,Jour,Type de seance,Distance (km),D+ (m)\n' +
+    '1,Lun 10/08,Footing,8,100\n1,Mer 12/08,Seuil,10,200\n2,Lun 17/08,Sortie longue,20,900'));
+  const plan = iso.ensurePlanUids(iso.getPlan());
+  const cible = plan.find(p => p.date === '2026-08-12');
+  const semaineAvant = iso.getPlanWeeksOverview(iso.getPlan());
+  const s1Avant = semaineAvant.find(w => w.startISO === '2026-08-10');
+
+  const res = iso.updatePlannedSessionDate(cible.uid, '2026-08-18');
+  assert(res.ok, 'le déplacement doit réussir : ' + res.error);
+  // Persistance réelle : relecture depuis le stockage, pas depuis l'objet en mémoire.
+  const relu = JSON.parse(iso.localStorage.getItem('trail:plan')).find(p => p.uid === cible.uid);
+  assert(relu.date === '2026-08-18', 'la nouvelle date doit être enregistrée');
+  assert(relu.movedFrom === '2026-08-12', 'la date d\'origine doit être conservée');
+  assert(relu.jourLabel === 'Mar 18/08', 'le libellé de jour doit suivre la nouvelle date, sinon la fiche ment');
+
+  const semaineApres = iso.getPlanWeeksOverview(iso.getPlan());
+  const s1Apres = semaineApres.find(w => w.startISO === '2026-08-10');
+  const s2Apres = semaineApres.find(w => w.startISO === '2026-08-17');
+  assert(s1Apres.plannedCount === s1Avant.plannedCount - 1, 'la semaine d\'origine doit perdre la séance');
+  assert(s2Apres.plannedCount === 2, 'la semaine cible doit la recevoir');
+  assert(s1Apres.plannedKm === s1Avant.plannedKm - 10, 'le volume prévu doit suivre la séance');
+
+  // Retour à la date d'origine : la mention « déplacée » disparaît plutôt que de rester à vie.
+  iso.updatePlannedSessionDate(cible.uid, '2026-08-12');
+  const retour = iso.getPlan().find(p => p.uid === cible.uid);
+  assert(!retour.movedFrom, 'un retour à la date d\'origine efface la mention de déplacement');
+  return { origine: s1Avant.plannedCount, apres: s1Apres.plannedCount, cible: s2Apres.plannedCount };
+});
+
+await test('FIX-3d', 'Plan — une date invalide est refusée avec un motif, jamais appliquée', async () => {
+  const iso = loadApp();
+  iso.savePlan(iso.parsePlanCsv('Semaine,Jour,Type de seance,Distance (km)\n1,Lun 10/08,Footing,8'));
+  const uid = iso.ensurePlanUids(iso.getPlan())[0].uid;
+  const cas = {};
+  [['vide', ''], ['nulle', null], ['format libre', '10/08/2026'], ['jour inexistant', '2026-02-31'],
+   ['mois inexistant', '2026-13-01'], ['identifiant inconnu', 'ps-inconnu']].forEach(([nom, val]) => {
+    const res = nom === 'identifiant inconnu'
+      ? iso.updatePlannedSessionDate(val, '2026-09-01')
+      : iso.updatePlannedSessionDate(uid, val);
+    assert(res.ok === false, nom + ' doit être refusé');
+    assert(typeof res.error === 'string' && res.error, nom + ' doit porter un motif affichable');
+    cas[nom] = res.error;
+  });
+  assert(iso.getPlan()[0].date === '2026-08-10', 'aucun refus ne doit avoir modifié le plan');
+  return cas;
+});
+
+await test('FIX-3e', 'Plan — la fiche n\'expose que les champs réellement présents dans le CSV', async () => {
+  const iso = loadApp();
+  // Plan PAUVRE : format simple, ni durée, ni zones, ni objectif, ni D+.
+  const pauvre = iso.parsePlanCsv('Semaine,Jour,Type de seance,Distance (km)\n1,Lun 10/08,Footing,8')[0];
+  const dPauvre = iso.plannedSessionDetails(pauvre);
+  assert(dPauvre.duree === null && dPauvre.intensite === null, 'aucune durée ni intensité inventée');
+  assert(dPauvre.objectif === null && dPauvre.zones.length === 0, 'aucun objectif ni zone inventés');
+  /* `parsePlanNumber` retourne 0 quand la colonne est ABSENTE : afficher « D+ 0 m » se lirait
+     comme « sortie plate prévue », pas comme « non renseigné ». */
+  assert(dPauvre.deniveleM === null, 'une colonne D+ absente ne doit pas devenir « 0 m »');
+  assert(dPauvre.distanceKm === 8, 'une valeur réellement présente est conservée');
+
+  // Plan RICHE : format détaillé, toutes les colonnes renseignées.
+  const riche = iso.parsePlanCsv(
+    'Semaine;Bloc;Date (JJ/MM/AAAA);Type de seance;Distance (km);D+ (m);D-;Duree totale;' +
+    'FC echauffement;FC corps de seance;FC retour au calme;FC moyenne globale;Intensite (RPE);Objectif detaille\n' +
+    '3;Spécifique;12/08/2026;Sortie longue;24;1450;1400;3h30;Z1 110-130;Z2 138-158;Z1 <120;145;RPE4;Allure de course sur les 8 derniers km')[0];
+  const dRiche = iso.plannedSessionDetails(riche);
+  assert(dRiche.duree === '3h30' && dRiche.intensite === 'RPE4', 'durée et intensité doivent être lues');
+  assert(dRiche.descenteM === 1400 && dRiche.bloc === 'Spécifique', 'D− et bloc doivent être lus');
+  assert(dRiche.zones.length === 4, 'les quatre repères de FC par phase doivent être exposés');
+  assert(/8 derniers km/.test(dRiche.objectif), 'l\'objectif détaillé doit être exposé');
+  return { pauvre: Object.keys(dPauvre).filter(k => dPauvre[k] != null && dPauvre[k].length !== 0), zonesRiches: dRiche.zones.length };
+});
+
+await test('FIX-3f', 'Plan — le détail des séances vit dans Plan, pas dans Paramètres', async () => {
+  /* Le contenu réel d'une séance (objectif, zones FC par phase, D−) n'était lisible que dans un
+     tableau à six colonnes de la page Paramètres — un lieu de configuration, consulté une fois à
+     l'import. Paramètres ne garde qu'un récapitulatif de ce qui a été lu. */
+  const settings = fs.readFileSync(path.join(root, 'parametres.html'), 'utf8');
+  assert(!/Zone FC \/ intensité<\/th>/.test(settings), 'Paramètres ne doit plus rendre la fiche d\'entraînement');
+  assert(/plan\.html#semaines/.test(settings), 'Paramètres doit renvoyer vers le détail dans Plan');
+  const plan = fs.readFileSync(path.join(root, 'plan.html'), 'utf8');
+  assert(/plannedSessionFicheHtml/.test(plan), 'Plan doit rendre une vraie fiche de séance');
+  assert(/applyPlanHash/.test(plan), 'l\'ancre d\'onglet doit être prise en charge, sinon le lien tombe sur Aperçu');
+  // Un seul rendu de fiche, partagé : Aujourd'hui, Prochaine séance et Semaines ne doivent pas diverger.
+  const appels = (plan.match(/plannedSessionFicheHtml\(/g) || []).length;
+  assert(appels >= 4, 'la fiche doit être partagée par les trois emplacements (déclaration + 3 appels)');
+  return { appels };
+});
+
+await test('FIX-4a', 'Profil — un champ empilé ne prend plus la hauteur d\'une section', async () => {
+  /* `label.field` porte `flex:1 1 160px`, pensé pour une RANGÉE (160px = largeur minimale). Dans
+     un conteneur en colonne, ce flex-basis devient une HAUTEUR : mesuré, chaque champ occupait
+     160px pour un input de 37px, et la carte Identité passait de 152 à 451px en édition. */
+  const stack = cssSource.match(/\.field-stack\{([^}]*)\}/);
+  assert(stack && /flex-direction:column/.test(stack[1]), '.field-stack doit exister comme primitive partagée');
+  assert(/\.field-stack > \.field,\.field-stack > \.field-pair\{flex:none;\}/.test(cssSource),
+    'un champ empilé doit neutraliser son flex-basis');
+  const src = fs.readFileSync(path.join(root, 'profil.html'), 'utf8');
+  assert(!/class="row" style="flex-direction:column;align-items:stretch;"/.test(src),
+    'Profil ne doit plus empiler des champs dans une .row sans protection');
+  assert((src.match(/class=\"field-stack\"/g) || []).length === 4,
+    'les quatre formulaires d\'édition du Profil doivent utiliser la primitive');
+  return { ok: true };
+});
+
+await test('FIX-4b', 'Profil — une photo est réduite avant stockage, et un fichier invalide est refusé', async () => {
+  const iso = loadApp();
+  assert(typeof iso.readProfilePhotoFile === 'function', 'le pipeline photo doit exister');
+  /* Les `const` de app.js ne sont pas des propriétés du contexte VM (contrairement aux
+     fonctions) : les seuils sont donc lus dans la source, ce qui teste la même propriété. */
+  const px = Number(source.match(/PROFILE_PHOTO_PX = (\d+)/)[1]);
+  const maxStored = Number(source.match(/PROFILE_PHOTO_MAX_STORED = (\d+) \* 1024/)[1]) * 1024;
+  const maxInput = Number(source.match(/PROFILE_PHOTO_MAX_INPUT = (\d+) \* 1024 \* 1024/)[1]) * 1024 * 1024;
+  assert(px === 256, 'la photo doit être ramenée à 256 px');
+  /* Le stockage local est déjà sous tension (~12 Mo pour 280 séances, quota de 5 à 10 Mo) :
+     une photo brute en base64 y serait un vrai risque. Le plafond doit rester modeste. */
+  assert(maxStored <= 300 * 1024, 'jamais plus de 300 ko écrits dans le profil');
+  assert(maxInput <= 12 * 1024 * 1024, 'un fichier d\'entrée démesuré doit être refusé tôt');
+
+  const refusTexte = await iso.readProfilePhotoFile({ type: 'text/plain', size: 10 });
+  assert(refusTexte.ok === false && /image/i.test(refusTexte.error), 'un fichier non-image doit être refusé');
+  const refusGros = await iso.readProfilePhotoFile({ type: 'image/jpeg', size: 20 * 1024 * 1024 });
+  assert(refusGros.ok === false && /lourde/i.test(refusGros.error), 'un fichier trop lourd doit être refusé');
+  const refusVide = await iso.readProfilePhotoFile(null);
+  assert(refusVide.ok === false, 'aucun fichier doit être refusé proprement');
+  return { px, maxStoredKo: maxStored / 1024, texte: refusTexte.error, gros: refusGros.error };
+});
+
+await test('FIX-4c', 'Profil — la photo se stocke, se remplace, se supprime et retombe sur l\'initiale', async () => {
+  const iso = loadApp();
+  iso.patchProfile({ nom: 'Nicolas' });
+  assert(iso.getProfilePhoto() === null, 'sans photo, rien n\'est retourné');
+  assert(/>N</.test(iso.avatarHtml()), 'le repli sur l\'initiale doit être rendu');
+  assert(!/has-photo/.test(iso.avatarHtml()), 'sans photo, l\'avatar ne prétend pas en porter une');
+
+  const a = 'data:image/jpeg;base64,AAAA', b = 'data:image/jpeg;base64,BBBB';
+  iso.saveProfilePhoto(a);
+  assert(iso.getProfilePhoto() === a, 'la photo doit être lisible après enregistrement');
+  assert(/has-photo/.test(iso.avatarHtml()) && iso.avatarHtml().includes(a), 'l\'avatar doit rendre la photo');
+  // Persistance réelle, et transport : la photo est un champ du profil, elle suit l'export et la synchro.
+  assert(JSON.parse(iso.localStorage.getItem('trail:profile')).photo === a, 'la photo doit être persistée');
+  assert(iso.buildSyncPayload().profile.photo === a, 'la photo doit suivre la synchronisation du profil');
+  assert(iso.buildExportPayload().profile.photo === a, 'la photo doit suivre la sauvegarde manuelle');
+
+  iso.saveProfilePhoto(b);
+  assert(iso.getProfilePhoto() === b, 'le remplacement doit écraser la précédente');
+  iso.saveProfilePhoto(null);
+  assert(iso.getProfilePhoto() === null, 'la suppression doit vider le champ');
+  assert(/>N</.test(iso.avatarHtml()), 'après suppression, l\'avatar retombe sur l\'initiale');
+
+  // Une valeur qui n'est pas une image encodée n'est jamais rendue comme source.
+  iso.patchProfile({ photo: 'javascript:alert(1)' });
+  assert(iso.getProfilePhoto() === null, 'une valeur qui n\'est pas une data URI d\'image est ignorée');
+  assert(!/<img/.test(iso.avatarHtml()), 'aucune source douteuse ne doit être rendue');
+  // La photo part avec le reste des données locales à la réinitialisation.
+  assert(iso.localDataKeys().indexOf('trail:profile') >= 0, 'la photo suit la réinitialisation locale du profil');
+  return { ok: true };
+});
+
 /* --------------------------- rapport --------------------------- */
 const passed = results.filter(r => r.status === 'PASS').length;
 const failed = results.length - passed;
