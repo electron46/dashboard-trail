@@ -2375,7 +2375,30 @@ section.card .goal-hero-identity h2::before{display:none;}
   cursor:pointer;font-size:var(--text-xs);color:var(--muted);padding:4px 0;min-height:24px;
 }
 .insight-card .ins-detail summary:hover{color:var(--text);}
+/* Cible tactile du volet de preuve. Mesuré à 25 px de haut sur mobile, sous le minimum de 44 px que
+   le projet s'impose — le `min-height:24px` ci-dessus ne suffit pas au doigt. Le défaut préexistait
+   sur l'Accueil et Progression ; l'audit Insight V2 ayant étendu ce composant à Objectifs et Plan,
+   il est corrigé ici, dans le composant partagé, plutôt que page par page. Densité desktop
+   inchangée : la règle est réservée au mobile. */
+@media (max-width:640px){
+  .insight-card .ins-detail summary{min-height:44px;display:flex;align-items:center;}
+}
 .insight-card .ins-detail p{margin:6px 0 0;font-size:var(--text-xs);color:var(--muted);}
+/* InsightCard V2 (audit Insight V2, §9.6) : sources, version de règle et notes de revue dans le
+   volet de preuve. Même échelle typographique et mêmes tokens que le reste du volet — ce n'est pas
+   une refonte visuelle, seulement du contenu vérifiable en plus. */
+.insight-card .ins-detail .ins-sources{margin:4px 0 0;padding-left:16px;font-size:var(--text-2xs);color:var(--muted);}
+.insight-card .ins-detail .ins-sources li{margin:2px 0;}
+.insight-card .ins-detail .ins-note{font-size:var(--text-2xs);font-style:italic;}
+.insight-card .ins-detail .ins-ver{color:var(--muted-2);}
+/* Contradiction : elle conditionne la lecture des observations, elle est donc posée avant elles.
+   Le symbole double la couleur — un statut ne repose jamais sur la seule teinte. */
+.insight-contradiction{
+  margin:0 0 12px;padding:10px 12px;border-radius:var(--radius-md);
+  background:var(--warn-soft);border:1px solid var(--warn);
+}
+.insight-contradiction p{margin:0;font-size:var(--text-xs);color:var(--text);}
+.insight-contradiction .dq-sym{margin-right:8px;}
 .insight-secondary{display:grid;gap:10px;}
 @media(min-width:900px){.insight-secondary{grid-template-columns:1fr 1fr;}}
 .insight-empty{

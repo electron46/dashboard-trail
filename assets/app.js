@@ -345,6 +345,129 @@ function buildDetailSeries(withTs, t0, targetPoints) {
   return indices.map(i => raw[i]);
 }
 
+/* --------------------------- AGRÉGATIONS PONDÉRÉES PAR LE TEMPS ---------------------------
+   Audit Insight V2, §3.3 : « FC/cadence/puissance/température moyennes de repli — moyenne
+   arithmétique — biais si échantillonnage irrégulier — pondérer par temps ».
+
+   Un fichier .fit n'est pas échantillonné à pas constant : l'enregistrement « intelligent » de
+   Garmin espace les points quand rien ne bouge, un capteur qui décroche laisse un trou, et une
+   pause crée un saut. Faire la moyenne des POINTS revient alors à donner le même poids à une
+   seconde et à une minute. On intègre donc le signal par trapèzes sur le TEMPS.
+
+   Les intervalles de plus de 120 s sont écartés : c'est déjà la convention du reste du fichier
+   (computeRunWalkBreakdown, computeSessionZoneDistribution, elevSeriesCoverage), et au-delà on ne
+   sait plus ce qui s'est passé entre les deux points — interpoler serait inventer. */
+const FALLBACK_MAX_GAP_S = 120;
+function timeWeightedAverage(records, field) {
+  let num = 0, den = 0, prev = null;
+  for (let i = 0; i < (records || []).length; i++) {
+    const r = records[i];
+    const t = r && r.timestamp, v = r && r[field];
+    if (t == null || v == null || !isFinite(v)) { prev = null; continue; }
+    if (prev) {
+      const dt = t - prev.t;
+      if (dt > 0 && dt <= FALLBACK_MAX_GAP_S) { num += (v + prev.v) / 2 * dt; den += dt; }
+    }
+    prev = { t, v };
+  }
+  if (den > 0) return num / den;
+  /* Aucun intervalle exploitable (série trop courte, ou horodatages absents) : la moyenne
+     arithmétique reste la meilleure information disponible, et sur un seul point elle est même
+     exacte. Ce n'est pas un repli silencieux — sans intervalle, il n'y a pas de temps à pondérer. */
+  const vals = (records || []).map(r => r && r[field]).filter(v => v != null && isFinite(v));
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+
+/* --------------------------- D+ RECONSTRUIT ---------------------------
+   Audit Insight V2, §3.3 et jeu G05 : « le repli accumule le bruit altimétrique ».
+
+   Sommer les différences d'altitude brutes revient à compter le bruit du capteur comme du relief.
+   Mesuré sur le jeu G05 : un parcours strictement plat, avec un bruit barométrique de ±0,5 m
+   point à point sur 600 points, produisait 300 m de D+ entièrement fabriqués.
+
+   Deux filtres, dans l'ordre, tous deux déjà employés ailleurs dans ce projet :
+     1. lissage de l'altitude sur une fenêtre de DISTANCE (30 m, TERRAIN_SMOOTH_DISTANCE_M) — pas
+        sur un nombre de points, une série FIT étant échantillonnée dans le temps ;
+     2. hystérésis de 3 m — une oscillation plus petite n'est pas un relief, c'est la résolution
+        du capteur. C'est la méthode des altimètres eux-mêmes, et déjà l'esprit de detectClimbs.
+   Le résultat est une ESTIMATION, et il le dit (voir `ascentSource`). */
+const REBUILD_ALT_SMOOTH_M = 30;
+const REBUILD_ALT_SMOOTH_PTS = 11;
+const REBUILD_ALT_MIN_STEP_M = 3;
+function rebuildElevationGain(records) {
+  const pts = (records || [])
+    .map(r => ({ alt: r && (r.enhanced_altitude ?? r.altitude), d: r && r.distance }))
+    .filter(p => p.alt != null && isFinite(p.alt));
+  if (pts.length < 3) return null;
+
+  const hasDist = pts.every(p => p.d != null && isFinite(p.d));
+  const half = REBUILD_ALT_SMOOTH_M / 2, halfPts = Math.floor(REBUILD_ALT_SMOOTH_PTS / 2);
+  const sm = new Array(pts.length);
+  for (let i = 0; i < pts.length; i++) {
+    let sum = 0, n = 0;
+    if (hasDist) {
+      for (let j = i; j >= 0 && pts[i].d - pts[j].d <= half; j--) { sum += pts[j].alt; n++; }
+      for (let j = i + 1; j < pts.length && pts[j].d - pts[i].d <= half; j++) { sum += pts[j].alt; n++; }
+    } else {
+      for (let j = Math.max(0, i - halfPts); j <= Math.min(pts.length - 1, i + halfPts); j++) { sum += pts[j].alt; n++; }
+    }
+    sm[i] = sum / n;
+  }
+
+  // Hystérésis : on ne valide un changement de sens que lorsqu'il dépasse le seuil, sinon on
+  // continue de suivre l'extrême courant. Sans cela, chaque micro-oscillation créerait un sommet.
+  let up = 0, down = 0, anchor = sm[0], cur = sm[0], dir = 0;
+  for (let i = 1; i < sm.length; i++) {
+    const v = sm[i];
+    if (dir === 1) {
+      if (v >= cur) { cur = v; continue; }
+      if (cur - v >= REBUILD_ALT_MIN_STEP_M) { up += cur - anchor; anchor = cur; dir = -1; cur = v; }
+    } else if (dir === -1) {
+      if (v <= cur) { cur = v; continue; }
+      if (v - cur >= REBUILD_ALT_MIN_STEP_M) { down += anchor - cur; anchor = cur; dir = 1; cur = v; }
+    } else {
+      if (v - anchor >= REBUILD_ALT_MIN_STEP_M) { dir = 1; cur = v; }
+      else if (anchor - v >= REBUILD_ALT_MIN_STEP_M) { dir = -1; cur = v; }
+    }
+  }
+  if (dir === 1) up += cur - anchor;
+  else if (dir === -1) down += anchor - cur;
+
+  return {
+    ascent: Math.round(up), descent: Math.round(down),
+    method: 'Reconstruit depuis la série d\'altitude : lissage sur ' + REBUILD_ALT_SMOOTH_M +
+      ' m' + (hasDist ? '' : ' (à défaut de distance, sur ' + REBUILD_ALT_SMOOTH_PTS + ' points)') +
+      ', puis seuil de ' + REBUILD_ALT_MIN_STEP_M + ' m avant de compter un changement de sens.',
+  };
+}
+
+/* Métriques analytiques d'une séance, calculées sur la série NON RÉDUITE (audit Insight V2, P0-B).
+   Seul le résultat est stocké. `source: 'full'` dit d'où il vient : une séance importée avant ce
+   changement n'en a pas, et ses consommateurs retombent alors sur la série réduite — c'est moins
+   exact, et le champ permet de le savoir plutôt que de le supposer. */
+function computeSessionAnalytics(fullSeries) {
+  if (!Array.isArray(fullSeries) || fullSeries.length < 3) return null;
+  let climbs = [], runWalk = null;
+  try { climbs = detectClimbs(fullSeries); } catch (e) { climbs = []; }
+  try { runWalk = computeRunWalkBreakdown({ series: fullSeries }); } catch (e) { runWalk = null; }
+  return {
+    source: 'full',
+    pointCount: fullSeries.length,
+    climbs,
+    runWalk,
+    method: 'Calculé sur les ' + fullSeries.length + ' points enregistrés, avant la réduction destinée à l\'affichage.',
+  };
+}
+
+/* Montées d'une séance. Point d'entrée unique : préfère toujours le calcul fait sur la série
+   complète, et ne retombe sur la série réduite que pour les séances importées avant ce
+   changement — aucune migration rétroactive, comme partout ailleurs dans ce projet. */
+function sessionClimbs(session) {
+  if (!session) return [];
+  if (session.analytics && Array.isArray(session.analytics.climbs)) return session.analytics.climbs;
+  return Array.isArray(session.series) && session.series.length >= 3 ? detectClimbs(session.series) : [];
+}
+
 function summarizeFit(messages, fileMeta) {
   fileMeta = fileMeta || {};
   const session = (messages.session && messages.session[0]) || {};
@@ -386,27 +509,44 @@ function summarizeFit(messages, fileMeta) {
     if (distanceM == null && withDist.length) distanceM = withDist[withDist.length - 1].distance;
     if (durationS == null && withTs.length >= 2) durationS = (withTs[withTs.length - 1].timestamp - withTs[0].timestamp);
   }
+  /* Moyennes de repli PONDÉRÉES PAR LE TEMPS (audit Insight V2, §3.3 et §11.1 / jeu G06).
+     Elles étaient des moyennes arithmétiques des enregistrements, donc des moyennes de POINTS.
+     Un fichier échantillonné irrégulièrement — ce que produit tout enregistrement « intelligent »,
+     et tout signal qui décroche puis revient — donnait alors un résultat dépendant du nombre de
+     points et non du temps réellement passé à cette valeur. Mesuré sur le jeu G06 : 110 bpm au
+     lieu de 142. `timeWeightedAverage` intègre le signal par trapèzes, ce qui rend la moyenne
+     indépendante de la cadence d'échantillonnage. */
   if (avgHr == null) {
+    const w = timeWeightedAverage(records, 'heart_rate');
+    if (w != null) avgHr = Math.round(w);
     const hrs = records.map(r => r.heart_rate).filter(v => v != null);
-    if (hrs.length) { avgHr = Math.round(hrs.reduce((a,b)=>a+b,0)/hrs.length); maxHr = maxHr ?? Math.max(...hrs); }
+    if (hrs.length) maxHr = maxHr ?? Math.max(...hrs);
   }
   if (avgCadence == null) {
-    const cads = records.map(r => r.cadence).filter(v => v != null);
-    if (cads.length) avgCadence = Math.round(cads.reduce((a,b)=>a+b,0)/cads.length);
+    const w = timeWeightedAverage(records, 'cadence');
+    if (w != null) avgCadence = Math.round(w);
   }
   if (avgPower == null) {
+    const w = timeWeightedAverage(records, 'power');
+    if (w != null) avgPower = Math.round(w);
     const pows = records.map(r => r.power).filter(v => v != null);
-    if (pows.length) { avgPower = Math.round(pows.reduce((a,b)=>a+b,0)/pows.length); maxPower = maxPower ?? Math.max(...pows); }
+    if (pows.length) maxPower = maxPower ?? Math.max(...pows);
   }
-  const temps = records.map(r => r.temperature).filter(v => v != null);
-  const avgTemp = temps.length ? Math.round(temps.reduce((a,b)=>a+b,0)/temps.length) : null;
-  if ((ascent == null || descent == null)) {
-    const alts = records.map(r => r.enhanced_altitude ?? r.altitude).filter(v => v != null);
-    if (alts.length >= 2) {
-      let up = 0, down = 0;
-      for (let i = 1; i < alts.length; i++) { const d = alts[i] - alts[i-1]; if (d > 0) up += d; else down += -d; }
-      if (ascent == null) ascent = Math.round(up);
-      if (descent == null) descent = Math.round(down);
+  const wTemp = timeWeightedAverage(records, 'temperature');
+  const avgTemp = wTemp != null ? Math.round(wTemp) : null;
+
+  /* D+/D− de repli. La provenance est retenue explicitement : un dénivelé reconstruit depuis la
+     série d'altitude n'est PAS celui fourni par l'appareil, et l'audit interdit de mélanger les
+     deux sans le dire (§11.1, jeu G05). */
+  let ascentSource = ascent != null ? 'measured' : null;
+  let descentSource = descent != null ? 'measured' : null;
+  let ascentMethod = null;
+  if (ascent == null || descent == null) {
+    const rebuilt = rebuildElevationGain(records);
+    if (rebuilt) {
+      if (ascent == null) { ascent = rebuilt.ascent; ascentSource = 'estimated'; }
+      if (descent == null) { descent = rebuilt.descent; descentSource = 'estimated'; }
+      ascentMethod = rebuilt.method;
     }
   }
   if (avgSpeed == null && distanceM != null && durationS) avgSpeed = distanceM / durationS;
@@ -416,10 +556,23 @@ function summarizeFit(messages, fileMeta) {
   // creux et ruptures de chaque signal au lieu de les lisser arbitrairement. Cible ~1200 points
   // (zone recommandée 1000-1500 pour un rendu desktop détaillé) ; le rendu mobile réduit encore
   // ponctuellement à l'affichage (voir activite.html), sans dupliquer le stockage.
+  /* Audit Insight V2, §3.3 et §13 (P0-B) : « Série analytique — conçue pour le rendu, puis
+     réutilisée pour l'analyse ; durée/pente peuvent être altérées — Séparer rendu et calcul ».
+
+     La série stockée est réduite par LTTB pour être TRACÉE : l'algorithme préserve la forme
+     visible, pas les durées ni les pentes entre points. Or c'est cette série réduite qui servait
+     ensuite à détecter les montées, donc à calculer les VAM, et à classer course/marche par la
+     cadence — deux mesures que la réduction déforme.
+
+     Les métriques analytiques sont désormais calculées sur la série COMPLÈTE, avant réduction, et
+     seul leur RÉSULTAT est conservé (quelques centaines d'octets, pas une seconde série : le quota
+     local est déjà sous tension). La série réduite ne sert plus qu'à l'affichage. */
   const withTs = records.filter(r => r.timestamp != null);
-  let series = [];
+  let series = [], analytics = null;
   if (withTs.length >= 2) {
     const t0 = withTs[0].timestamp;
+    const fullSeries = buildDetailSeries(withTs, t0, Infinity);
+    analytics = computeSessionAnalytics(fullSeries);
     series = buildDetailSeries(withTs, t0, 1200);
   }
 
@@ -491,6 +644,10 @@ function summarizeFit(messages, fileMeta) {
     durationS: durationS != null ? Math.round(durationS) : null,
     ascent: ascent != null ? Math.round(ascent) : null,
     descent: descent != null ? Math.round(descent) : null,
+    // Provenance du dénivelé (audit Insight V2, jeu G05) : « measured » = fourni par l'appareil,
+    // « estimated » = reconstruit ici depuis la série d'altitude. Ne jamais présenter les deux de
+    // la même façon ; `ascentMethod` porte le détail de la reconstruction quand elle a eu lieu.
+    ascentSource, descentSource, ascentMethod,
     avgHr: avgHr != null ? Math.round(avgHr) : null,
     maxHr: maxHr != null ? Math.round(maxHr) : null,
     cadenceSpm: avgCadence != null ? Math.round(avgCadence * 2) : null,
@@ -500,6 +657,9 @@ function summarizeFit(messages, fileMeta) {
     avgTemp: avgTemp,
     calories: session.total_calories != null ? Math.round(session.total_calories) : null,
     series: series,
+    // Metriques calculees AVANT reduction LTTB (voir computeSessionAnalytics). La serie
+    // ci-dessus reste destinee a l'affichage.
+    analytics: analytics,
     laps: laps,
     events: events,
     devices: devices,
@@ -895,7 +1055,34 @@ function savePlan(plan) {
   }
 }
 function clearPlan() { try { localStorage.removeItem(PLAN_KEY); scheduleSync(); } catch (e) {} }
-function findPlannedSession(dateISO) { const plan = getPlan(); if (!plan) return null; return plan.find(p => p.date === dateISO) || null; }
+/* Séance planifiée correspondant à une date. Audit Insight V2, P0-C : appelée AVEC la séance
+   réalisée (2e argument), elle ne retourne la séance planifiée que si le rapprochement tient
+   réellement — sinon elle retourne null et expose le candidat douteux à part, pour que l'écran
+   puisse proposer une confirmation au lieu d'affirmer une correspondance.
+
+   Signature rétrocompatible : appelée avec la seule date, elle se comporte comme avant. */
+function findPlannedSession(dateISO, session) {
+  const plan = getPlan(); if (!plan) return null;
+  const sameDay = plan.filter(p => p.date === dateISO);
+  if (!sameDay.length) return null;
+  if (!session) return sameDay[0];
+  const zones = typeof getActiveHrZones === 'function' ? getActiveHrZones(getProfile()) : null;
+  const scored = sameDay.map(p => ({ p, q: planMatchQuality(p, session, { zones }) }));
+  const sur = scored.find(x => x.q.level === 'explicit') || scored.find(x => x.q.level === 'strong');
+  return sur ? sur.p : null;
+}
+
+/* Rapprochement douteux du jour : la séance prévue existe, mais quelque chose de mesuré la
+   contredit. Retourne `{ planned, reasons }` ou null. Sert à proposer une confirmation. */
+function findPlannedCandidate(dateISO, session) {
+  const plan = getPlan(); if (!plan || !session) return null;
+  const zones = typeof getActiveHrZones === 'function' ? getActiveHrZones(getProfile()) : null;
+  for (const p of plan.filter(x => x.date === dateISO)) {
+    const q = planMatchQuality(p, session, { zones });
+    if (q.level === 'weak') return { planned: p, reasons: q.reasons };
+  }
+  return null;
+}
 
 /* --------------------------- SÉANCE PLANIFIÉE : IDENTITÉ ET DÉPLACEMENT ---------------------------
    Le CSV ne porte aucun identifiant : une séance planifiée n'était jusqu'ici désignable que par sa
@@ -1401,12 +1588,22 @@ function normalizePlanHeader(h) {
 // `|| 0` d'origine. Le plan s'importait alors en apparence correctement, avec toutes les
 // distances et tous les dénivelés à zéro — une corruption silencieuse qui fausse ensuite chaque
 // comparaison réalisé/planifié. On cherche donc le premier nombre où qu'il soit dans la cellule.
+/* Audit Insight V2, §3.1 et jeu G10 : « Distance/D+ absents deviennent actuellement 0 ».
+
+   Retourner 0 pour une colonne ABSENTE du CSV revient à déclarer une cible de 0 km ou 0 m que le
+   plan n'a jamais écrite — et cette valeur ressort ensuite comme un objectif atteint à 100 %, ou
+   comme un dénivelé nul à comparer. L'absence doit rester une absence : `null`.
+
+   Un vrai `0` saisi dans le fichier reste un `0` : « repos, 0 km » est une information, pas un
+   trou. C'est précisément la distinction que l'audit demande de tenir. */
 function parsePlanNumber(v) {
-  if (v == null) return 0;
+  if (v == null) return null;
   // Espaces (normaux ou insécables) utilisés comme séparateurs de milliers : « 1 700 » -> « 1700 ».
   const cleaned = String(v).replace(/(\d)[\s ](?=\d)/g, '$1');
   const m = cleaned.match(/-?\d+(?:[.,]\d+)?/);
-  return m ? (parseFloat(m[0].replace(',', '.')) || 0) : 0;
+  if (!m) return null;
+  const n = parseFloat(m[0].replace(',', '.'));
+  return isFinite(n) ? n : null;
 }
 
 function parsePlanCsv(text) {
@@ -2004,7 +2201,10 @@ async function downloadFitFile(session) {
 // recalcule JAMAIS (voir la section « IDENTITÉ D'UNE SÉANCE »), et `fileHash` est posé par
 // l'import — le fichier .fit ne le contient pas, une ré-analyse le perdrait donc, et avec lui la
 // détection de doublon exact.
-const SESSION_USER_FIELDS = ['id', 'gearId', 'contexte', 'aiFeedback', 'fileName', 'importedAt', 'fitFilePath', 'identityKey', 'fileHash'];
+// `plannedUid` (audit Insight V2, P0-C) est une CONFIRMATION de l'utilisateur : il a relié cette
+// activité à une séance de son plan. Une ré-analyse depuis le fichier .fit ne doit pas l'effacer,
+// au même titre que sa note de contexte ou sa chaussure.
+const SESSION_USER_FIELDS = ['id', 'gearId', 'contexte', 'aiFeedback', 'fileName', 'importedAt', 'fitFilePath', 'identityKey', 'fileHash', 'plannedUid'];
 
 // Ré-analyse une séance à partir de son fichier original : re-télécharge, re-parse avec le moteur
 // COURANT, puis remplace les données dérivées en préservant ce que l'utilisateur a saisi.
@@ -2090,6 +2290,16 @@ function sessionToActivityRow(session, userId, fitFilePath) {
           // syncActivitiesWithSupabase reconstruit le cache local à partir de ces lignes.
           startedAt: session.startedAt ?? null,
           utcOffsetS: session.utcOffsetS ?? null,
+          /* Ajoutés le 2026-08-23 (audit Insight V2). Même règle, même conséquence si on les
+             oublie : `plannedUid` est une CONFIRMATION DE L'UTILISATEUR (le lien explicite entre
+             une activité et une séance du plan), la perdre reviendrait à défaire son travail à la
+             première resynchronisation. `ascentSource` dit si le D+ vient de l'appareil ou d'une
+             reconstruction : sans lui, une estimation redeviendrait une mesure. */
+          plannedUid: session.plannedUid ?? null,
+          analytics: session.analytics ?? null,
+          ascentSource: session.ascentSource ?? null,
+          descentSource: session.descentSource ?? null,
+          ascentMethod: session.ascentMethod ?? null,
           identityKey: session.identityKey ?? null,
           fileHash: session.fileHash ?? null,
           crcMismatch: session.crcMismatch ?? null,
@@ -2161,6 +2371,13 @@ function activityRowToSession(row) {
     identityKey: (row.raw && row.raw.clientMeta && row.raw.clientMeta.identityKey) || undefined,
     fileHash: (row.raw && row.raw.clientMeta && row.raw.clientMeta.fileHash) || undefined,
     crcMismatch: (row.raw && row.raw.clientMeta && row.raw.clientMeta.crcMismatch) || undefined,
+    // Voir sessionToActivityRow : ces quatre champs n'ont pas de colonne dédiée et voyagent dans
+    // `raw.clientMeta`. Les relire ici est ce qui les empêche d'être détruits au retour.
+    plannedUid: (row.raw && row.raw.clientMeta && row.raw.clientMeta.plannedUid) || undefined,
+    analytics: (row.raw && row.raw.clientMeta && row.raw.clientMeta.analytics) || undefined,
+    ascentSource: (row.raw && row.raw.clientMeta && row.raw.clientMeta.ascentSource) || undefined,
+    descentSource: (row.raw && row.raw.clientMeta && row.raw.clientMeta.descentSource) || undefined,
+    ascentMethod: (row.raw && row.raw.clientMeta && row.raw.clientMeta.ascentMethod) || undefined,
     // Conservé pour que l'application sache qu'un fichier .fit original existe côté Storage.
     fitFilePath: row.fit_file_path || undefined,
     raw: row.raw || {},
@@ -2489,7 +2706,7 @@ function generateSessionInsight(session, zoneDist, climbs, history) {
     const raide = dist.bands.filter(b => b.key === 'up_steep').reduce((a, b) => a + b.pct, 0);
     if (raide >= 20) {
       out.push(makeInsight({
-        id: 'session-terrain-steep', family: 'terrain',
+        id: 'session-terrain-steep', claimId: 'CLAIM-UPHILL-DOWNHILL-DISTINCT', family: 'terrain',
         title: 'Sortie dominée par la pente raide',
         observation: raide + ' % de ton temps en mouvement se passe en montée de plus de 15 %.',
         reference: "l'ensemble de ton temps en mouvement sur cette sortie",
@@ -2500,7 +2717,7 @@ function generateSessionInsight(session, zoneDist, climbs, history) {
     } else if (up && down && Math.abs(up.pct - down.pct) >= 20) {
       const dominante = up.pct > down.pct ? up : down;
       out.push(makeInsight({
-        id: 'session-terrain-balance', family: 'terrain',
+        id: 'session-terrain-balance', claimId: 'CLAIM-UPHILL-DOWNHILL-DISTINCT', family: 'terrain',
         title: dominante.dir === 'up' ? 'Sortie très montante' : 'Sortie très descendante',
         observation: dominante.pct + ' % du temps en ' + dominante.label.toLowerCase() + ', contre ' +
           (dominante.dir === 'up' ? down.pct : up.pct) + ' % dans l\'autre sens.',
@@ -2519,7 +2736,7 @@ function generateSessionInsight(session, zoneDist, climbs, history) {
       .find(b => b.walkPct != null && b.runPct != null && b.walkPct >= b.runPct);
     if (bascule) {
       out.push(makeInsight({
-        id: 'session-locomotion', family: 'terrain',
+        id: 'session-locomotion', claimId: 'CLAIM-WALKRUN-CADENCE-ESTIMATE', family: 'terrain',
         title: 'La marche prend le relais en montée',
         observation: 'En ' + bascule.label.toLowerCase() + ', tu marches ' + bascule.walkPct + ' % du temps.',
         reference: 'les tranches de pente positive moins raides de la même sortie',
@@ -2538,7 +2755,7 @@ function generateSessionInsight(session, zoneDist, climbs, history) {
     const z3plus = zoneDist.slice(2).reduce((a, z) => a + z.pct, 0);
     if (z3plus >= 55) {
       out.push(makeInsight({
-        id: 'session-effort-high', family: 'effort',
+        id: 'session-effort-high', claimId: 'CLAIM-HRR-INTENSITY-PROXY', family: 'effort',
         title: 'Intensité soutenue',
         observation: z3plus + ' % du temps se passe en zones 3 à 5.',
         reference: 'la répartition de tes zones sur cette séance',
@@ -2549,7 +2766,7 @@ function generateSessionInsight(session, zoneDist, climbs, history) {
       }));
     } else if (z1z2 >= 65) {
       out.push(makeInsight({
-        id: 'session-effort-low', family: 'effort',
+        id: 'session-effort-low', claimId: 'CLAIM-HRR-INTENSITY-PROXY', family: 'effort',
         title: 'Sortie en endurance',
         observation: z1z2 + ' % du temps se passe en zones 1 et 2.',
         reference: 'la répartition de tes zones sur cette séance',
@@ -2567,7 +2784,7 @@ function generateSessionInsight(session, zoneDist, climbs, history) {
   try { drift = computeEffortDrift(session); } catch (e) { drift = null; }
   if (drift && drift.available && Math.abs(drift.driftPct) >= 4) {
     out.push(makeInsight({
-      id: 'session-drift', family: 'effort',
+      id: 'session-drift', claimId: 'CLAIM-HR-CONFOUNDED', family: 'effort',
       title: drift.driftPct > 0 ? 'Ta FC monte en fin de sortie à effort comparable' : 'Ta FC reste contenue en fin de sortie',
       observation: 'Écart de ' + (drift.driftPct > 0 ? '+' : '') + drift.driftPct + ' % entre le début et la fin, sur des portions de même pente et de même vitesse.',
       reference: drift.pairs + ' paires de segments comparables dans cette sortie',
@@ -2592,7 +2809,7 @@ function generateSessionInsight(session, zoneDist, climbs, history) {
         if (passees) {
           const ecart = Math.round((ref.vamMh / passees - 1) * 100);
           out.push(makeInsight({
-            id: 'session-compare-climb', family: 'compare',
+            id: 'session-compare-climb', claimId: 'CLAIM-VAM-WITHIN-RUNNER', family: 'compare',
             title: ecart >= 0 ? 'VAM au-dessus de tes montées comparables' : 'VAM en dessous de tes montées comparables',
             observation: ref.vamMh + ' m/h sur ta principale montée (' + ref.gradePct + ' % de pente, ' + Math.round(ref.durationS / 60) + ' min).',
             reference: comparables.length + ' montées comparables de tes sorties passées (médiane ' + Math.round(passees) + ' m/h)',
@@ -2667,7 +2884,7 @@ function groupByWeek(sessions, fromISO, toISO) {
     w.ascent += s.ascent || 0;
     w.descent += s.descent || 0;
     w.count += 1;
-    if (Array.isArray(s.series) && s.series.length > 2) w.climbs.push(...detectClimbs(s.series));
+    w.climbs.push(...sessionClimbs(s));
   });
   if (fromISO && toISO) {
     let cursor = new Date(isoWeek(fromISO) + 'T00:00:00Z');
@@ -2695,13 +2912,31 @@ function aggregatePeriod(sessions) {
   const withHr = sessions.filter(s => s.avgHr != null && s.durationS);
   const totalHrDuration = withHr.reduce((a,s) => a + s.durationS, 0);
   const avgHr = withHr.length ? Math.round(withHr.reduce((a,s) => a + s.avgHr * s.durationS, 0) / totalHrDuration) : null;
-  let totalGain = 0, gainVam = 0;
+  /* VAM agrégée — audit Insight V2, §3.4 et jeu G07.
+
+     Le calcul était `Σ(VAM_i × D+_i) / ΣD+_i`, c'est-à-dire une MOYENNE DE VITESSES pondérée par
+     le dénivelé. Or une vitesse verticale agrégée n'est pas la moyenne des vitesses des segments :
+     c'est le dénivelé total divisé par le temps total. Pondérer par le D+ donne mécaniquement trop
+     de poids aux segments rapides, qui durent moins longtemps.
+
+     Démonstration de l'audit, reprise telle quelle dans le test V2-G07 : deux montées de 100 m,
+     l'une à 1000 m/h (360 s), l'autre à 500 m/h (720 s). L'ancienne formule donnait 750 m/h ; la
+     vitesse verticale réelle est 200 m / 1080 s × 3600 = 667 m/h. Surestimation de 12,4 %. */
+  let totalGain = 0, totalClimbS = 0;
   sessions.forEach(s => {
-    if (!Array.isArray(s.series) || s.series.length < 3) return;
-    detectClimbs(s.series).forEach(c => { if (c.vamMh != null && c.gainM) { totalGain += c.gainM; gainVam += c.vamMh * c.gainM; } });
+    // sessionClimbs prefere le calcul fait sur la serie complete (voir computeSessionAnalytics).
+    sessionClimbs(s).forEach(c => {
+      if (c.gainM > 0 && c.durationS > 0) { totalGain += c.gainM; totalClimbS += c.durationS; }
+    });
   });
-  const vamAvg = totalGain > 0 ? Math.round(gainVam / totalGain) : null;
-  return { distanceKm, ascent, durationS, avgHr, vamAvg, count: sessions.length };
+  const vamAvg = totalClimbS > 0 ? Math.round(totalGain / totalClimbS * 3600) : null;
+  return {
+    distanceKm, ascent, durationS, avgHr, vamAvg, count: sessions.length,
+    // Conservés pour que l'interface puisse dire sur quoi la VAM porte réellement — une vitesse
+    // verticale calculée sur 12 minutes de montée ne se lit pas comme une calculée sur 3 heures.
+    vamGainM: totalGain || null, vamClimbS: totalClimbS || null,
+    vamMethod: totalClimbS > 0 ? 'Dénivelé positif cumulé des montées détectées, divisé par leur durée cumulée.' : null,
+  };
 }
 function pctDelta(cur, prev) { if (cur == null || prev == null || prev === 0) return null; return Math.round((cur - prev) / prev * 100); }
 
@@ -2806,7 +3041,7 @@ function computePeriodBests(sessions) {
   let bestVam = null;
   sessions.forEach(s => {
     if (!Array.isArray(s.series) || s.series.length < 3) return;
-    detectClimbs(s.series).forEach(c => { if (c.vamMh != null && (!bestVam || c.vamMh > bestVam.vamMh)) bestVam = { vamMh: c.vamMh, session: s }; });
+    sessionClimbs(s).forEach(c => { if (c.vamMh != null && (!bestVam || c.vamMh > bestVam.vamMh)) bestVam = { vamMh: c.vamMh, session: s }; });
   });
   if (bestVam) out.push({ label: 'VAM la plus élevée', value: bestVam.vamMh + ' m/h', date: fmtDate(bestVam.session.date), activityId: bestVam.session.id });
   const fastestPace = bestByKey(sessions, 'avgPaceSecPerKm', (a,b) => a < b);
@@ -2841,7 +3076,7 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
      la même condition que celle qui gouverne les KPI, appliquée ici plutôt que dupliquée. */
   if (comparable && deltas.distanceKm != null && Math.abs(deltas.distanceKm) >= 8) {
     out.push(makeInsight({
-      id: 'analysis-volume', family: 'load',
+      id: 'analysis-volume', claimId: 'CLAIM-ARITHMETIC-DELTA', family: 'load',
       title: deltas.distanceKm > 0 ? 'Volume en progression' : 'Volume en retrait',
       observation: 'Ton volume total a ' + (deltas.distanceKm > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.distanceKm) + ' % sur ' + fen + '.',
       reference: ref, delta: deltas.distanceKm,
@@ -2851,7 +3086,7 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
   }
   if (comparable && deltas.ascent != null && deltas.vamAvg != null && deltas.ascent >= 8 && Math.abs(deltas.vamAvg) <= 5) {
     out.push(makeInsight({
-      id: 'analysis-vam-stable', family: 'terrain',
+      id: 'analysis-vam-stable', claimId: 'CLAIM-VAM-WITHIN-RUNNER', family: 'terrain',
       title: 'VAM stable malgré plus de dénivelé',
       observation: 'Ta VAM moyenne reste stable alors que ton D+ a augmenté de ' + deltas.ascent + ' %.',
       reference: ref, delta: deltas.vamAvg,
@@ -2861,7 +3096,7 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
     }));
   } else if (comparable && deltas.vamAvg != null && Math.abs(deltas.vamAvg) >= 8) {
     out.push(makeInsight({
-      id: 'analysis-vam', family: 'terrain',
+      id: 'analysis-vam', claimId: 'CLAIM-VAM-WITHIN-RUNNER', family: 'terrain',
       title: deltas.vamAvg > 0 ? 'VAM en progression' : 'VAM en retrait',
       observation: 'Ta VAM moyenne a ' + (deltas.vamAvg > 0 ? 'augmenté' : 'diminué') + ' de ' + Math.abs(deltas.vamAvg) + ' %.',
       reference: ref, delta: deltas.vamAvg,
@@ -2879,7 +3114,7 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
     const tip = up.find(b => b.walkPct != null && b.runPct != null && b.walkPct >= b.runPct);
     if (tip) {
       out.push(makeInsight({
-        id: 'analysis-locomotion', family: 'terrain',
+        id: 'analysis-locomotion', claimId: 'CLAIM-WALKRUN-CADENCE-ESTIMATE', family: 'terrain',
         title: 'La marche prend le relais en montée',
         observation: 'En ' + tip.label.toLowerCase() + ', tu marches ' + tip.walkPct + ' % du temps.',
         reference: 'les autres tranches de pente positive de la même période',
@@ -2910,7 +3145,7 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
       .reduce((a, b) => a + b.pct, 0);
     if (up >= 15) {
       out.push(makeInsight({
-        id: 'analysis-verticality', family: 'terrain',
+        id: 'analysis-verticality', claimId: 'CLAIM-UPHILL-DOWNHILL-DISTINCT', family: 'terrain',
         title: 'Ton terrain est franchement montant',
         observation: up + ' % de ton temps en mouvement se passe en montée de plus de 8 %.',
         reference: "l'ensemble de ton temps en mouvement sur la période",
@@ -2926,7 +3161,7 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
     const z1z2 = zoneDist.slice(0, 2).reduce((a, z) => a + z.pct, 0);
     if (z3plus >= 55) {
       out.push(makeInsight({
-        id: 'analysis-intensity-high', family: 'effort',
+        id: 'analysis-intensity-high', claimId: 'CLAIM-INTENSITY-NO-UNIVERSAL-TARGET', family: 'effort',
         title: 'Période orientée intensité',
         observation: z3plus + ' % du temps avec FC disponible se passe en zones 3 à 5.',
         reference: 'la répartition de tes zones sur la même période',
@@ -2935,7 +3170,7 @@ function generateGlobalAnalysisInsight(deltas, runWalkByGrade, gradeBuckets, zon
       }));
     } else if (z1z2 >= 65) {
       out.push(makeInsight({
-        id: 'analysis-intensity-low', family: 'effort',
+        id: 'analysis-intensity-low', claimId: 'CLAIM-INTENSITY-NO-UNIVERSAL-TARGET', family: 'effort',
         title: 'Période orientée endurance fondamentale',
         observation: z1z2 + ' % du temps avec FC disponible se passe en zones 1 et 2.',
         reference: 'la répartition de tes zones sur la même période',
@@ -3703,6 +3938,7 @@ function computeRaceReadiness(race) {
     subs.push({
       key: 'volume', label: 'Volume', score: prep.alignment.score,
       provenance: 'computed', confidence: prep.scope === 'race' ? 'high' : 'medium',
+      benchmark: 'plan', inGlobal: true, evidence: 'C',
       state: prep.alignment.state,
       detail: prep.pct + ' % du volume prévu au plan ' + fen + ' — ' + prep.alignment.label.toLowerCase() + '.',
       unavailableWhy: prep.alignment.score == null ? "Le volume réalisé s'écarte trop du plan pour que « respect du plan » ait encore un sens." : null,
@@ -3711,6 +3947,7 @@ function computeRaceReadiness(race) {
       key: 'dplus', label: 'Dénivelé',
       score: prep.alignmentDplus ? prep.alignmentDplus.score : null,
       provenance: 'computed', confidence: prep.scope === 'race' ? 'high' : 'medium',
+      benchmark: 'plan', inGlobal: true, evidence: 'C',
       state: prep.alignmentDplus ? prep.alignmentDplus.state : 'unknown',
       detail: prep.pctDplus != null
         ? (prep.pctDplus + ' % du D+ prévu au plan ' + fen + ' — ' + prep.alignmentDplus.label.toLowerCase() + '.')
@@ -3730,28 +3967,42 @@ function computeRaceReadiness(race) {
     subs.push({
       key: 'volume', label: 'Volume', score: avgKm != null ? clampScore(avgKm / READINESS_VOL_BENCHMARK * 100) : null,
       provenance: 'computed', confidence: 'low',
+      benchmark: 'generic', inGlobal: false, evidence: 'C-faible',
       detail: avgKm != null ? (Math.round(avgKm) + " km/semaine en moyenne, face à un repère générique de " + READINESS_VOL_BENCHMARK + " km/semaine (aucun plan importé — ce repère n'est pas calibré sur toi).") : 'Pas assez de séances récentes',
       unavailableWhy: avgKm == null ? 'Aucune séance sur les 12 dernières semaines.' : null,
     });
     subs.push({
       key: 'dplus', label: 'Dénivelé', score: avgDplus != null ? clampScore(avgDplus / READINESS_DPLUS_BENCHMARK * 100) : null,
       provenance: 'computed', confidence: 'low',
+      benchmark: 'generic', inGlobal: false, evidence: 'C-faible',
       detail: avgDplus != null ? (Math.round(avgDplus) + " m D+/semaine en moyenne, face à un repère générique de " + READINESS_DPLUS_BENCHMARK + " m/semaine (non calibré sur toi).") : 'Pas assez de séances récentes',
       unavailableWhy: avgDplus == null ? 'Aucune séance sur les 12 dernières semaines.' : null,
     });
   }
 
-  // Sorties longues : la plus longue sortie récente, rapportée à la distance de la course visée.
-  // C'est le seul sous-score qui a toujours dépendu de la course elle-même.
+  /* Sorties longues. Audit Insight V2, §5.3 : « sortie longue = 60 % de la course » est une
+     heuristique de niveau C — « aucune validation universelle trouvée ». La décision de l'audit
+     est nette : « montrer comme cible du plan si le plan la donne, sinon retirer » du score.
+
+     On cherche donc D'ABORD la plus longue séance que l'utilisateur a lui-même PLANIFIÉE : c'est
+     une cible réelle, choisie par lui. Le repère à 60 % ne sert plus que d'affichage, hors score. */
   const longest = recent.reduce((max, s) => (s.distanceKm || 0) > (max ? max.distanceKm || 0 : 0) ? s : max, null);
   const longKm = longest ? longest.distanceKm : null;
-  const target = race && race.distanceKm ? race.distanceKm * READINESS_LONG_RUN_RATIO : 0;
+  const planTargets = getPlanTargets(getPlan());
+  const planLongKm = planTargets && planTargets.longestPlannedKm > 0 ? planTargets.longestPlannedKm : null;
+  const target = planLongKm != null ? planLongKm : (race && race.distanceKm ? race.distanceKm * READINESS_LONG_RUN_RATIO : 0);
+  const longFromPlan = planLongKm != null;
   subs.push({
     key: 'longues', label: 'Sorties longues',
     score: (longKm != null && target > 0) ? clampScore(longKm / target * 100) : null,
-    provenance: 'computed', confidence: longKm != null ? 'medium' : 'none',
+    provenance: 'computed', confidence: longKm != null ? (longFromPlan ? 'medium' : 'low') : 'none',
+    benchmark: longFromPlan ? 'plan' : 'generic',
+    // Hors score global quand la cible vient d'un repère générique et non du plan de l'utilisateur.
+    inGlobal: longFromPlan,
+    evidence: longFromPlan ? 'C' : 'C-faible',
     detail: longKm != null && target > 0
-      ? ('Plus longue sortie récente : ' + longKm.toFixed(1) + ' km, pour un repère de ' + target.toFixed(0) + ' km (' + Math.round(READINESS_LONG_RUN_RATIO * 100) + ' % de la distance de course).')
+      ? ('Plus longue sortie récente : ' + longKm.toFixed(1) + ' km, pour une cible de ' + target.toFixed(0) + ' km ' +
+         (longFromPlan ? '(la plus longue séance de ton plan).' : '(repère ELEV de ' + Math.round(READINESS_LONG_RUN_RATIO * 100) + ' % de la distance de course — non calibré sur toi, aucune valeur universelle établie).'))
       : 'Aucune séance récente',
     unavailableWhy: longKm == null ? 'Aucune séance sur les 12 dernières semaines.' : (target <= 0 ? "La distance de cette course n'est pas renseignée." : null),
   });
@@ -3781,6 +4032,7 @@ function computeRaceReadiness(race) {
       key: 'intensite', label: 'Intensité',
       score: (pctZ3 != null && covOk) ? clampScore(pctZ3 / READINESS_INTENSITY_BENCHMARK * 100) : null,
       provenance: 'computed', coverage: hrCov.ratio,
+      benchmark: 'generic', inGlobal: false, evidence: 'C-faible',
       confidence: elevCapConfidence('medium', hrCov.ratio),
       detail: pctZ3 != null
         ? (Math.round(pctZ3) + ' % du temps en zone 3+, face à un repère générique de ' + READINESS_INTENSITY_BENCHMARK + ' % (FC disponible sur ' + (hrCov.pct != null ? hrCov.pct : 0) + ' % du temps).')
@@ -3791,6 +4043,7 @@ function computeRaceReadiness(race) {
   } else {
     subs.push({
       key: 'intensite', label: 'Intensité', score: null, provenance: 'unavailable', confidence: 'none',
+      benchmark: 'generic', inGlobal: false, evidence: 'C-faible',
       detail: 'Renseigne ta FC max et ta FC repos en page Profil pour calculer ce sous-score',
       unavailableWhy: 'Zones de fréquence cardiaque non configurées.',
     });
@@ -3805,13 +4058,28 @@ function computeRaceReadiness(race) {
     key: 'regularite', label: 'Régularité',
     score: sessions.length ? clampScore(weeksWithSession / READINESS_WEEKS * 100) : null,
     provenance: 'computed', confidence: sessions.length ? 'high' : 'none',
+    benchmark: 'measured', inGlobal: true, evidence: 'A',
     detail: sessions.length
       ? (weeksWithSession + '/' + READINESS_WEEKS + ' semaines avec au moins une séance')
       : 'Aucune séance importée',
     unavailableWhy: sessions.length ? null : 'Aucune séance importée.',
   });
 
-  const valid = subs.filter(s => s.score != null);
+  /* Audit Insight V2, §3.3, §5.3 et §12 : l'indice global « agrège des grandeurs hétérogènes et
+     des repères non validés », et les repères de 60 km/semaine, 2 200 m D+/semaine, 15 % de Z3+ et
+     60 % de la distance de course doivent sortir des scores personnels — ils ne sont calibrés ni
+     sur cet utilisateur, ni sur un résultat mesuré.
+
+     Ne comptent donc dans l'indice global que les dimensions adossées à un repère RÉELLEMENT
+     CHOISI : les cibles du plan importé, ou une mesure directe (la régularité est un décompte de
+     semaines, pas une comparaison à une norme). Les autres restent affichées et lisibles une par
+     une, avec leur repère nommé — mais elles ne fabriquent plus un chiffre unique qui aurait
+     l'autorité d'une synthèse.
+
+     Conséquence assumée : sans plan importé, il n'y a plus d'indice global. C'est le résultat
+     voulu — une moyenne de repères de manuel ne décrit pas la préparation de quelqu'un. */
+  const scorable = subs.filter(s => s.score != null);
+  const valid = scorable.filter(s => s.inGlobal !== false);
   /* Audit §6.3 / CRED-10 : aucun score global sous 3 dimensions fiables. Moyenner un seul
      sous-score et l'afficher comme « indice de préparation » donne à une mesure isolée l'autorité
      d'une synthèse. En dessous du seuil, ELEV montre les sous-scores et se tait sur le total.
@@ -3826,7 +4094,10 @@ function computeRaceReadiness(race) {
   const diverging = prep ? prep.diverging : false;
   const enough = valid.length >= READINESS_MIN_DIMENSIONS && !diverging;
   const overall = enough ? Math.round(valid.reduce((a, s) => a + s.score, 0) / valid.length) : null;
-  const weakest = valid.length ? valid.reduce((min, s) => s.score < min.score ? s : min, valid[0]) : null;
+  /* La dimension la plus basse reste une OBSERVATION utile même quand elle ne compte pas dans un
+     score : elle est donc cherchée sur tout ce qui est calculable, pas seulement sur ce qui est
+     notable globalement. */
+  const weakest = scorable.length ? scorable.reduce((min, s) => s.score < min.score ? s : min, scorable[0]) : null;
 
   const scope = prep ? prep.scope : 'general';
   return {
@@ -3835,8 +4106,15 @@ function computeRaceReadiness(race) {
     unscoredWhy: enough ? null
       : (diverging
         ? "Ton entraînement s'écarte trop du plan pour qu'un indice de préparation global ait un sens. Les sous-scores ci-dessous restent lisibles un par un."
-        : (valid.length ? 'Seulement ' + valid.length + ' sous-score' + (valid.length > 1 ? 's' : '') + ' sur ' + subs.length + ' est calculable : trop peu pour un indice global.'
-          : "Aucun sous-score n'est calculable pour l'instant.")),
+        /* Cas le plus fréquent depuis l'audit Insight V2 : des sous-scores existent, mais ils
+           reposent sur des repères génériques (60 km/semaine, 2 200 m D+, 15 % de Z3+, 60 % de la
+           distance de course) qui ne sont calibrés ni sur cet utilisateur ni sur un résultat.
+           Les moyenner produirait un chiffre d'apparence personnelle. On dit pourquoi, et on
+           indique la seule action qui rendrait l'indice calculable : importer un plan. */
+        : (!prep && scorable.length
+          ? "Les repères disponibles (60 km/semaine, 2 200 m D+, 15 % de zone 3+, 60 % de la distance de course) sont génériques : ils ne sont calibrés ni sur toi ni sur un résultat de course. ELEV ne les moyenne donc pas en un indice unique. Importe ton plan d'entraînement pour comparer à tes propres cibles."
+          : (valid.length ? 'Seulement ' + valid.length + ' sous-score' + (valid.length > 1 ? 's' : '') + ' sur ' + subs.length + ' repose sur une cible que tu as choisie : trop peu pour un indice global.'
+            : "Aucun sous-score n'est calculable pour l'instant."))),
     scope,
     scopeLabel: prep ? prep.scopeLabel : 'Préparation générale',
     scopeWhy: prep ? prep.scopeWhy : "Aucun plan n'est importé : ELEV compare ton entraînement à des repères génériques, pas à une préparation conçue pour cette course.",
@@ -3862,10 +4140,26 @@ function readinessLevelLabel(overall, readiness) {
      plan qui empêche de noter. */
   if (readiness && readiness.diverging) return 'Écart important avec le plan';
   if (overall == null) return null;
+
+  /* Audit Insight V2, §7.1 : « Excellente préparation » et « Sur la bonne voie » sont des
+     JUGEMENTS GLOBAUX que ces chiffres ne portent pas. Ils agrègent des heuristiques hétérogènes,
+     ne sont calibrés sur aucun résultat de course, et la littérature trail (§6.2, réf. de Waal
+     2021, Sabater Pastor 2022) conclut précisément qu'aucun score simple ne décrit la préparation
+     à un trail. Le faux positif principal est nommé par l'audit : un faux sentiment de sécurité.
+
+     Les libellés décrivent donc désormais CE QUI A ÉTÉ MESURÉ — un degré d'adéquation à des
+     repères — sans annoncer un résultat de course. Le mot « préparation » n'apparaît plus seul :
+     avec un plan lié, c'est une adéquation à CE plan ; sans plan, ce sont des repères génériques
+     que l'utilisateur n'a jamais choisis. */
   const general = !!(readiness && readiness.scope === 'general');
-  if (overall >= 85) return general ? 'Volume général élevé' : 'Excellente préparation';
-  if (overall >= 60) return general ? 'Entraînement régulier' : 'Sur la bonne voie';
-  return 'À renforcer';
+  if (general) {
+    if (overall >= 85) return 'Proche des repères génériques';
+    if (overall >= 60) return 'Partiellement aligné avec les repères génériques';
+    return 'En retrait des repères génériques';
+  }
+  if (overall >= 85) return 'Proche des cibles du plan';
+  if (overall >= 60) return 'Partiellement aligné avec le plan';
+  return 'En retrait des cibles du plan';
 }
 
 /* --------------------------- PAGE OBJECTIFS — cockpit de préparation par course --------------------------- */
@@ -3915,20 +4209,82 @@ function getGoalRecommendations(readiness) {
   });
 }
 
-// Insight ELEV court pour la page Objectifs (1 à 2 observations max) — déterministe, réutilise
-// uniquement le point faible déjà identifié par computeRaceReadiness et le repère de sortie longue
-// déjà utilisé pour ce sous-score, sans nouvelle métrique ni appel réseau.
+/* Insight ELEV de la page Objectifs.
+
+   Audit Insight V2, §2.2 et §4.2 : cette fonction produisait des `{title, text}` rendus par un
+   balisage propre à la page. Elle échappait donc à TOUT le contrat commun — pas de référence, pas
+   de fenêtre, pas de couverture, pas de confiance, pas de limites, et surtout aucun garde-fou :
+   ni le vocabulaire interdit, ni la règle « aucun conseil de récupération sans donnée de
+   récupération » ne s'y appliquaient. Les mêmes garanties valent désormais ici et sur l'Accueil.
+
+   Retourne le résultat de `prioritizeInsights` (1 principal + 2 secondaires), comme les autres
+   surfaces — plus une liste de bullets. */
 function generateGoalInsight(readiness, race) {
-  const bullets = [];
-  if (readiness && readiness.weakest) {
-    bullets.push({ title: 'Priorité', text: readiness.weakest.label + ' reste actuellement la dimension la plus faible de ta préparation (' + readiness.weakest.score + '%).' });
+  const out = [];
+  if (!readiness) return prioritizeInsights([], {});
+
+  const fen = readiness.window;
+  /* La portée est une LIMITE, pas un détail : sans plan lié à cette course, ces observations
+     décrivent un entraînement général, jamais une préparation à cet objectif (§7.1). */
+  const portee = readiness.scope === 'race' ? 'Préparation à cette course.' : (readiness.scopeWhy || 'Préparation générale.');
+
+  // 1. Divergence — elle passe avant tout le reste : quand le plan ne décrit plus l'entraînement,
+  //    les autres écarts au plan ne veulent plus dire grand-chose.
+  if (readiness.diverging && readiness.divergence) {
+    const d = readiness.divergence;
+    out.push(makeInsight({
+      id: 'goal-divergence', claimId: 'CLAIM-PLAN-ADHERENCE', family: 'plan',
+      title: 'Ton entraînement s\'écarte fortement du plan',
+      observation: (d.key === 'volume' ? 'Volume réalisé' : 'Dénivelé réalisé') + ' à ' + d.pct + ' % de ce que le plan prévoit.',
+      reference: 'le plan importé, sur les 4 dernières semaines',
+      interpretation: 'Au-delà de ' + PLAN_DIVERGENCE_PCT + ' %, le plan ne décrit plus ce que tu fais : ELEV cesse de noter un « respect du plan » qui n\'aurait plus de sens.',
+      uncertainty: 'Un écart au plan ne dit rien de la qualité de ton entraînement, seulement de sa correspondance au document importé. ' + portee,
+      confidence: 'high', importance: 'attention', provenance: 'computed',
+      method: 'Volume et D+ réalisés rapportés aux valeurs planifiées sur la fenêtre.',
+      window: fen, metricId: 'plan.alignment', definitionVersion: '2.0.0',
+      values: { pct: d.pct, dimension: d.key },
+    }));
   }
-  const longuesSub = readiness && readiness.subs.find(s => s.key === 'longues');
+
+  // 2. Dimension la plus faible. Le mot « préparation » n'est employé que si un plan est
+  //    réellement lié à cette course — sinon c'est une exécution générale (§7.1).
+  if (readiness.weakest) {
+    const w = readiness.weakest;
+    out.push(makeInsight({
+      id: 'goal-weakest', claimId: 'CLAIM-NO-TRAIL-READINESS-SCORE', family: 'objective',
+      title: w.label + ' : la dimension la plus basse',
+      observation: w.label + ' est à ' + w.score + ' % parmi les ' + readiness.dimensions + ' dimensions calculables.',
+      reference: readiness.scope === 'race' ? 'les cibles du plan lié à cette course' : 'des repères génériques, non calibrés sur toi',
+      interpretation: w.detail || null,
+      uncertainty: 'Un sous-score bas signale une dimension moins couverte, pas un défaut de préparation démontré. ' + portee,
+      confidence: w.confidence || 'low', importance: 'notable',
+      provenance: w.provenance || 'computed', coverage: w.coverage != null ? w.coverage : null,
+      method: 'Sous-scores de computeRaceReadiness ; le plus bas est retenu.',
+      window: fen, metricId: 'readiness.subscore', definitionVersion: '2.0.0',
+      values: { key: w.key, score: w.score },
+    }));
+  }
+
+  /* 3. Sortie longue. Le repère de 60 % de la distance de course est une HEURISTIQUE PRODUIT que
+        l'audit classe en niveau C : aucune validation universelle n'a été trouvée (§5.3). Le texte
+        doit donc le nommer comme un repère ELEV, jamais comme une norme. */
+  const longuesSub = readiness.subs && readiness.subs.find(s => s.key === 'longues');
   if (longuesSub && longuesSub.score != null && race && race.distanceKm) {
     const target = race.distanceKm * READINESS_LONG_RUN_RATIO;
-    bullets.push({ title: 'Sorties longues', text: 'Ta plus longue sortie récente représente ' + Math.min(999, longuesSub.score) + '% du repère actuel (' + target.toFixed(0) + ' km).' });
+    out.push(makeInsight({
+      id: 'goal-longrun', claimId: 'CLAIM-NO-TRAIL-READINESS-SCORE', family: 'load',
+      title: 'Sortie longue face au repère ELEV',
+      observation: 'Ta plus longue sortie récente atteint ' + Math.min(999, longuesSub.score) + ' % du repère ELEV (' + target.toFixed(0) + ' km).',
+      reference: Math.round(READINESS_LONG_RUN_RATIO * 100) + ' % de la distance de la course — repère ELEV, pas une norme validée',
+      uncertainty: 'Ce repère n\'est calibré ni sur toi ni sur une étude : aucune valeur universelle de sortie longue n\'est établie. La distance seule ignore le dénivelé, la durée et le terrain.',
+      confidence: 'low', importance: 'context', provenance: 'computed',
+      method: 'Distance de la plus longue séance de la fenêtre, rapportée au repère.',
+      window: fen, metricId: 'readiness.longrun', definitionVersion: '2.0.0',
+      values: { longestPct: longuesSub.score, targetKm: +target.toFixed(1) },
+    }));
   }
-  return bullets.slice(0, 2);
+
+  return prioritizeInsights(out, {});
 }
 
 /* --------------------------- PAGE PLAN — cockpit d'exécution de la préparation ---------------------------
@@ -4035,30 +4391,127 @@ function calculateWeekProgress(week, sessions) {
   const doneDurationS = doneItems.reduce((s,x) => s + (x.durationS||0), 0);
   const durMins = week.items.map(p => parseDureeToMin(p.dureeDetail));
   const plannedDurationMin = (durMins.length && durMins.every(v => v != null)) ? durMins.reduce((a,b)=>a+b,0) : null;
+  /* Séances manquées. Audit Insight V2, P0-C : compter toute activité du jour comme validant toute
+     séance prévue ce jour-là revenait à laisser un footing valider un fractionné. On compte
+     désormais les rapprochements RÉELLEMENT sûrs (voir matchActivitiesToPlannedSessions) ; un
+     rapprochement douteux reste en attente de confirmation et ne valide rien tout seul. */
+  const matched = matchActivitiesToPlannedSessions(week.items, doneItems);
   const dayGroups = new Map();
   week.items.forEach(p => dayGroups.set(p.date, (dayGroups.get(p.date)||0) + 1));
-  let missedCount = 0;
+  let missedCount = 0, pendingCount = 0;
   dayGroups.forEach((plannedForDay, date) => {
-    const doneForDay = doneItems.filter(s => s.date === date).length;
-    if (getPlanDayStatus(date, plannedForDay, doneForDay) === 'missed') missedCount += (plannedForDay - doneForDay);
+    const surs = matched.filter(m => m.planned.date === date && m.done.length).length;
+    if (getPlanDayStatus(date, plannedForDay, surs) === 'missed') missedCount += (plannedForDay - surs);
   });
+  matched.forEach(m => { if (!m.done.length && m.candidates.length) pendingCount++; });
   const pctKm = plannedKm > 0 ? Math.round(doneKm/plannedKm*100) : null;
   const pctDplus = plannedDplus > 0 ? Math.round(doneDplus/plannedDplus*100) : null;
   let statusLabel = null;
-  if (pctKm != null) statusLabel = pctKm < 60 ? 'En retard' : (pctKm > 130 ? 'En avance' : 'Dans les clous');
+  /* Audit Insight V2, §7.1 : « Dans les clous » se lit comme un feu vert sur la préparation, alors
+     que le chiffre ne mesure qu'un rapport de volume au plan sur une semaine. Le libellé dit
+     désormais ce qu'il compare. Les seuils (60 %/130 %) restent ceux de computePrepStatus. */
+  if (pctKm != null) statusLabel = pctKm < 60 ? 'Sous la cible' : (pctKm > 130 ? 'Au-dessus de la cible' : 'Conforme au plan');
   return {
     doneItems, plannedKm, doneKm, plannedDplus, doneDplus, doneDurationS, plannedDurationMin, missedCount,
+    // Rapprochements proposés mais non confirmés : ni « réalisé », ni « manqué ». L'interface peut
+    // les présenter à confirmation plutôt que de trancher à la place de l'utilisateur.
+    pendingCount,
     plannedCount: week.items.length, doneCount: doneItems.length,
     pctSessions: week.items.length ? Math.round(doneItems.length/week.items.length*100) : null,
     pctKm, pctDplus, statusLabel,
   };
 }
 
-// Associe chaque séance planifiée aux séances réelles de la même date (0, 1 ou plusieurs) — même
-// convention que findPlannedSession, généralisée à une liste. Pas de tolérance de date : une séance
-// réalisée un autre jour que prévu n'est pas rattachée (aucune logique de rattrapage dans les données).
-function matchActivitiesToPlannedSessions(plannedItems, sessions) {
-  return plannedItems.map(p => ({ planned: p, done: sessions.filter(s => s.date === p.date) }));
+/* --------------------------- RAPPROCHEMENT PLAN ↔ ACTIVITÉ ---------------------------
+   Audit Insight V2, §3.3 et §4.2 : « Séance réalisée vs plan — même date — un footing peut valider
+   un fractionné prévu — Corriger P0 ». Jeu de référence G11.
+
+   Le rapprochement se faisait sur la SEULE date. Conséquence : n'importe quelle activité du jour
+   validait n'importe quelle séance prévue ce jour-là, et « séance réalisée » devenait un constat
+   que la donnée ne soutenait pas.
+
+   Difficulté réelle, et elle explique la forme de la solution : **une séance réalisée ne porte
+   aucun type d'entraînement**. Le fichier .fit donne un SPORT (« Trail », « Course à pied »), pas
+   une intention (« fractionné », « sortie longue »). On ne peut donc pas comparer deux types. Ce
+   qui est comparable, c'est ce que les deux côtés mesurent réellement : le VOLUME et l'INTENSITÉ.
+
+   Trois niveaux, du plus sûr au plus faible :
+     `explicit` — l'utilisateur a lui-même relié la séance à la séance planifiée (session.plannedUid).
+                  Rien ne prime sur une confirmation humaine.
+     `strong`   — même date, et rien ne contredit le rapprochement.
+     `weak`     — même date, mais une incohérence mesurée : le rapprochement est PROPOSÉ, jamais
+                  validé d'office. C'est le cas du footing le jour d'un fractionné.
+     `none`     — dates différentes. Aucune tolérance : il n'existe aucune logique de rattrapage
+                  dans les données, en inventer une serait deviner.
+
+   Les seuils sont des repères produit explicites, pas des valeurs validées scientifiquement. */
+const PLAN_MATCH_VOLUME_LOW = 0.5;   // moins de la moitié du volume prévu : ce n'est probablement pas cette séance
+const PLAN_MATCH_VOLUME_HIGH = 2.0;  // plus du double : idem
+const PLAN_MATCH_MIN_Z3_PCT = 10;    // une séance d'intensité prévue sans Z3+ n'a probablement pas eu lieu
+const PLAN_INTENSITY_KEYWORDS = /fractionn|vma|seuil|tempo|c[ôo]tes?|intervalle|piste|allure sp[ée]cifique/i;
+
+function planMatchQuality(planned, session, opts) {
+  opts = opts || {};
+  if (!planned || !session) return { level: 'none', reasons: ['Séance ou plan manquant.'] };
+  if (session.plannedUid && planned.uid && session.plannedUid === planned.uid)
+    return { level: 'explicit', reasons: ['Association confirmée par toi.'] };
+  // Une séance explicitement reliée AILLEURS ne peut pas valider celle-ci.
+  if (session.plannedUid && planned.uid && session.plannedUid !== planned.uid)
+    return { level: 'none', reasons: ['Cette activité est déjà reliée à une autre séance planifiée.'] };
+  if (session.date !== planned.date) return { level: 'none', reasons: ['Dates différentes.'] };
+
+  const reasons = [];
+
+  // 1. Volume. N'est évalué que si le plan porte réellement une distance (voir parsePlanNumber :
+  //    une colonne absente vaut null, pas 0 — comparer à 0 n'aurait aucun sens).
+  if (planned.distanceKm != null && planned.distanceKm > 0 && session.distanceKm != null) {
+    const ratio = session.distanceKm / planned.distanceKm;
+    if (ratio < PLAN_MATCH_VOLUME_LOW)
+      reasons.push('Distance réalisée (' + session.distanceKm.toFixed(1) + ' km) très inférieure aux ' + planned.distanceKm + ' km prévus.');
+    else if (ratio > PLAN_MATCH_VOLUME_HIGH)
+      reasons.push('Distance réalisée (' + session.distanceKm.toFixed(1) + ' km) très supérieure aux ' + planned.distanceKm + ' km prévus.');
+  }
+
+  /* 2. Intensité. Seul signal capable de distinguer un footing d'un fractionné à volume égal —
+        c'est exactement le cas G11. Évalué uniquement si le plan annonce une séance d'intensité ET
+        si les zones sont réellement calculables : sans FC exploitable, on ne conclut pas. */
+  const attendIntensite = PLAN_INTENSITY_KEYWORDS.test((planned.type || '') + ' ' + (planned.intensite || ''));
+  if (attendIntensite && opts.zones) {
+    const dist = computeSessionZoneDistribution(session, opts.zones);
+    if (dist) {
+      const z3plus = dist.slice(2).reduce((a, z) => a + (z.pct || 0), 0);
+      if (z3plus < PLAN_MATCH_MIN_Z3_PCT)
+        reasons.push('Séance d\'intensité prévue (' + (planned.type || planned.intensite) + '), mais ' + Math.round(z3plus) + ' % du temps seulement en zone 3 ou plus.');
+    }
+  }
+
+  return reasons.length ? { level: 'weak', reasons } : { level: 'strong', reasons: [] };
+}
+
+/* Associe chaque séance planifiée aux activités réelles. `done` ne contient que les associations
+   SÛRES (explicites ou fortes) ; les rapprochements douteux partent dans `candidates`, où
+   l'interface peut les proposer à confirmation plutôt que de les compter d'office. */
+function matchActivitiesToPlannedSessions(plannedItems, sessions, opts) {
+  opts = opts || {};
+  const zones = opts.zones !== undefined ? opts.zones : (typeof getActiveHrZones === 'function' ? getActiveHrZones(getProfile()) : null);
+  return (plannedItems || []).map(p => {
+    const done = [], candidates = [];
+    (sessions || []).forEach(s => {
+      const q = planMatchQuality(p, s, { zones });
+      if (q.level === 'explicit' || q.level === 'strong') done.push(s);
+      else if (q.level === 'weak') candidates.push({ session: s, reasons: q.reasons });
+    });
+    return { planned: p, done, candidates };
+  });
+}
+
+/* Relie explicitement une activité à une séance planifiée, ou retire ce lien (`plannedUid` à null).
+   C'est la « confirmation utilisateur » exigée par l'audit quand le rapprochement est ambigu. */
+function linkSessionToPlanned(sessionId, plannedUid) {
+  const s = loadSession(sessionId);
+  if (!s) return false;
+  s.plannedUid = plannedUid || null;
+  return saveSession(sessionId, s);
 }
 
 // Prochaine séance planifiée non encore réalisée (date >= aujourd'hui, aucune séance réelle à cette
@@ -4142,52 +4595,102 @@ function getPlanWeeksOverview(plan) {
 // (28 derniers jours, computePrepStatus déjà utilisé par Objectifs/Accueil) > dynamique de charge
 // (getTrainingTrend, déjà utilisé par l'Accueil). Aucun nouveau calcul : uniquement du texte dérivé de
 // fonctions déjà existantes et validées ailleurs sur le site.
+/* Insight ELEV de la page Plan.
+
+   Audit Insight V2, §2.2 et §4.2 : comme Objectifs, cette fonction produisait des `{title, text}`
+   hors contrat — donc sans référence, sans fenêtre, sans confiance et sans garde-fou. Elle passe
+   par `makeInsight` et `prioritizeInsights`, exactement comme l'Accueil.
+
+   Conséquence assumée de la règle « une seule observation par famille » : l'écart au plan et les
+   séances non associées appartiennent tous deux à la famille `plan`, seul le plus important des
+   deux est affiché. C'est précisément ce que la règle vise (§4.2 relève d'ailleurs que la
+   dynamique de charge « peut répéter l'Accueil »). Rien n'est perdu : le reste part dans
+   `dropped`. */
 function getPlanInsights(plan, sessions) {
-  const bullets = [];
-  if (plan && plan.length) {
-    const week = getCurrentPlanWeek(plan);
-    if (week && week.inRange) {
-      // Même règle que les badges de la semaine (getPlanDayStatus, via calculateWeekProgress) — pas de
-      // double logique, voir CLAUDE.md.
-      const wp = calculateWeekProgress(week, sessions);
-      if (wp.missedCount) {
-        bullets.push({ title: 'Séances', text: wp.missedCount + ' séance' + (wp.missedCount>1?'s':'') + ' prévue' + (wp.missedCount>1?'s':'') + ' cette semaine n\'' + (wp.missedCount>1?'ont':'a') + ' pas été associée' + (wp.missedCount>1?'s':'') + ' à une activité réalisée.' });
-      }
-    }
-    if (bullets.length < 3) {
-      const prep = computePrepStatus();
-      if (prep) {
-        // Le libellé suit désormais l'ALIGNEMENT (voir planAlignment) plutôt que le seul palier de
-        // pourcentage : « dépasse nettement » et « divergence » ne disent pas la même chose.
-        const al = prep.alignment;
-        if (al.state === 'far_under' || al.state === 'under')
-          bullets.push({ title: 'Volume', text: 'Le volume réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pct + ' %).' });
-        else if (al.diverging)
-          bullets.push({ title: 'Volume', text: "Le volume réalisé s'écarte fortement du plan sur les 4 dernières semaines (" + prep.pct + " %) : le plan ne décrit plus ce que tu fais." });
-        else if (al.state === 'over')
-          bullets.push({ title: 'Volume', text: 'Le volume réalisé dépasse la cible du plan sur les 4 dernières semaines (' + prep.pct + ' %).' });
-        else if (prep.pctDplus != null && prep.pctDplus < 60)
-          bullets.push({ title: 'Dénivelé', text: 'Le D+ réalisé reste sous la cible du plan sur les 4 dernières semaines (' + prep.pctDplus + ' %).' });
-      }
-    }
-    /* Audit P1-5 et §13 / UX-09 : ce bloc était HORS du garde `if (plan && plan.length)`. La page
-       Plan affichait donc une dynamique de charge alors même qu'aucun plan n'existait — un insight
-       de plan sans plan. Il est désormais à l'intérieur, et le conseil de récupération a disparu :
-       ELEV ne suit aucune donnée de récupération, il ne peut donc rien en conseiller. */
-    if (bullets.length < 3) {
-      const trend = getTrainingTrend();
-      if (trend && trend.available) {
-        const texts = {
-          rising: 'Le volume hebdomadaire réalisé suit une progression régulière.',
-          rising_fast: 'Le volume récent augmente rapidement par rapport à la moyenne des 4 dernières semaines.',
-          stable: 'Le volume hebdomadaire réalisé reste stable par rapport aux dernières semaines.',
-          falling: 'Le volume récent est en retrait par rapport aux semaines précédentes.',
-        };
-        bullets.push({ title: 'Dynamique', text: texts[trend.level] });
-      }
+  const out = [];
+  if (!plan || !plan.length) return prioritizeInsights([], {});
+
+  const week = getCurrentPlanWeek(plan);
+  if (week && week.inRange) {
+    // Même règle que les badges de la semaine (getPlanDayStatus, via calculateWeekProgress).
+    const wp = calculateWeekProgress(week, sessions);
+    if (wp.missedCount) {
+      const n = wp.missedCount, pl = n > 1;
+      out.push(makeInsight({
+        id: 'plan-missed', claimId: 'CLAIM-PLAN-ADHERENCE', family: 'plan',
+        title: n + ' séance' + (pl ? 's' : '') + ' sans activité associée',
+        observation: n + ' séance' + (pl ? 's' : '') + ' prévue' + (pl ? 's' : '') + ' cette semaine n\'' + (pl ? 'ont' : 'a') + ' pas été associée' + (pl ? 's' : '') + ' à une activité réalisée.',
+        reference: 'les séances planifiées de la semaine en cours',
+        uncertainty: 'Une association se fait sur la date et le type de séance : une sortie déplacée ou d\'un autre type n\'est pas rattachée automatiquement. Cela ne signifie pas qu\'elle n\'a pas eu lieu.',
+        confidence: 'medium', importance: 'attention', provenance: 'computed',
+        method: 'Séances planifiées de la semaine sans activité correspondante à leur date.',
+        window: 'semaine en cours', metricId: 'plan.missed', definitionVersion: '2.0.0',
+        values: { missed: n, planned: wp.plannedCount },
+      }));
     }
   }
-  return bullets.slice(0, 3);
+
+  const prep = computePrepStatus();
+  if (prep) {
+    const al = prep.alignment;
+    /* §7.1 : « sur la bonne voie » et « hausse raisonnable » sont des jugements que ces chiffres
+       ne portent pas. On énonce l'écart mesuré, pas un verdict. */
+    let title = null, obs = null, imp = 'notable', interp = null;
+    if (al.state === 'far_under' || al.state === 'under') {
+      title = 'Volume réalisé sous la cible du plan';
+      obs = 'Volume réalisé à ' + prep.pct + ' % de ce que le plan prévoit sur ' + prep.windowDays + ' jours.';
+    } else if (al.diverging) {
+      title = 'Écart important avec le plan';
+      obs = 'Volume réalisé à ' + prep.pct + ' % de la cible du plan sur ' + prep.windowDays + ' jours.';
+      interp = 'Au-delà de ' + PLAN_DIVERGENCE_PCT + ' %, le plan ne décrit plus ce que tu fais.';
+      imp = 'attention';
+    } else if (al.state === 'over') {
+      title = 'Volume réalisé au-dessus de la cible';
+      obs = 'Volume réalisé à ' + prep.pct + ' % de la cible du plan sur ' + prep.windowDays + ' jours.';
+    } else if (prep.pctDplus != null && prep.pctDplus < 60) {
+      title = 'Dénivelé réalisé sous la cible du plan';
+      obs = 'D+ réalisé à ' + prep.pctDplus + ' % de ce que le plan prévoit sur ' + prep.windowDays + ' jours.';
+    }
+    if (obs) {
+      out.push(makeInsight({
+        id: 'plan-alignment', claimId: 'CLAIM-PLAN-ADHERENCE', family: 'plan',
+        title, observation: obs, interpretation: interp,
+        reference: 'les volumes inscrits au plan sur la même fenêtre',
+        uncertainty: 'Un écart au plan mesure une conformité au document importé, pas la qualité de l\'entraînement ni un état de préparation. ' + (prep.scopeWhy || ''),
+        confidence: prep.scope === 'race' ? 'high' : 'medium', importance: imp, provenance: 'computed',
+        method: prep.method, window: prep.windowDays + ' derniers jours',
+        metricId: 'plan.alignment', definitionVersion: '2.0.0',
+        values: { pct: prep.pct, pctDplus: prep.pctDplus },
+      }));
+    }
+  }
+
+  /* Dynamique de volume. L'audit est explicite (§5.3, §6.1, réf. Impellizzeri 2020) : ce ratio est
+     une DESCRIPTION de variation de volume, jamais une frontière de sécurité ni un prédicteur de
+     blessure. Aucune action n'y est attachée — et aucun conseil de récupération n'est possible,
+     ELEV ne mesurant ni sommeil, ni FC de repos, ni ressenti. */
+  const trend = getTrainingTrend();
+  if (trend && trend.available) {
+    const texts = {
+      rising: 'Le volume des 7 derniers jours est supérieur à la moyenne des 4 semaines précédentes.',
+      rising_fast: 'Le volume des 7 derniers jours dépasse nettement la moyenne des 4 semaines précédentes.',
+      stable: 'Le volume des 7 derniers jours reste proche de la moyenne des 4 semaines précédentes.',
+      falling: 'Le volume des 7 derniers jours est inférieur à la moyenne des 4 semaines précédentes.',
+    };
+    out.push(makeInsight({
+      id: 'plan-trend', claimId: 'CLAIM-LOAD-DESCRIPTIVE', family: 'load',
+      title: 'Dynamique de volume',
+      observation: texts[trend.level],
+      reference: 'la moyenne des 4 fenêtres de 7 jours précédentes',
+      uncertainty: 'Ce rapport décrit une variation de volume. Il ne mesure ni la fatigue, ni la récupération, ni un risque de blessure : la littérature ne soutient pas cet usage.',
+      confidence: 'medium', importance: 'context', provenance: 'computed',
+      method: 'Volume des 7 derniers jours rapporté à la moyenne des 4 fenêtres de 7 jours.',
+      window: '4 dernières semaines', metricId: 'load.volume.ratio', definitionVersion: '2.0.0',
+      values: { level: trend.level, ratio: trend.ratio != null ? trend.ratio : null },
+    }));
+  }
+
+  return prioritizeInsights(out, {});
 }
 
 // Objectif lié au plan : seulement s'il existe un unique objectif "principal" non archivé — jamais un
@@ -4356,7 +4859,7 @@ function generateElevSideInsights() {
   if (dTrend && dTrend.chronic >= 100) { // sous 100 m/sem. de moyenne, un ratio n'a pas de sens
     const signe = dTrend.deltaPct >= 0 ? '+' : '';
     out.push(makeInsight({
-      id: 'home-dplus-' + dTrend.level,
+      id: 'home-dplus-' + dTrend.level, claimId: 'CLAIM-LOAD-DESCRIPTIVE',
       family: 'terrain',
       title: dTrend.level === 'falling' ? 'Dénivelé en retrait'
         : (dTrend.level === 'stable' ? 'Dénivelé stable' : 'Dénivelé en hausse'),
@@ -4380,7 +4883,7 @@ function generateElevSideInsights() {
   if (longueSemaine > 0 && longuePrecedente > 0) {
     const ecart = Math.round((longueSemaine / longuePrecedente - 1) * 100);
     out.push(makeInsight({
-      id: 'home-longrun',
+      id: 'home-longrun', claimId: 'CLAIM-LOAD-DESCRIPTIVE',
       family: 'effort',
       title: ecart >= 0 ? 'Sortie longue en progression' : 'Sortie longue plus courte',
       observation: 'Ta plus longue sortie de la semaine fait ' + longueSemaine.toFixed(1) + ' km.',
@@ -4431,7 +4934,7 @@ function generateElevInsight() {
   };
   const t = textes[trend.level];
   return makeInsight({
-    id: 'home-load-' + trend.level,
+    id: 'home-load-' + trend.level, claimId: 'CLAIM-LOAD-DESCRIPTIVE',
     family: 'load',
     title: t.title,
     observation: t.observation,
