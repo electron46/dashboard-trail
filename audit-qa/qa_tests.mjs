@@ -2296,8 +2296,21 @@ await test('V2-G16', 'IA : une réponse contenant un fait absent de l\'objet sou
     positif: ['Effort tenu'], suite: ['Continuer ainsi'],
   });
   const rNum = iso.validateAiOutput(inventeChiffre, allowed);
-  assert(!rNum.ok, 'un nombre absent des données doit faire rejeter la réponse');
-  assert(rNum.reasons.some(x => /2400/.test(x)), 'la raison doit nommer la valeur inventée : ' + JSON.stringify(rNum.reasons));
+  /* Comportement revu (voir §5 du registre) : une mesure non justifiee ne fait plus perdre TOUTE
+     la reponse — la ligne fautive est RETIREE. L'invariant de fond est plus exigeant que le rejet
+     global : la valeur inventee ne doit apparaitre NULLE PART dans ce qui sera affiche. */
+  const rendu = JSON.stringify(rNum.data || {});
+  assert(!/2400/.test(rendu), 'une mesure inventee ne doit jamais apparaitre dans le resultat affiche');
+  assert((rNum.dropped || []).some(x => /2400/.test(x)), 'la valeur retiree doit etre signalee : ' + JSON.stringify(rNum.dropped));
+  assert(!rNum.data || !(rNum.data.analyse || []).some(l => /2400/.test(l)), 'la ligne fautive doit avoir ete retiree');
+
+  // Si c'est le RESUME qui est fautif, la reponse entiere tombe : l'amputer laisserait un objet incoherent.
+  const resumeFautif = JSON.stringify({
+    resume: 'Tu as grimpe 2400 m sur cette sortie.', analyse: ['18,7 km parcourus'],
+    positif: ['Effort tenu'], suite: ['Continuer ainsi'],
+  });
+  const rRes = iso.validateAiOutput(resumeFautif, allowed);
+  assert(!rRes.ok && rRes.data === null, 'un resume citant une valeur inventee doit faire tomber la reponse');
 
   // Consigne de récupération : aucune donnée de récupération n'est suivie.
   const repos = JSON.stringify({
@@ -2821,13 +2834,28 @@ await test('V2-G16b', 'IA : un écart calculé entre deux valeurs fournies n\'es
     resume: 'Sortie exigeante.', analyse: ['Tu as dépensé environ 2400 kilocalories'],
     positif: ['Effort tenu'], suite: ['Continuer'],
   });
-  assert(!iso.validateAiOutput(invente, allowed).ok, 'une valeur absente des données doit rester refusée');
+  const rInv = iso.validateAiOutput(invente, allowed);
+  assert(!/2400/.test(JSON.stringify(rInv.data || {})), 'une mesure inventee ne doit jamais etre affichee');
+  assert((rInv.dropped || []).length, 'la mesure retiree doit etre signalee');
 
   const delai = JSON.stringify({
     resume: 'Sortie exigeante.', analyse: ['19,7 km parcourus'], positif: ['Effort tenu'],
     suite: ['Prévoir 72 h avant la prochaine séance longue'],
   });
-  assert(!iso.validateAiOutput(delai, allowed).ok, 'un délai inventé doit rester refusé');
+  const rDelai = iso.validateAiOutput(delai, allowed);
+  assert(!/72/.test(JSON.stringify(rDelai.data || {})), 'un delai invente ne doit jamais etre affiche');
+
+  /* Un nombre SANS unite n'est pas une mesure : « 3 seances », « 2 fois plus », un ordinal. Les
+     juger faisait perdre des analyses entieres sans rien proteger — c'est ce qui a produit deux
+     rejets en usage reel. */
+  const nombresNus = JSON.stringify({
+    resume: 'Troisieme sortie longue du bloc, la 2e cette semaine.',
+    analyse: ['Tu enchaines 3 seances de ce type', 'Environ 2 fois plus de denivele que d habitude'],
+    positif: ['Regularite tenue sur 4 semaines'], suite: ['Garder ce rythme'],
+  });
+  const rNus = iso.validateAiOutput(nombresNus, allowed);
+  assert(rNus.ok, 'des nombres sans unite ne doivent pas faire rejeter une reponse : ' + JSON.stringify(rNus.reasons));
+  assert((rNus.data.analyse || []).length === 2, 'aucune ligne ne doit avoir ete retiree a tort');
   return { ecartAccepte: '16 %', arrondiAccepte: '1450 m', toujoursRefuses: ['2400 kcal', '72 h'] };
 });
 
