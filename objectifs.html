@@ -21,7 +21,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="assets/elev-data-quality.js"></script>
 <script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-evidence.js"></script>
+<script src="assets/elev-metrics.js"></script>
 <script src="assets/elev-insight.js"></script>
+<script src="assets/elev-ai-policy.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -259,16 +262,24 @@
     </div>
     <div id="raceModalMsg"></div>
     <div class="ai-block" id="raceAiBlock" style="display:none;">
-      <h4 style="margin-bottom:4px;">Estimation IA du temps de course</h4>
+      <h4 style="margin-bottom:4px;">Estimation IA du temps de course <span class="badge" data-exp="1">Expérimental</span></h4>
+      <!-- Audit Insight V2, §5.2 et §7.1 : cette estimation n'est adossée à aucun modèle calibré.
+           Aucune erreur de prédiction n'a été mesurée, aucun backtest n'existe, et les parcours ne
+           sont pas comparés entre eux. Elle est donc de niveau D — expérimental — et doit le dire
+           à l'écran, pas seulement dans une note de bas de page. -->
+      <p class="partial-note" style="margin:6px 0 8px;">Estimation expérimentale, non calibrée : aucun modèle
+        validé ni marge d'erreur mesurée ne la soutient. À lire comme un ordre de grandeur, jamais comme une prévision.</p>
       <p class="hint">Basée sur ton historique d'entraînement, tes données physio (profil) et les informations de terrain/chaleur ci-dessus. Enregistre d'abord la course si tu viens d'ajouter ou de modifier la technicité/chaleur.</p>
       <div class="row">
         <button class="btn primary" id="raceAiBtn" type="button">Estimer mon temps (IA)</button>
         <span id="raceAiStatus"></span>
       </div>
       <div id="raceAiBox"></div>
-      <div class="row" id="raceAiUseRow" style="display:none;margin-top:8px;">
-        <button class="btn small" id="raceAiUseBtn" type="button">Utiliser comme temps visé</button>
-      </div>
+      <!-- Audit Insight V2, §7.1 et §13 (P0-E) : le bouton « Utiliser comme temps visé »
+           reportait l'estimation dans le champ d'objectif. C'est un REMPLISSAGE AUTOMATIQUE, et
+           l'audit l'interdit tant que le modèle n'est pas calibré : aucune erreur de prédiction
+           n'a jamais été mesurée, aucun backtest n'existe. Le champ « temps visé » reste saisi à
+           la main. L'estimation demeure consultable, clairement étiquetée expérimentale. -->
     </div>
   </div>
 </div>
@@ -488,11 +499,14 @@ function renderGoalInsight() {
   const race = currentRace();
   if (!race) { row.innerHTML = ''; return; }
   const readiness = computeRaceReadiness(race);
-  const bullets = generateGoalInsight(readiness, race);
-  if (!bullets.length) { row.innerHTML = ''; return; }
-  row.innerHTML = '<div class="insight-card">' +
+  /* Audit Insight V2 §13 (P0) : cette page rendait ses observations avec son propre balisage,
+     hors du composant partagé — donc sans référence, sans fenêtre ni confiance visibles. Elle
+     utilise désormais `insightBlockHtml`, comme l'Accueil, Activité et Progression. */
+  const res = generateGoalInsight(readiness, race);
+  if (!res || (!res.primary && !res.secondary.length)) { row.innerHTML = ''; return; }
+  row.innerHTML = '<div class="insight-block">' +
     '<h2 class="insight-eyebrow"><img src="'+ICON_G('zap')+'" alt="">Insight ELEV</h2>' +
-    bullets.map(b => '<div class="insight-item"><h3>'+escapeHtml(b.title)+'</h3><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+    insightBlockHtml(res, { headingLevel: 3 }) +
   '</div>';
 }
 const ICON_G = n => lucideIconUrl(n);
@@ -985,7 +999,6 @@ function openRaceModal(id) {
   document.getElementById('raceAiBox').innerHTML = race && race.aiEstimation ? '<div class="ai-feedback">' + escapeHtml(race.aiEstimation) + '</div>' : '';
   document.getElementById('raceAiStatus').textContent = '';
   document.getElementById('raceAiBtn').textContent = race && race.aiEstimation ? 'Regénérer l\'estimation' : 'Estimer mon temps (IA)';
-  document.getElementById('raceAiUseRow').style.display = race && race.aiEstimation ? 'flex' : 'none';
   document.getElementById('raceModalBackdrop').classList.add('open');
 }
 function closeRaceModal() { document.getElementById('raceModalBackdrop').classList.remove('open'); editingRaceId = null; }
@@ -1049,6 +1062,11 @@ Vous êtes un coach de trail et course à pied, spécialisé dans le pronostic d
 2) Ajustez l'estimation en fonction du dénivelé de la course et de sa technicité (terrain technique, portage, single tracks = allure ralentie par rapport à un terrain roulant).
 3) Ajustez explicitement à la hausse le temps estimé si de fortes chaleurs sont attendues, en expliquant l'impact (déshydratation, baisse d'allure en cours d'effort).
 4) Donnez une fourchette de temps (optimiste / réaliste / prudent), jamais un chiffre unique présenté comme certain.
+4bis) Cette estimation est EXPÉRIMENTALE et NON CALIBRÉE : aucun modèle validé, aucune marge d'erreur mesurée,
+aucun parcours comparable. Dites-le explicitement dans la section « niveau de confiance ». Ne la présentez jamais
+comme une prévision, une garantie ou un objectif à viser.
+4ter) N'employez aucun terme médical, ne prédisez aucune blessure, ne prescrivez ni repos ni délai de récupération :
+ELEV ne mesure ni sommeil, ni fréquence cardiaque de repos, ni ressenti.
 5) Indiquez clairement votre niveau de confiance dans l'estimation selon la quantité et la qualité des données disponibles (peu d'historique ou pas de records = incertitude plus grande, à assumer explicitement plutôt qu'à masquer).
 6) Ne inventez aucune donnée manquante : si une information (VMA, records, historique suffisant) n'est pas fournie, dites "Non communiqué" et basez-vous sur ce qui est disponible.
 7) Terminez par 1 à 2 conseils concrets pour la suite de la préparation (allure de course cible, gestion de la chaleur, stratégie ravitaillement) si pertinent au vu des éléments fournis.
@@ -1084,7 +1102,15 @@ function buildTrainingSummaryText(sessions) {
 
 function buildProfileSummaryText(profile) {
   const lines = [];
-  if (profile.age) lines.push('Âge : ' + profile.age + ' ans');
+  /* Audit Insight V2 §4.3 : cette ligne lisait `profile.age`, un champ SUPPRIME du modele de
+     profil (seule `naissance` est stockee). L'age n'etait donc jamais transmis, sauf donnee
+     heritee d'une version ancienne. Il est desormais derive, comme partout ailleurs. */
+  const naiss = profile.naissance ? new Date(profile.naissance) : null;
+  if (naiss && !isNaN(naiss)) {
+    const d = new Date(), age = d.getFullYear() - naiss.getFullYear() -
+      ((d.getMonth() < naiss.getMonth() || (d.getMonth() === naiss.getMonth() && d.getDate() < naiss.getDate())) ? 1 : 0);
+    if (age > 0 && age < 120) lines.push('Age : ' + age + ' ans');
+  }
   if (profile.poids) lines.push('Poids : ' + profile.poids + ' kg');
   if (profile.vma) lines.push('VMA : ' + profile.vma + ' km/h');
   if (profile.allureSeuil) lines.push('Allure seuil / spécifique trail : ' + profile.allureSeuil);
@@ -1154,27 +1180,14 @@ document.getElementById('raceAiBtn').addEventListener('click', async () => {
     boxEl.innerHTML = '<div class="ai-feedback">' + escapeHtml(res.text) + '</div>';
     statusEl.textContent = '';
     btn.textContent = 'Regénérer l\'estimation';
-    document.getElementById('raceAiUseRow').style.display = 'flex';
   } finally { btn.disabled = false; }
 });
 
-// Repère un temps plausible dans le texte de l'estimation IA (priorité à la fourchette "réaliste"),
-// pour pré-remplir le champ "temps visé" — l'utilisateur peut toujours ajuster avant de valider.
-function extractTimeGuess(text) {
-  const timePattern = /(\d{1,2}\s*h\s*\d{0,2}|\d{1,2}:\d{2})/i;
-  const realisteMatch = text.match(new RegExp('r[ée]aliste[^\\n]{0,60}?' + timePattern.source, 'i'));
-  const found = realisteMatch ? realisteMatch[1] : (text.match(timePattern) || [])[1];
-  return found ? found.replace(/\s+/g, '') : '';
-}
-document.getElementById('raceAiUseBtn').addEventListener('click', () => {
-  if (!editingRaceId) return;
-  const race = getRaces().find(r => r.id === editingRaceId);
-  if (!race || !race.aiEstimation) return;
-  const guess = extractTimeGuess(race.aiEstimation) || document.getElementById('raceTempsVise').value;
-  const val = window.prompt('Temps visé à enregistrer (modifie si besoin, puis clique sur "Enregistrer" pour valider) :', guess);
-  if (val === null) return;
-  document.getElementById('raceTempsVise').value = val.trim();
-});
+/* Audit Insight V2, §13 (P0-E) : `extractTimeGuess` et le bouton « Utiliser comme temps visé »
+   ont été retirés. Ils reportaient dans l'objectif un temps produit par un modèle non calibré,
+   sans intervalle d'erreur ni backtest — l'audit classe cette estimation en niveau D
+   (expérimental) et interdit explicitement qu'elle renseigne automatiquement un temps cible.
+   Le champ « temps visé » reste saisi à la main. */
 
 try { renderAppNav(); } catch (e) { console.error('Navigation partagee indisponible :', e); }
 renderSidebarUser();

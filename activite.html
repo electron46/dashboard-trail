@@ -23,7 +23,10 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="assets/elev-data-quality.js"></script>
 <script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-evidence.js"></script>
+<script src="assets/elev-metrics.js"></script>
 <script src="assets/elev-insight.js"></script>
+<script src="assets/elev-ai-policy.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -213,7 +216,8 @@ function initActivityPage(s) {
 
   const zones = getActiveHrZones(getProfile());
   const zoneDist = computeSessionZoneDistribution(s, zones);
-  const climbs = detectClimbs(s.series);
+  // Montees issues du calcul fait avant reduction quand la seance en dispose (audit P0-B).
+  const climbs = sessionClimbs(s);
   renderZonesDonut(s, zoneDist);
   renderClimbsMini(climbs);
 
@@ -315,8 +319,12 @@ function initActivityPage(s) {
     saveSession(cur.id, cur);
   });
 
-  const planned = findPlannedSession(s.date);
-  renderPlanVsActual(s, planned);
+  /* Audit Insight V2, P0-C : le rapprochement tient compte de la seance REELLE, pas seulement
+     de sa date. Une activite qui contredit la seance prevue (volume ou intensite) n'est plus
+     presentee comme l'ayant realisee ; elle est proposee a confirmation. */
+  const planned = findPlannedSession(s.date, s);
+  const plannedCandidate = planned ? null : findPlannedCandidate(s.date, s);
+  renderPlanVsActual(s, planned, plannedCandidate);
 
   renderCoachCards(s.aiFeedback);
   document.getElementById('aiGenBtn').textContent = s.aiFeedback ? 'Regénérer le retour Coach ELEV' : 'Générer le retour Coach ELEV';
@@ -788,9 +796,27 @@ document.getElementById('seeAllClimbsLink').addEventListener('click', (e) => {
 
 /* --------------------------- COACH ELEV : PRÉVU VS RÉALISÉ (déterministe, sans IA) --------------------------- */
 function pctDelta(actual, plannedVal) { return (plannedVal && actual != null) ? Math.round((actual - plannedVal) / plannedVal * 100) : null; }
-function renderPlanVsActual(s, planned) {
+function renderPlanVsActual(s, planned, candidate) {
   const box = document.getElementById('planVsActualBox');
   if (!planned) {
+    /* Audit Insight V2, P0-C / jeu G11 : une séance était prévue ce jour-là, mais ce qui a été
+       mesuré la contredit. ELEV ne tranche pas à la place de l'utilisateur — il montre ce qui
+       cloche et lui laisse confirmer. Sans cela, un footing validait un fractionné. */
+    if (candidate) {
+      box.innerHTML = '<p class="hint" style="margin:0 0 10px;">Une séance était prévue ce jour-là (' +
+          escapeHtml(candidate.planned.type || 'séance') + '), mais cette activité ne lui correspond pas clairement&nbsp;:</p>' +
+        '<ul class="hint" style="margin:0 0 12px;padding-left:18px;">' +
+          candidate.reasons.map(r => '<li>' + escapeHtml(r) + '</li>').join('') +
+        '</ul>' +
+        '<button type="button" class="btn small" id="planLinkBtn">Confirmer que c\'est bien cette séance</button>';
+      const btn = document.getElementById('planLinkBtn');
+      if (btn) btn.addEventListener('click', () => {
+        linkSessionToPlanned(s.id, candidate.planned.uid);
+        const maj = loadSession(s.id);
+        renderPlanVsActual(maj, findPlannedSession(maj.date, maj), null);
+      });
+      return;
+    }
     box.innerHTML = '<p class="hint" style="margin:0;">Aucune séance planifiée associée.</p>';
     return;
   }
@@ -849,7 +875,25 @@ function splitLeadAndBullets(text) {
 function renderCoachCards(text) {
   const box = document.getElementById('aiFeedbackBox');
   if (!text) { box.innerHTML = ''; return; }
-  const parsed = parseCoachSections(text);
+
+  /* Depuis l'audit Insight V2, le coach répond en JSON validé (voir elev-ai-policy.js). Les
+     retours ENREGISTRÉS AVANT ce changement sont au format « 5 sections texte » : on continue de
+     les lire, sinon un utilisateur perdrait l'analyse déjà attachée à ses séances passées. */
+  let parsed = null;
+  if (text.trim().startsWith('{')) {
+    try {
+      const j = JSON.parse(text);
+      const liste = v => Array.isArray(v) ? v.map(x => '- ' + x).join('\n') : (v || '');
+      parsed = {
+        resume: j.resume || '',
+        analyse: liste(j.analyse),
+        positif: liste(j.positif),
+        vigilance: (Array.isArray(j.vigilance) && j.vigilance.length) ? liste(j.vigilance) : 'Rien de particulier à signaler.',
+        suite: liste(j.suite),
+      };
+    } catch (e) { parsed = null; }
+  }
+  if (!parsed) parsed = parseCoachSections(text);
   if (!parsed) { box.innerHTML = '<div class="ai-feedback">' + escapeHtml(text) + '</div>'; return; }
 
   const resumeHtml = parsed.resume
@@ -934,42 +978,55 @@ Données fournies à chaque usage :
 </exclusions>
 
 <exemple>
-Séance réalisée : 18,7 km / 4h21 / 1452 m D+ / 1982 m D- / FC moyenne 165 bpm / 70% du temps en marche / 88% du temps en Z3-Z5.
-Séance prévue : sortie longue 17 km / 1700 m D+, intensité Z2.
-Historique : pas de sortie longue comparable récente.
-Contexte utilisateur : antécédent de gêne à la cheville droite, rien signalé sur cette séance.
+Seance realisee : 18,7 km / 4h21 / 1452 m D+ / 1982 m D- / FC moyenne 165 bpm / 70 % du temps en marche / 88 % du temps en Z3-Z5.
+Seance prevue : sortie longue 17 km / 1700 m D+, intensite Z2.
+Historique : pas de sortie longue comparable recente.
+Contexte utilisateur : antecedent de gene a la cheville droite, rien signale sur cette seance.
 
-RESUME: Sortie exigeante, dominée par la marche sur terrain fortement pentu, intensité nettement au-dessus de la cible Z2 prévue.
-ANALYSE: Effort long et très vallonné, plus intense que prévu.
-- 18,7 km en 4h21, +10% de distance vs plan
-- 1452 m D+ / 1982 m D-
-- 88% du temps en Z3-Z5 alors que Z2 était visée
-- Aucune sortie longue comparable récente pour juger d'une tendance
-POSITIF: Effort soutenu mais géré de façon cohérente.
-- Cadence compatible avec une sortie fortement marchée
-- Gestion régulière des montées (VAM stable, voir onglet Montées)
-- Distance et D+ tenus malgré l'intensité élevée
-VIGILANCE: Grosse descente (1982 m D-) à noter.
-- Compte tenu de ton antécédent à la cheville droite, surveille une gêne inhabituelle ou un gonflement dans les heures suivant la séance
-- Rien de signalé sur cette sortie elle-même
-SUITE: Prioriser la récupération avant la prochaine charge importante.
-- 48h de vigilance sur la cheville avant une nouvelle grosse séance de D-
-- Si l'intensité élevée se répète sur la prochaine sortie longue, revoir l'allure cible
-- Compléter le plan pour fiabiliser les prochaines comparaisons
+{
+  "resume": "Sortie longue et tres vallonnee, dominee par la marche, menee nettement au-dessus de l'intensite prevue.",
+  "analyse": [
+    "18,7 km pour 17 km prevus, et 1452 m D+ pour 1700 m prevus",
+    "88 % du temps en Z3-Z5 alors que la cible du plan etait Z2",
+    "Aucune sortie longue comparable recente : pas de tendance mesurable"
+  ],
+  "positif": [
+    "Distance et denivele tenus sur un terrain tres pentu",
+    "70 % du temps en marche, ce qui est courant et efficace en forte pente"
+  ],
+  "vigilance": [
+    "1982 m de D- sur cette sortie, avec un antecedent de gene a la cheville droite signale au profil",
+    "Rien n'a ete signale sur cette seance elle-meme"
+  ],
+  "suite": [
+    "Si l'intensite reste au-dessus de la cible sur la prochaine sortie longue, revoir l'allure visee",
+    "Completer le plan pour fiabiliser les prochaines comparaisons"
+  ]
+}
+
 </exemple>
 
 <contre_exemple>
-"Bravo, belle séance, continuez comme ça !" — sans conclusion propre à la séance, sans puces, sans signal de vigilance formulé prudemment, sans recommandation concrète. Trop vague et trop long à la fois si développé en paragraphes.
+Un exemple a imiter ne doit contenir aucune formulation interdite, meme citee. Voici ce qu'il ne
+faut jamais produire :
+{"resume": "Belle seance, continue comme ca !", "suite": ["Prioriser la recuperation", "48 h de vigilance avant la prochaine grosse seance"]}
+Trois fautes : aucune synthese propre a la seance ; une consigne de recuperation alors qu'ELEV ne
+mesure ni sommeil, ni frequence cardiaque de repos, ni ressenti ; et un delai de 48 h qu'aucune
+donnee ne soutient.
 </contre_exemple>
 
 <format_de_sortie>
-Répondez UNIQUEMENT avec ces 5 sections, chacune introduite en tout début de ligne par son marqueur exact suivi de ":" (respectez l'orthographe et la casse exactes, rien d'autre avant le premier marqueur) :
-RESUME: une seule phrase de synthèse, propre à cette séance (pas de puces).
-ANALYSE: une phrase clé, puis 2-4 lignes commençant chacune par "- ".
-POSITIF: une phrase clé, puis 2-4 lignes "- ".
-VIGILANCE: une phrase clé (ton prudent, jamais diagnostique), puis 0-3 lignes "- ". Si rien à signaler, une seule phrase "Rien de particulier à signaler." suffit, sans puce.
-SUITE: une phrase clé actionnable, puis 2-4 lignes "- ".
-Aucun texte hors de ces 5 sections. Aucune balise XML, aucun markdown autre que les puces "- " (pas de **gras**, pas de titres, pas de tableau).
+Reponds UNIQUEMENT par un objet JSON valide, sans texte avant ni apres, sans bloc de code.
+Cles autorisees, aucune autre :
+  "resume"    : une phrase de synthese propre a cette seance (240 caracteres maximum).
+  "analyse"   : 2 a 4 constats courts.
+  "positif"   : 2 a 4 constats courts.
+  "vigilance" : 0 a 3 constats courts, formules avec prudence. Liste vide s'il n'y a rien a signaler.
+  "suite"     : 2 a 4 propositions concretes pour les prochaines seances.
+Chaque entree de liste est une phrase courte, sans puce ni markdown.
+La reponse est REJETEE si elle contient une cle supplementaire, un nombre absent des donnees
+fournies, un lien de cause, un delai, une consigne de recuperation ou de repos, ou un terme
+medical.
 </format_de_sortie>`;
 
 /* Affiche une erreur IA en TEXTE, jamais en HTML : le message peut contenir un détail renvoyé par
@@ -994,7 +1051,8 @@ async function generateAiFeedback(id) {
   if (!dispo.ok) { setAiError(statusEl, dispo.message); return; }
 
   const s = loadSession(id);
-  const planned = findPlannedSession(s.date);
+  // Meme regle pour l'IA : on ne lui annonce une seance prevue que si le rapprochement tient.
+  const planned = findPlannedSession(s.date, s);
   const profile = getProfile();
 
   btn.disabled = true;
@@ -1046,16 +1104,46 @@ async function generateAiFeedback(id) {
      façon le bouton — l'ancien appel n'avait aucun délai maximal, et sur un réseau suspendu le
      bouton et le spinner restaient bloqués indéfiniment (audit RISK-003). */
   try {
+    /* Audit Insight V2, §9.7 et §14 lot 4 : LE CALCUL PRÉCÈDE LE TEXTE. L'objet déterministe des
+       valeurs autorisées est construit AVANT l'appel, joint au prompt, puis servira à valider la
+       réponse. Le modèle reformule ; il ne calcule pas, n'explique pas, ne prescrit pas. */
+    // Mêmes sources que l'affichage de la page — recalculées ici parce que `renderActivityPage`
+    // ne les expose pas : un second jeu de valeurs ferait diverger ce que l'écran montre et ce que
+    // l'IA a le droit de citer.
+    const zonesProfil = getActiveHrZones(profile);
+    const zoneDistIA = zonesProfil ? computeSessionZoneDistribution(s, zonesProfil) : null;
+    const climbsIA = sessionClimbs(s);
+    const insightsIA = generateSessionInsight(s, zoneDistIA, climbsIA,
+      loadAllSessions().filter(h => h.id !== s.id && h.date < s.date && h.sport === s.sport));
+
+    const allowed = buildAllowedFacts({
+      session: s, planned, history,
+      zones: zoneDistIA || [],
+      insights: insightsIA || [],
+      hasRecoveryData: false, // ELEV ne suit ni sommeil, ni FC de repos, ni ressenti.
+    });
+
     const res = await callElevAi({
       task: 'coach-seance',
-      system: AI_COACH_SYSTEM_PROMPT,
+      system: AI_COACH_SYSTEM_PROMPT + '\n\n' + aiOutputContract(allowed),
       message: userParts.join('\n'),
       maxTokens: 2000,
     });
     if (!res.ok) { setAiError(statusEl, res.message); return; }
-    s.aiFeedback = res.text;
+
+    /* Validation stricte. Une réponse hors schéma n'est PAS enregistrée et n'est PAS affichée :
+       l'audit demande explicitement de la rejeter et de la journaliser (§8.3, jeu G16). Mieux vaut
+       ne rien montrer qu'afficher une affirmation que rien ne soutient. */
+    const check = validateAiOutput(res.text, allowed);
+    if (!check.ok) {
+      console.warn('[ELEV] Réponse IA rejetée :', check.reasons);
+      setAiError(statusEl, "Le retour généré ne respectait pas les règles d'ELEV (" +
+        check.reasons[0] + ") — il n'a pas été enregistré. Tu peux relancer la génération.");
+      return;
+    }
+    s.aiFeedback = JSON.stringify(check.data);
     saveSession(s.id, s);
-    renderCoachCards(res.text);
+    renderCoachCards(s.aiFeedback);
     statusEl.textContent = '';
     btn.textContent = 'Regénérer le retour Coach ELEV';
   } finally { btn.disabled = false; }

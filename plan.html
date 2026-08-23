@@ -21,7 +21,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.js"></script>
 <script src="assets/elev-data-quality.js"></script>
 <script src="assets/elev-terrain.js"></script>
+<script src="assets/elev-evidence.js"></script>
+<script src="assets/elev-metrics.js"></script>
 <script src="assets/elev-insight.js"></script>
+<script src="assets/elev-ai-policy.js"></script>
 <script src="assets/app.js"></script>
 </head>
 <body>
@@ -412,11 +415,13 @@ function renderPlanInsightCompact() {
   const box = document.getElementById('planInsightCompactBox');
   const plan = getPlan();
   const sessions = loadAllSessions();
-  const bullets = getPlanInsights(plan, sessions);
-  if (!bullets.length) { box.innerHTML = ''; return; }
+  /* Audit Insight V2 §13 (P0) : rendu par le composant partagé, comme les autres surfaces. Les
+     observations du plan portent désormais leur référence, leur fenêtre et leur confiance. */
+  const res = getPlanInsights(plan, sessions);
+  if (!res || (!res.primary && !res.secondary.length)) { box.innerHTML = ''; return; }
   box.innerHTML = '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">' +
     '<h3 class="insight-compact-eyebrow"><img src="'+ICON_P('zap')+'" alt="">Insight ELEV</h3>' +
-    bullets.map(b => '<div class="insight-compact-item"><h4>'+escapeHtml(b.title)+'</h4><p>'+escapeHtml(b.text)+'</p></div>').join('') +
+    insightBlockHtml(res, { headingLevel: 4 }) +
   '</div>';
 }
 
@@ -454,7 +459,9 @@ function renderPlanWeekBox() {
   const sessions = loadAllSessions();
   if (!week.inRange) { box.innerHTML = '<div class="empty">Cette semaine n\'est pas couverte par le plan importé.</div>'; return; }
   const wp = calculateWeekProgress(week, sessions);
-  const statusClass = { 'Dans les clous':'status-ok', 'En retard':'status-late', 'En avance':'status-ahead' }[wp.statusLabel] || '';
+  // Libellés alignés sur calculateWeekProgress (audit Insight V2, §7.1 : plus de « dans les clous »,
+  // qui se lisait comme un verdict sur la préparation alors qu'il ne compare qu'un volume au plan).
+  const statusClass = { 'Conforme au plan':'status-ok', 'Sous la cible':'status-late', 'Au-dessus de la cible':'status-ahead' }[wp.statusLabel] || '';
   box.innerHTML =
     '<p class="hint">' + fmtDate(week.startISO) + ' – ' + fmtDate(week.endISO) + ' · Semaine ' + week.weekNum + ' / ' + week.totalWeeks + (week.bloc ? ' — ' + escapeHtml(week.bloc) : '') + '</p>' +
     '<div class="goal-hero-score" style="gap:16px;margin-top:6px;">' +
