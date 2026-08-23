@@ -1120,6 +1120,12 @@ async function generateAiFeedback(id) {
       session: s, planned, history,
       zones: zoneDistIA || [],
       insights: insightsIA || [],
+      // Comptes vérifiables : le modèle peut légitimement écrire « 3 montées », c'est dans la donnée.
+      counts: {
+        montees: climbsIA.length,
+        seancesHistorique: history.length,
+        gainMonteesM: climbsIA.reduce((a, c) => a + (c.gainM || 0), 0),
+      },
       hasRecoveryData: false, // ELEV ne suit ni sommeil, ni FC de repos, ni ressenti.
     });
 
@@ -1136,9 +1142,16 @@ async function generateAiFeedback(id) {
        ne rien montrer qu'afficher une affirmation que rien ne soutient. */
     const check = validateAiOutput(res.text, allowed);
     if (!check.ok) {
+      /* Le motif est journalisé en entier pour le débogage, mais le message à l'écran doit dire à
+         l'utilisateur ce qu'il peut FAIRE. Le premier message livré était « Valeurs absentes des
+         données fournies : 16 » : exact, et inexploitable — il ne disait ni pourquoi c'est refusé,
+         ni que relancer suffit le plus souvent. */
       console.warn('[ELEV] Réponse IA rejetée :', check.reasons);
-      setAiError(statusEl, "Le retour généré ne respectait pas les règles d'ELEV (" +
-        check.reasons[0] + ") — il n'a pas été enregistré. Tu peux relancer la génération.");
+      const chiffres = /Valeurs absentes/.test(check.reasons[0] || '');
+      setAiError(statusEl, chiffres
+        ? "Le retour généré citait un chiffre absent de tes données — ELEV refuse de l'enregistrer plutôt que d'afficher une valeur que ta séance ne soutient pas. Relance la génération : c'est le plus souvent suffisant."
+        : "Le retour généré ne respectait pas les règles d'ELEV (" + check.reasons[0] +
+          ") — il n'a pas été enregistré. Tu peux relancer la génération.");
       return;
     }
     s.aiFeedback = JSON.stringify(check.data);

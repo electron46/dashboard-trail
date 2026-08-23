@@ -3,7 +3,7 @@
 **Source :** `AUDIT-SCIENTIFIQUE-ELEV-INSIGHT-V2-2026-08-23.md`
 **Branche :** `fix/quatre-defauts-cibles`, poussée sur `origin` (commits `3e870f5` puis correctif P1).
 **Baseline avant travaux :** `node audit-qa/qa_tests.mjs` → **84/84 réussis, 0 échec**.
-**État final :** `node audit-qa/qa_tests.mjs` → **110/110 réussis, 0 échec** (26 tests ajoutés).
+**État final :** `node audit-qa/qa_tests.mjs` → **111/111 réussis, 0 échec** (27 tests ajoutés).
 
 Statuts : `À FAIRE` · `EN COURS` · `TERMINÉ` · `BLOQUÉ` · `HORS DÉPÔT` · `À VALIDER`.
 
@@ -67,7 +67,7 @@ que l'audit interdit. Corrigé : la détection porte sur tous les insights valid
 | P0-D1 | Formulations globales trompeuses retirées | TERMINÉ | `assets/app.js`, `plan.html` | `V2-P0D1` — plus d'« excellente préparation » ni de « dans les clous » |
 | P0-D2 | Divergence affichée, pas moyennée | TERMINÉ | `assets/app.js` | `V2-P0D1` — la divergence prime sur tout libellé |
 | P0-D3 | Repères génériques classés selon leur preuve | TERMINÉ | `assets/app.js` | `V2-P0D2` — sans plan : **aucun indice global** ; avec plan : 77 |
-| P0-E1 | Schéma JSON strict des sorties IA | TERMINÉ | `assets/elev-ai-policy.js`, `activite.html` | `V2-G16` — 7 familles de rejet vérifiées |
+| P0-E1 | Schéma JSON strict des sorties IA | TERMINÉ | `assets/elev-ai-policy.js`, `activite.html` | `V2-G16` — 7 familles de rejet vérifiées ; `V2-G16b` — écarts dérivés acceptés (rejet réel corrigé) |
 | P0-E2 | Retrait des prescriptions (récupération, 48 h) | TERMINÉ | `activite.html` | `V2-P0E` — exemple assaini, contre-exemple ajouté |
 | P0-E3 | Estimation expérimentale, sans remplissage auto | TERMINÉ | `objectifs.html` | `V2-P0E` — bouton et `extractTimeGuess` retirés |
 | P0-F | Tests P0 + jeux G00–G18 | TERMINÉ | `audit-qa/qa_tests.mjs` | G02, G05, G06, G07, G10, G11, G12, G14, G16 |
@@ -150,6 +150,16 @@ contrôle des **15 blocs de script inline** des pages HTML : tous valides.
   réellement exposés ;
 - cibles tactiles du volet de preuve portées de **25 px à 44 px** en mobile (défaut préexistant sur
   l'Accueil et Progression, étendu par ma propre généralisation du composant, donc corrigé).
+
+**Rejet observé en usage réel, et corrigé (2026-08-23).** Le premier vrai appel IA a été refusé
+par le validateur : « Valeurs absentes des données fournies : 16 ». Cause — l'ensemble autorisé ne
+contenait que les valeurs BRUTES, alors que le prompt demande au modèle d'interpréter l'écart au
+plan. Un pourcentage dérivé de deux valeurs fournies est vérifiable, pas inventé : la règle §9.7
+vise les faits INVENTÉS, pas l'arithmétique sur des faits fournis. Sont désormais autorisés les
+écarts (différence, pourcentage, rapport) entre réalisé et prévu, les durées et allures décomposées
+(« 4h21 », « 13:15/km »), les bornes de zones, les comptes vérifiables, et les arrondis d'affichage
+(tolérance relative de 2 %, « 1452 m » écrit « 1450 m »). Ce qui reste refusé n'a pas bougé :
+une valeur venue d'ailleurs, un délai, une causalité, un terme médical. Test `V2-G16b`.
 
 **NON VÉRIFIÉ, et pourquoi :**
 - **Captures d'écran** : le volet navigateur n'était pas affiché, la page ne compose donc pas
