@@ -2700,6 +2700,79 @@ await test('V2-P1A', 'Registre de métriques : formule, unité, minimums et règ
   return { metriques: ids.length };
 });
 
+
+await test('V2-P1E2', 'Le délai de répétition est réellement branché, pas seulement disponible', async () => {
+  const iso = loadApp();
+  const base = { window: '4 semaines', reference: 'période précédente' };
+  const mk = (id, fam, imp) => iso.makeInsight(Object.assign({ id, family: fam, observation: 'Obs ' + id, importance: imp, confidence: 'high' }, base));
+
+  /* Le défaut corrigé ici : `noteInsightsShown` existait, était testée, et AUCUNE page ne
+     l'appelait — `lastShownAt` n'était donc jamais écrit et le cooldown restait inerte. Un
+     mécanisme complet mais débranché, exactement comme `provenance` avant sa réparation.
+     L'écriture appartient désormais au composant de rendu : aucune page ne peut l'oublier. */
+  const res = iso.prioritizeInsights([mk('a', 'load', 'context'), mk('b', 'terrain', 'notable')], {});
+  assert(Object.keys(iso.getInsightFeedback()).length === 0, 'aucun historique avant le rendu');
+
+  iso.insightBlockHtml(res, { headingLevel: 3 });
+  const fb = iso.getInsightFeedback();
+  assert(fb.a && fb.b, 'le rendu doit mémoriser les observations réellement montrées');
+  assert(fb.a.lastShownAt && fb.a.firstShownAt, 'les dates d\'affichage doivent être écrites');
+  assert(fb.a.shownCount === 1, 'le compteur doit démarrer à 1');
+
+  // Un second rendu incrémente : c'est ce compteur qui alimente la nouveauté.
+  iso.insightBlockHtml(res, { headingLevel: 3 });
+  assert(iso.getInsightFeedback().a.shownCount === 2, 'un nouvel affichage doit être compté');
+
+  // Et le cooldown s'applique alors réellement sur un contexte.
+  const p = iso.insightPriorityScore(mk('a', 'load', 'context'), iso.getInsightFeedback(), new Date());
+  assert(p.novelty < 1, 'une observation de contexte tout juste montrée doit perdre en nouveauté');
+
+  // La page de documentation rend des exemples : elle ne doit pas polluer l'historique.
+  const iso2 = loadApp();
+  iso2.insightBlockHtml(iso2.prioritizeInsights([mk('demo', 'load', 'context')], {}), { silent: true });
+  assert(Object.keys(iso2.getInsightFeedback()).length === 0,
+    'un rendu de démonstration ne doit pas alimenter l\'historique');
+
+  // Le composant partagé est bien le lieu de l'écriture : aucune page ne doit avoir à l'appeler.
+  const pages = ['index.html', 'analyse.html', 'objectifs.html', 'plan.html', 'activite.html'];
+  pages.forEach(f => {
+    const src = fs.readFileSync(path.join(root, f), 'utf8');
+    assert(!/noteInsightsShown\s*\(/.test(src),
+      f + ' ne doit pas avoir à appeler noteInsightsShown : le composant s\'en charge');
+  });
+  return { historique: 'ecrit par le composant', pagesSansAppel: pages.length };
+});
+
+await test('V2-P1G', 'Vue avancée : les observations valides non retenues restent atteignables', async () => {
+  const iso = loadApp();
+  const base = { window: '4 semaines', reference: 'période précédente', confidence: 'high' };
+  const mk = (id, fam) => iso.makeInsight(Object.assign({ id, family: fam, observation: 'Obs ' + id, importance: 'notable' }, base));
+
+  /* Audit §13 (P1) : « vue avancée montrant les insights valides non retenus ». Deux observations
+     de la même famille : la seconde est valide, seule la règle « une par famille » l'écarte de la
+     vue principale. La garder invisible reviendrait à décider à la place de l'utilisateur. */
+  const res = iso.prioritizeInsights([
+    mk('l1', 'load'), mk('l2', 'load'), mk('t1', 'terrain'),
+  ], {});
+  assert(res.dropped.length >= 1, 'une observation valide doit être écartée par la règle de famille');
+  assert(res.rejected.length === 0, 'aucune de ces observations ne doit être rejetée sur le fond');
+
+  const html = iso.insightBlockHtml(res, { headingLevel: 3, silent: true });
+  assert(/insight-more/.test(html), 'la vue avancée doit être rendue');
+  assert(/Autres observations \(1\)/.test(html), 'elle doit annoncer combien d\'observations elle contient');
+  assert(/data-insight-id="l2"/.test(html), 'l\'observation écartée doit être réellement présente');
+  assert(/une observation par famille/.test(html), 'la raison de l\'écart doit être expliquée');
+  // Repliée par défaut : secondaire, mais jamais masquée.
+  assert(/<details class="insight-more"><summary>/.test(html), 'la vue avancée doit être repliée, pas cachée');
+  assert(html.indexOf('insight-more') > html.indexOf('insight-card'),
+    'elle doit venir après les observations principales');
+
+  // Sans observation écartée, aucune section vide n'est ajoutée.
+  const seul = iso.insightBlockHtml(iso.prioritizeInsights([mk('x', 'load')], {}), { silent: true });
+  assert(!/insight-more/.test(seul), 'aucune vue avancée quand il n\'y a rien à y montrer');
+  return { ecartees: res.dropped.length, rendues: true };
+});
+
 /* --------------------------- rapport --------------------------- */
 const passed = results.filter(r => r.status === 'PASS').length;
 const failed = results.length - passed;

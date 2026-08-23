@@ -559,11 +559,34 @@ function insightBlockHtml(result, opts) {
         result.contradictions.map(c => esc(c.text)).join(' ') + '</p></div>'
     : '';
 
+  const montres = [result.primary].concat(result.secondary || []).filter(Boolean);
+
+  /* L'historique d'affichage est écrit ICI, dans le composant partagé, et non par chaque page.
+     Raison : `noteInsightsShown` a d'abord été écrite comme fonction autonome… que personne
+     n'appelait. Le délai de répétition était donc inerte — le même défaut que `provenance`, un
+     mécanisme complet mais débranché. Le composant est le seul endroit qui sache ce qui est
+     RÉELLEMENT montré, donc le seul où l'oubli est impossible.
+     `opts.silent` existe pour la page de documentation et les tests, qui rendent des exemples. */
+  if (!opts.silent && montres.length) { try { noteInsightsShown(montres); } catch (e) {} }
+
+  /* Vue avancée (§13, P1) : « montrer les insights valides non retenus ». Ils existent, ils sont
+     valides, et seule la règle « une observation par famille » les écarte de la vue principale.
+     Les garder invisibles reviendrait à décider à la place de l'utilisateur ce qu'il a le droit
+     de lire. Repliés par défaut : ce sont des observations secondaires, pas du bruit à masquer. */
+  const autres = (result.dropped || []).filter(Boolean);
+  const plus = autres.length
+    ? '<details class="insight-more"><summary>Autres observations (' + autres.length + ')</summary>' +
+        '<p class="ins-note">Valides, mais écartées de la vue principale : ELEV n\'affiche qu\'une observation par famille pour éviter trois variantes du même constat.</p>' +
+        autres.map(i => insightCardHtml(i, { headingLevel: (opts.headingLevel || 3) + 1 })).join('') +
+      '</details>'
+    : '';
+
   return contra +
     (result.primary ? insightCardHtml(result.primary, { primary: true, headingLevel: opts.headingLevel }) : '') +
     ((result.secondary || []).length
       ? '<div class="insight-secondary">' + result.secondary.map(i => insightCardHtml(i, { headingLevel: (opts.headingLevel || 3) + 1 })).join('') + '</div>'
-      : '');
+      : '') +
+    plus;
 }
 
 if (typeof window !== 'undefined') {
